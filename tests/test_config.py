@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 import pytest
 
-from obtainhub.core.config import Config, ConfigManager
+from obtainhub.core.config import Config, ConfigManager, ManifestSource
 
 
 class TestConfig:
@@ -14,159 +14,235 @@ class TestConfig:
     def test_default_config(self):
         """Test default configuration values."""
         config = Config()
-        assert config.download_dir == str(Path.home() / "Downloads" / "ObtainHub")
+        assert config.github_token == ""
+        assert "ObtainHub" in config.install_dir
+        assert "ObtainHub" in config.download_dir
+        assert config.update_interval_hours == 24
+        assert config.proxy == ""
         assert config.auto_update is True
-        assert config.skip_self_update is False
-        assert config.verbose is False
         assert config.log_level == "INFO"
+        assert config.max_parallel_downloads == 3
         assert len(config.manifest_sources) == 1
-        assert "ObtainHub/manifests" in config.manifest_sources[0]
+        assert config.manifest_sources[0].name == "default"
+        assert config.preferred_arch == "x64"
+        assert config.allow_prerelease is False
+        assert config.skip_self_update is False
+        assert config.auto_confirm_prerelease is False
     
     def test_config_to_dict(self):
-        """Test config serialization to dict."""
-        config = Config(download_dir="/custom/path", auto_update=False)
+        """Test config serialization."""
+        config = Config()
         data = config.to_dict()
-        assert data["download_dir"] == "/custom/path"
-        assert data["auto_update"] is False
+        
+        assert isinstance(data, dict)
+        assert "github_token" in data
         assert "manifest_sources" in data
+        assert isinstance(data["manifest_sources"], list)
+        assert data["manifest_sources"][0]["name"] == "default"
     
     def test_config_from_dict(self):
-        """Test config deserialization from dict."""
+        """Test config deserialization."""
         data = {
-            "download_dir": "/test/path",
+            "github_token": "test-token",
+            "install_dir": "/custom/install",
+            "download_dir": "/custom/download",
+            "update_interval_hours": 12,
+            "proxy": "http://proxy:8080",
             "auto_update": False,
+            "log_level": "DEBUG",
+            "max_parallel_downloads": 5,
+            "manifest_sources": [
+                {"name": "test", "url": "https://example.com/manifest.json", "enabled": True}
+            ],
+            "preferred_arch": "x64",
+            "allow_prerelease": True,
             "skip_self_update": True,
-            "manifest_sources": ["https://custom.com/manifest.json"],
+            "auto_confirm_prerelease": True,
         }
         config = Config.from_dict(data)
-        assert config.download_dir == "/test/path"
+        
+        assert config.github_token == "test-token"
+        assert config.install_dir == "/custom/install"
+        assert config.update_interval_hours == 12
         assert config.auto_update is False
+        assert config.log_level == "DEBUG"
+        assert config.max_parallel_downloads == 5
+        assert len(config.manifest_sources) == 1
+        assert config.manifest_sources[0].name == "test"
+        assert config.preferred_arch == "x64"
+        assert config.allow_prerelease is True
         assert config.skip_self_update is True
-        assert config.manifest_sources == ["https://custom.com/manifest.json"]
+        assert config.auto_confirm_prerelease is True
     
     def test_config_from_dict_ignores_unknown_keys(self):
         """Test that unknown keys are ignored."""
-        data = {
-            "download_dir": "/test",
-            "unknown_key": "should_be_ignored",
-        }
+        data = {"unknown_key": "value", "github_token": "test"}
         config = Config.from_dict(data)
-        assert config.download_dir == "/test"
-        assert not hasattr(config, "unknown_key")
+        assert config.github_token == "test"
     
     def test_get_download_dir(self):
-        """Test get_download_dir expands user and env vars."""
-        config = Config(download_dir="~/Downloads/Test")
-        path = config.get_download_dir()
-        assert str(path).startswith(str(Path.home()))
+        """Test download directory property."""
+        config = Config()
+        config.download_dir = "/tmp/test_download"
+        assert config.download_dir == "/tmp/test_download"
     
     def test_set_download_dir(self):
         """Test setting download directory."""
         config = Config()
-        config.set_download_dir("/new/path")
+        config.download_dir = "/new/path"
         assert config.download_dir == "/new/path"
     
     def test_add_remove_manifest_source(self):
         """Test adding and removing manifest sources."""
-        config = Config(manifest_sources=["https://default.com/manifest.json"])
-        config.add_manifest_source("https://custom.com/manifest.json")
-        assert "https://custom.com/manifest.json" in config.manifest_sources
+        config = Config()
+        config.manifest_sources = []
+        
+        config.manifest_sources.append(ManifestSource(name="test1", url="https://test1.com"))
+        config.manifest_sources.append(ManifestSource(name="test2", url="https://test2.com"))
+        
         assert len(config.manifest_sources) == 2
         
-        result = config.remove_manifest_source("https://custom.com/manifest.json")
-        assert result is True
-        assert "https://custom.com/manifest.json" not in config.manifest_sources
-        
-        result = config.remove_manifest_source("https://nonexistent.com/manifest.json")
-        assert result is False
+        # Remove
+        config.manifest_sources = [ms for ms in config.manifest_sources if ms.name != "test1"]
+        assert len(config.manifest_sources) == 1
+        assert config.manifest_sources[0].name == "test2"
 
 
 class TestConfigManager:
     """Tests for ConfigManager."""
     
     @pytest.fixture
-    def temp_config_dir(self):
-        """Create a temporary config directory."""
+    def temp_dir(self):
+        """Create a temporary directory for config."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
     
     @pytest.fixture
-    def config_manager(self, temp_config_dir):
+    def config_manager(self, temp_dir):
         """Create a ConfigManager with temp directory."""
-        return ConfigManager(config_dir=temp_config_dir)
+        return ConfigManager(config_dir=temp_dir / "config")
     
     def test_load_creates_default_when_no_file(self, config_manager):
         """Test loading creates default config when no file exists."""
         config = config_manager.load()
         assert isinstance(config, Config)
-        # Config is created in memory but not saved to disk until save() is called
-        assert config_manager.config is not None
-        assert config_manager.config.download_dir == str(Path.home() / "Downloads" / "ObtainHub")
-    
-    def test_load_existing_config(self, config_manager, temp_config_dir):
-        """Test loading existing config file."""
-        config_file = temp_config_dir / "config.json"
-        config_data = {
-            "download_dir": "/custom/path",
-            "auto_update": False,
-            "manifest_sources": ["https://custom.com/manifest.json"],
-        }
-        config_file.write_text(json.dumps(config_data))
-        
-        config = config_manager.load()
-        assert config.download_dir == "/custom/path"
-        assert config.auto_update is False
-        assert config.manifest_sources == ["https://custom.com/manifest.json"]
-    
-    def test_load_invalid_json(self, config_manager, temp_config_dir):
-        """Test loading invalid JSON falls back to defaults."""
-        config_file = temp_config_dir / "config.json"
-        config_file.write_text("{ invalid json }")
-        
-        config = config_manager.load()
-        assert isinstance(config, Config)
-        assert config.download_dir == str(Path.home() / "Downloads" / "ObtainHub")
-    
-    def test_save_config(self, config_manager, temp_config_dir):
-        """Test saving configuration."""
-        config_manager.config.download_dir = "/saved/path"
-        config_manager.config.auto_update = False
-        result = config_manager.save()
-        
-        assert result is True
+        assert config.github_token == ""
         assert config_manager.config_file.exists()
-        
-        # Verify saved content
-        saved_data = json.loads(config_manager.config_file.read_text())
-        assert saved_data["download_dir"] == "/saved/path"
-        assert saved_data["auto_update"] is False
     
-    def test_reset_config(self, config_manager):
-        """Test resetting configuration to defaults."""
-        config_manager.config.download_dir = "/custom/path"
-        config_manager.config.auto_update = False
+    def test_load_existing_config(self, config_manager):
+        """Test loading existing config file."""
+        # Create config file
+        config_manager.config_dir.mkdir(parents=True)
+        test_config = {
+            "github_token": "test-token",
+            "update_interval_hours": 12,
+        }
+        with open(config_manager.config_file, 'w') as f:
+            json.dump(test_config, f)
+        
+        config = config_manager.load()
+        assert config.github_token == "test-token"
+        assert config.update_interval_hours == 12
+    
+    def test_load_invalid_json(self, config_manager):
+        """Test loading invalid JSON raises error."""
+        config_manager.config_dir.mkdir(parents=True)
+        with open(config_manager.config_file, 'w') as f:
+            f.write("{ invalid json }")
+        
+        with pytest.raises(Exception):  # ConfigError
+            config_manager.load()
+    
+    def test_save_config(self, config_manager):
+        """Test saving config."""
+        config = config_manager.load()
+        config.github_token = "new-token"
         config_manager.save()
         
-        config = config_manager.reset()
-        assert config.download_dir == str(Path.home() / "Downloads" / "ObtainHub")
-        assert config.auto_update is True
+        # Reload and verify
+        new_manager = ConfigManager(config_dir=config_manager.config_dir)
+        new_config = new_manager.load()
+        assert new_config.github_token == "new-token"
+    
+    def test_reset_config(self, config_manager):
+        """Test resetting config to defaults."""
+        config = config_manager.load()
+        config.github_token = "test-token"
+        config_manager.save()
+        
+        config_manager.reset()
+        new_config = config_manager.load()
+        assert new_config.github_token == ""
     
     def test_get_set_config_values(self, config_manager):
-        """Test getting and setting individual config values."""
-        assert config_manager.get("auto_update") is True
-        assert config_manager.set("auto_update", False) is True
-        assert config_manager.get("auto_update") is False
+        """Test getting and setting config values."""
+        config_manager.load()
+        config_manager.set("github_token", "test-token")
+        assert config_manager.get("github_token") == "test-token"
         
-        # Unknown key
-        assert config_manager.set("unknown_key", "value") is False
+        config_manager.set("update_interval_hours", 6)
+        assert config_manager.get("update_interval_hours") == 6
     
-    def test_get_download_dir_creates_directory(self, config_manager, temp_config_dir):
-        """Test get_download_dir creates the directory."""
-        config_manager.config.download_dir = str(temp_config_dir / "downloads")
+    def test_get_download_dir_creates_directory(self, config_manager):
+        """Test get_download_dir creates directory."""
         download_dir = config_manager.get_download_dir()
         assert download_dir.exists()
         assert download_dir.is_dir()
+    
+    def test_add_manifest_source(self, config_manager):
+        """Test adding manifest source."""
+        config_manager.add_manifest_source("test", "https://test.com/manifest.json")
+        config = config_manager.load()
+        assert len(config.manifest_sources) == 2  # default + test
+        assert any(ms.name == "test" for ms in config.manifest_sources)
+    
+    def test_remove_manifest_source(self, config_manager):
+        """Test removing manifest source."""
+        config_manager.add_manifest_source("test", "https://test.com/manifest.json")
+        assert config_manager.remove_manifest_source("test") is True
+        assert config_manager.remove_manifest_source("nonexistent") is False
+    
+    def test_get_enabled_manifest_sources(self, config_manager):
+        """Test getting enabled manifest sources."""
+        config_manager.add_manifest_source("disabled", "https://disabled.com", enabled=False)
+        config_manager.add_manifest_source("enabled", "https://enabled.com", enabled=True)
+        sources = config_manager.get_enabled_manifest_sources()
+        assert len(sources) == 2  # default + enabled
+        assert all(s.enabled for s in sources)
+    
+    def test_validation_errors(self, config_manager):
+        """Test config validation."""
+        # Test invalid update interval
+        config = Config(update_interval_hours=0)
+        errors = config.validate()
+        assert any("update_interval_hours" in e for e in errors)
+        
+        # Test invalid log level
+        config = Config(log_level="INVALID")
+        errors = config.validate()
+        assert any("log_level" in e for e in errors)
+        
+        # Test invalid preferred_arch
+        config = Config(preferred_arch="invalid")
+        errors = config.validate()
+        assert any("preferred_arch" in e for e in errors)
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+class TestManifestSource:
+    """Tests for ManifestSource."""
+    
+    def test_to_dict(self):
+        """Test serialization."""
+        ms = ManifestSource(name="test", url="https://test.com", enabled=True)
+        data = ms.to_dict()
+        assert data["name"] == "test"
+        assert data["url"] == "https://test.com"
+        assert data["enabled"] is True
+    
+    def test_from_dict(self):
+        """Test deserialization."""
+        data = {"name": "test", "url": "https://test.com", "enabled": False}
+        ms = ManifestSource.from_dict(data)
+        assert ms.name == "test"
+        assert ms.url == "https://test.com"
+        assert ms.enabled is False

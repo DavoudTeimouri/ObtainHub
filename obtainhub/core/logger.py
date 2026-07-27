@@ -1,164 +1,216 @@
-"""Structured console logger for ObtainHub."""
+"""Structured logging for ObtainHub."""
 
+import json
 import logging
+import logging.handlers
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional, TextIO
-from logging.handlers import RotatingFileHandler
+from typing import Any, Optional
 
 
 class LogLevel(Enum):
-    """Log levels for structured logging."""
+    """Log levels."""
     DEBUG = logging.DEBUG
     INFO = logging.INFO
     WARNING = logging.WARNING
     ERROR = logging.ERROR
-    CRITICAL = logging.CRITICAL
 
 
-class LogFormat:
-    """Log format constants."""
-    CONSOLE = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-    FILE = "%(asctime)s | %(levelname)-8s | %(name)s | %(funcName)s:%(lineno)d | %(message)s"
-    DATE = "%Y-%m-%d %H:%M:%S"
+@dataclass
+class LogRecord:
+    """Structured log record."""
+    timestamp: str
+    level: str
+    logger: str
+    message: str
+    context: Optional[dict[str, Any]] = None
+    exception: Optional[str] = None
+    
+    def to_json(self) -> str:
+        """Convert to JSON string."""
+        data: dict[str, Any] = {
+            "timestamp": self.timestamp,
+            "level": self.level,
+            "logger": self.logger,
+            "message": self.message,
+        }
+        if self.context:
+            data["context"] = self.context
+        if self.exception:
+            data["exception"] = self.exception
+        return json.dumps(data, ensure_ascii=False)
 
 
-class ObtainHubLogger:
-    """Structured console and file logger for ObtainHub."""
+class JSONFormatter(logging.Formatter):
+    """JSON log formatter."""
     
-    _instance: Optional["ObtainHubLogger"] = None
-    _logger: logging.Logger
-    
-    def __new__(cls) -> "ObtainHubLogger":
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-    
-    def __init__(self) -> None:
-        if hasattr(self, "_initialized"):
-            return
-        self._initialized = True
-        self._logger = logging.getLogger("obtainhub")
-        self._logger.setLevel(logging.DEBUG)
-        self._logger.propagate = False
-        self._console_handler: Optional[logging.StreamHandler] = None
-        self._file_handler: Optional[RotatingFileHandler] = None
-        self._console_level = LogLevel.INFO
-        self._file_level = LogLevel.DEBUG
-        self._setup_console_handler(sys.stdout)
-    
-    def _setup_console_handler(self, stream: TextIO = sys.stdout) -> None:
-        """Set up console handler with colored output."""
-        if self._console_handler:
-            self._logger.removeHandler(self._console_handler)
-        
-        self._console_handler = logging.StreamHandler(stream)
-        self._console_handler.setLevel(self._console_level.value)
-        formatter = logging.Formatter(LogFormat.CONSOLE, datefmt=LogFormat.DATE)
-        self._console_handler.setFormatter(formatter)
-        self._logger.addHandler(self._console_handler)
-    
-    def setup_file_logging(
-        self,
-        log_file: Path,
-        max_bytes: int = 10 * 1024 * 1024,  # 10 MB
-        backup_count: int = 5,
-        level: LogLevel = LogLevel.DEBUG,
-    ) -> None:
-        """Set up rotating file handler for persistent logging."""
-        if self._file_handler:
-            self._logger.removeHandler(self._file_handler)
-        
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        self._file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding="utf-8",
+    def format(self, record: logging.LogRecord) -> str:
+        log_record = LogRecord(
+            timestamp=datetime.utcnow().isoformat() + 'Z',
+            level=record.levelname,
+            logger=record.name,
+            message=record.getMessage(),
+            context=getattr(record, 'context', None),
+            exception=self.formatException(record.exc_info) if record.exc_info else None,
         )
-        self._file_handler.setLevel(level.value)
-        formatter = logging.Formatter(LogFormat.FILE, datefmt=LogFormat.DATE)
-        self._file_handler.setFormatter(formatter)
-        self._logger.addHandler(self._file_handler)
-        self._file_level = level
+        return log_record.to_json()
+
+
+class ConsoleFormatter(logging.Formatter):
+    """Console log formatter with colors."""
     
-    def set_console_level(self, level: LogLevel) -> None:
-        """Set console log level."""
-        self._console_level = level
-        if self._console_handler:
-            self._console_handler.setLevel(level.value)
+    COLORS = {
+        'DEBUG': '\033[36m',    # Cyan
+        'INFO': '\033[32m',     # Green
+        'WARNING': '\033[33m',  # Yellow
+        'ERROR': '\033[31m',    # Red
+        'RESET': '\033[0m',
+    }
     
-    def set_file_level(self, level: LogLevel) -> None:
-        """Set file log level."""
-        self._file_level = level
-        if self._file_handler:
-            self._file_handler.setLevel(level.value)
+    def __init__(self, use_colors: bool = True):
+        super().__init__()
+        self.use_colors = use_colors and sys.stderr.isatty()
     
-    def debug(self, msg: str, *args, **kwargs) -> None:
-        """Log debug message."""
-        self._logger.debug(msg, *args, **kwargs)
+    def format(self, record: logging.LogRecord) -> str:
+        color = self.COLORS.get(record.levelname, '') if self.use_colors else ''
+        reset = self.COLORS['RESET'] if self.use_colors else ''
+        
+        timestamp = datetime.fromtimestamp(record.created).strftime('%H:%M:%S')
+        level = f"{color}{record.levelname:8}{reset}"
+        logger_name = f"{record.name}:"
+        
+        msg = record.getMessage()
+        
+        # Add context if present
+        context = getattr(record, 'context', None)
+        if context:
+            ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
+            msg = f"{msg} [{ctx_str}]"
+        
+        return f"{timestamp} {level} {logger_name:<20} {msg}"
+
+
+class StructuredLogger:
+    """Structured logger with context support."""
     
-    def info(self, msg: str, *args, **kwargs) -> None:
-        """Log info message."""
-        self._logger.info(msg, *args, **kwargs)
+    def __init__(self, name: str, logger: logging.Logger):
+        self.name = name
+        self.logger = logger
+        self._context: dict[str, Any] = {}
     
-    def warning(self, msg: str, *args, **kwargs) -> None:
-        """Log warning message."""
-        self._logger.warning(msg, *args, **kwargs)
+    def bind(self, **kwargs) -> 'StructuredLogger':
+        """Create a new logger with additional context."""
+        new_logger = StructuredLogger(self.name, self.logger)
+        new_logger._context = {**self._context, **kwargs}
+        return new_logger
     
-    def error(self, msg: str, *args, **kwargs) -> None:
-        """Log error message."""
-        self._logger.error(msg, *args, **kwargs)
+    def _log(self, level: int, message: str, **kwargs):
+        """Internal log method."""
+        context = {**self._context, **kwargs}
+        extra = {'context': context} if context else {}
+        self.logger.log(level, message, extra=extra)
     
-    def critical(self, msg: str, *args, **kwargs) -> None:
-        """Log critical message."""
-        self._logger.critical(msg, *args, **kwargs)
+    def debug(self, message: str, **kwargs):
+        self._log(logging.DEBUG, message, **kwargs)
     
-    def exception(self, msg: str, *args, **kwargs) -> None:
+    def info(self, message: str, **kwargs):
+        self._log(logging.INFO, message, **kwargs)
+    
+    def warning(self, message: str, **kwargs):
+        self._log(logging.WARNING, message, **kwargs)
+    
+    def error(self, message: str, **kwargs):
+        self._log(logging.ERROR, message, **kwargs)
+    
+    def exception(self, message: str, **kwargs):
         """Log exception with traceback."""
-        self._logger.exception(msg, *args, **kwargs)
-    
-    def success(self, msg: str, *args, **kwargs) -> None:
-        """Log success message (info level with success prefix)."""
-        self._logger.info(f"✓ {msg}", *args, **kwargs)
-    
-    def info_verbose(self, msg: str, *args, **kwargs) -> None:
-        """Log info message only if verbose mode enabled."""
-        if self._console_level <= LogLevel.DEBUG:
-            self._logger.info(msg, *args, **kwargs)
-    
-    def progress(self, msg: str, *args, **kwargs) -> None:
-        """Log progress message without newline (for progress bars)."""
-        self._logger.info(msg, *args, **kwargs, extra={"end": "\r"})
-    
-    def section(self, title: str) -> None:
-        """Log a section header."""
-        self._logger.info(f"\n{'=' * 60}")
-        self._logger.info(f"  {title}")
-        self._logger.info(f"{'=' * 60}\n")
-    
-    def subsection(self, title: str) -> None:
-        """Log a subsection header."""
-        self._logger.info(f"\n--- {title} ---")
-
-
-def get_logger() -> ObtainHubLogger:
-    """Get the global ObtainHub logger instance."""
-    return ObtainHubLogger()
+        context = {**self._context, **kwargs}
+        extra = {'context': context} if context else {}
+        self.logger.exception(message, extra=extra)
 
 
 def setup_logging(
-    log_file: Optional[Path] = None,
-    console_level: LogLevel = LogLevel.INFO,
-    file_level: LogLevel = LogLevel.DEBUG,
-    verbose: bool = False,
-) -> ObtainHubLogger:
-    """Initialize and configure the global logger."""
-    logger = get_logger()
-    logger.set_console_level(LogLevel.DEBUG if verbose else console_level)
-    if log_file:
-        logger.setup_file_logging(log_file, level=file_level)
-    return logger
+    level: LogLevel = LogLevel.INFO,
+    log_dir: Optional[Path] = None,
+    console: bool = True,
+    json_file: bool = True,
+) -> None:
+    """Set up global logging configuration."""
+    
+    # Get log directory
+    if log_dir is None:
+        log_dir = Path.home() / ".local" / "share" / "obtainhub" / "logs"
+    
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level.value)
+    
+    # Clear existing handlers
+    root_logger.handlers.clear()
+    
+    # Console handler
+    if console:
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setLevel(level.value)
+        console_handler.setFormatter(ConsoleFormatter())
+        root_logger.addHandler(console_handler)
+    
+    # JSON file handler (rotating)
+    if json_file:
+        log_file = log_dir / "obtainhub.json"
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=5 * 1024 * 1024,  # 5 MB
+            backupCount=3,
+            encoding='utf-8',
+        )
+        file_handler.setLevel(level.value)
+        file_handler.setFormatter(JSONFormatter())
+        root_logger.addHandler(file_handler)
+    
+    # Human-readable file handler
+    log_file_txt = log_dir / "obtainhub.log"
+    txt_handler = logging.handlers.RotatingFileHandler(
+        log_file_txt,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding='utf-8',
+    )
+    txt_handler.setLevel(level.value)
+    txt_handler.setFormatter(ConsoleFormatter(use_colors=False))
+    root_logger.addHandler(txt_handler)
+
+
+def get_logger(name: str = "obtainhub") -> StructuredLogger:
+    """Get a structured logger instance."""
+    logger = logging.getLogger(name)
+    return StructuredLogger(name, logger)
+
+
+# Default logger
+_default_logger: Optional[StructuredLogger] = None
+
+
+def get_default_logger() -> StructuredLogger:
+    """Get the default logger."""
+    global _default_logger
+    if _default_logger is None:
+        _default_logger = get_logger("obtainhub")
+    return _default_logger
+
+
+__all__ = [
+    'LogLevel',
+    'LogRecord',
+    'JSONFormatter',
+    'ConsoleFormatter',
+    'StructuredLogger',
+    'setup_logging',
+    'get_logger',
+    'get_default_logger',
+]

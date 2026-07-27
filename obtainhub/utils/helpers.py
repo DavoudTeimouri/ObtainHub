@@ -1,330 +1,370 @@
-"""Utility functions for ObtainHub."""
+"""Utility helpers for ObtainHub (Windows x64 focus)."""
 
+import asyncio
 import hashlib
 import os
-import re
+import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlparse
+from typing import Optional, Tuple
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 
-from obtainhub.core.logger import get_logger
-
-
-logger = get_logger()
-
-
-def get_platform() -> str:
-    """Get the current platform identifier."""
-    if sys.platform.startswith("win"):
-        return "windows"
-    elif sys.platform.startswith("darwin"):
-        return "macos"
-    elif sys.platform.startswith("linux"):
-        return "linux"
-    return "unknown"
+from obtainhub.core.exceptions import DownloadError, DownloadChecksumError
 
 
 def is_windows() -> bool:
     """Check if running on Windows."""
-    return sys.platform.startswith("win")
+    return sys.platform == 'win32' or platform.system().lower() == 'windows'
 
 
 def is_admin() -> bool:
     """Check if running with administrator privileges."""
     try:
-        if is_windows():
-            import ctypes
-            return ctypes.windll.shell32.IsUserAnAdmin() != 0
-        else:
-            return os.geteuid() == 0
+        import ctypes
+        return ctypes.windll.shell32.IsUserAnAdmin()
     except Exception:
         return False
+
+
+def get_platform() -> str:
+    """Get platform identifier."""
+    if is_windows():
+        return "windows"
+    return sys.platform
+
+
+def get_architecture() -> str:
+    """Get system architecture."""
+    machine = platform.machine().lower()
+    if machine in ('amd64', 'x86_64'):
+        return 'x64'
+    elif machine in ('i386', 'i686', 'x86'):
+        return 'x86'
+    elif machine in ('arm64', 'aarch64'):
+        return 'arm64'
+    return machine
+
+
+def is_windows_x64() -> bool:
+    """Check if running on Windows x64."""
+    return is_windows() and get_architecture() == 'x64'
 
 
 def run_command(
     cmd: list[str],
-    capture: bool = True,
-    timeout: int = 60,
     cwd: Optional[Path] = None,
-    env: Optional[dict] = None,
-) -> tuple[int, str, str]:
-    """Run a command and return (returncode, stdout, stderr)."""
-    logger.debug(f"Running command: {' '.join(cmd)}")
+    timeout: int = 300,
+    capture: bool = True,
+) -> Tuple[int, str, str]:
+    """Run a command and return (exit_code, stdout, stderr)."""
     try:
         result = subprocess.run(
             cmd,
+            cwd=cwd,
+            timeout=timeout,
             capture_output=capture,
             text=True,
-            timeout=timeout,
-            cwd=cwd,
-            env=env,
-            shell=False,
+            encoding='utf-8',
+            errors='replace',
         )
         return result.returncode, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
-        logger.error(f"Command timed out after {timeout}s: {' '.join(cmd)}")
-        return -1, "", f"Timeout after {timeout}s"
+        return -1, "", f"Command timed out after {timeout}s"
     except Exception as e:
-        logger.error(f"Command failed: {e}")
         return -1, "", str(e)
 
 
-def run_command_async(
+async def run_command_async(
     cmd: list[str],
     cwd: Optional[Path] = None,
-    env: Optional[dict] = None,
-) -> subprocess.Popen:
-    """Run a command asynchronously and return the Popen object."""
-    logger.debug(f"Running async command: {' '.join(cmd)}")
-    creation_flags = 0
-    if is_windows():
-        creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    return subprocess.Popen(
-        cmd,
-        cwd=cwd,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-        creationflags=creation_flags,
-        close_fds=True,
-    )
+    timeout: int = 300,
+) -> Tuple[int, str, str]:
+    """Run a command asynchronously."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        return proc.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
+    except asyncio.TimeoutError:
+        return -1, "", f"Command timed out after {timeout}s"
+    except Exception as e:
+        return -1, "", str(e)
 
 
-def calculate_hash(filepath: Path, algorithm: str = "sha256") -> str:
-    """Calculate hash of a file."""
+def calculate_hash(file_path: Path, algorithm: str = 'sha256') -> str:
+    """Calculate file hash."""
     hash_obj = hashlib.new(algorithm)
-    with open(filepath, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
             hash_obj.update(chunk)
     return hash_obj.hexdigest()
 
 
-def verify_hash(filepath: Path, expected_hash: str, algorithm: str = "sha256") -> bool:
-    """Verify file hash matches expected value."""
-    actual_hash = calculate_hash(filepath, algorithm)
-    return actual_hash.lower() == expected_hash.lower()
+def verify_hash(file_path: Path, expected_hash: str, algorithm: str = 'sha256') -> bool:
+    """Verify file hash matches expected."""
+    actual = calculate_hash(file_path, algorithm)
+    return actual.lower() == expected_hash.lower()
 
 
-def sanitize_filename(filename: str) -> str:
-    """Sanitize a filename for safe filesystem usage."""
-    # Remove invalid characters
-    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename)
-    # Remove leading/trailing spaces and dots
-    sanitized = sanitized.strip(" .")
-    # Limit length
-    if len(sanitized) > 255:
-        name, ext = os.path.splitext(sanitized)
-        sanitized = name[: 255 - len(ext)] + ext
-    return sanitized or "unnamed"
-
-
-def parse_owner_repo(repo_string: str) -> tuple[str, str]:
-    """Parse 'owner/repo' string into (owner, repo)."""
-    parts = repo_string.split("/", 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        raise ValueError(f"Invalid repository format: {repo_string}. Expected 'owner/repo'")
-    return parts[0], parts[1]
-
-
-def format_size(size_bytes: int) -> str:
-    """Format bytes into human readable string."""
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if size_bytes < 1024.0:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024.0
-    return f"{size_bytes:.1f} PB"
-
-
-def format_duration(seconds: float) -> str:
-    """Format seconds into human readable duration."""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    minutes = seconds / 60
-    if minutes < 60:
-        return f"{minutes:.1f}m"
-    hours = minutes / 60
-    return f"{hours:.1f}h"
+def normalize_path(path: str) -> Path:
+    """Normalize and expand a path."""
+    return Path(path).expanduser().resolve()
 
 
 def ensure_dir(path: Path) -> Path:
-    """Ensure directory exists, create if needed."""
+    """Ensure directory exists."""
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def safe_remove(path: Path) -> bool:
-    """Safely remove a file or directory."""
+def parse_owner_repo(repo_str: str) -> Tuple[str, str]:
+    """Parse 'owner/repo' string into (owner, repo)."""
+    parts = repo_str.strip().split('/')
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(f"Invalid repository format: '{repo_str}'. Expected 'owner/repo'")
+    return parts[0], parts[1]
+
+
+def format_size(size_bytes: int) -> str:
+    """Format bytes as human-readable string."""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f} TB"
+
+
+def get_temp_dir() -> Path:
+    """Get system temp directory."""
+    return Path(tempfile.gettempdir()) / "obtainhub"
+
+
+def clean_temp_dir() -> None:
+    """Clean up ObtainHub temp directory."""
+    temp_dir = get_temp_dir()
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def download_file(
+    url: str,
+    dest_path: Path,
+    headers: Optional[dict] = None,
+    timeout: int = 300,
+    expected_hash: Optional[str] = None,
+    hash_algorithm: str = 'sha256',
+    progress_callback: Optional[callable] = None,
+) -> Path:
+    """Download a file with progress and optional hash verification."""
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    req_headers = {'User-Agent': 'ObtainHub/1.0'}
+    if headers:
+        req_headers.update(headers)
+    
+    req = Request(url, headers=req_headers)
+    
     try:
-        if path.is_dir():
-            shutil.rmtree(path)
-        else:
-            path.unlink(missing_ok=True)
-        return True
+        with urlopen(req, timeout=timeout) as response:
+            total = response.headers.get('Content-Length')
+            total = int(total) if total else 0
+            
+            downloaded = 0
+            chunk_size = 8192
+            
+            with open(dest_path, 'wb') as f:
+                while True:
+                    chunk = response.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    if progress_callback and total > 0:
+                        progress_callback(downloaded, total)
+            
+            if expected_hash:
+                if not verify_hash(dest_path, expected_hash, hash_algorithm):
+                    dest_path.unlink(missing_ok=True)
+                    raise DownloadChecksumError(
+                        f"Checksum mismatch for {dest_path.name}",
+                        details={'expected': expected_hash, 'algorithm': hash_algorithm}
+                    )
+            
+            return dest_path
+            
+    except HTTPError as e:
+        if dest_path.exists():
+            dest_path.unlink(missing_ok=True)
+        raise DownloadError(f"HTTP {e.code}: {e.reason}")
+    except URLError as e:
+        if dest_path.exists():
+            dest_path.unlink(missing_ok=True)
+        raise DownloadError(f"Network error: {e.reason}")
     except Exception as e:
-        logger.error(f"Failed to remove {path}: {e}")
-        return False
+        if dest_path.exists():
+            dest_path.unlink(missing_ok=True)
+        raise DownloadError(f"Download failed: {e}")
 
 
-def find_executable(name: str) -> Optional[Path]:
-    """Find an executable in PATH."""
-    path = shutil.which(name)
-    return Path(path) if path else None
-
-
-def get_app_data_dir(app_name: str = "ObtainHub") -> Path:
-    """Get application data directory."""
-    if is_windows():
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / app_name
-
-
-def get_config_dir(app_name: str = "ObtainHub") -> Path:
-    """Get configuration directory."""
-    if is_windows():
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / app_name
-
-
-def get_cache_dir(app_name: str = "ObtainHub") -> Path:
-    """Get cache directory."""
-    if is_windows():
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    else:
-        base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / app_name
-
-
-def is_valid_url(url: str) -> bool:
-    """Check if a string is a valid URL."""
-    try:
-        result = urlparse(url)
-        return all([result.scheme in ("http", "https"), result.netloc])
-    except Exception:
-        return False
-
-
-def parse_version(version: str) -> tuple[int, ...]:
-    """Parse version string into tuple of integers for comparison."""
-    # Remove leading 'v' if present
-    version = version.lstrip("v")
-    # Split by dots and convert to ints
-    parts = []
-    for part in version.split("."):
-        # Handle pre-release suffixes (e.g., "1.0.0-beta" -> "1.0.0")
-        part = re.split(r"[-+]", part)[0]
-        try:
-            parts.append(int(part))
-        except ValueError:
-            parts.append(0)
-    return tuple(parts)
-
-
-def compare_versions(v1: str, v2: str) -> int:
-    """Compare two version strings.
+def install_msi(msi_path: Path, silent: bool = True, args: Optional[list] = None) -> bool:
+    """Install an MSI package."""
+    if not msi_path.exists():
+        raise FileNotFoundError(f"MSI not found: {msi_path}")
     
-    Returns:
-        -1 if v1 < v2
-         0 if v1 == v2
-         1 if v1 > v2
-    """
-    p1 = parse_version(v1)
-    p2 = parse_version(v2)
-    # Pad shorter version with zeros
-    max_len = max(len(p1), len(p2))
-    p1 = p1 + (0,) * (max_len - len(p1))
-    p2 = p2 + (0,) * (max_len - len(p2))
+    cmd = ['msiexec', '/i', str(msi_path)]
+    if silent:
+        cmd.extend(['/quiet', '/norestart'])
+    if args:
+        cmd.extend(args)
     
-    if p1 < p2:
-        return -1
-    elif p1 > p2:
-        return 1
-    return 0
+    exit_code, stdout, stderr = run_command(cmd, timeout=600)
+    return exit_code == 0
 
 
-def is_newer_version(current: str, latest: str) -> bool:
-    """Check if latest version is newer than current."""
-    return compare_versions(latest, current) > 0
-
-
-def get_executable_path(name: str) -> Optional[Path]:
-    """Get full path to an executable in PATH."""
-    path = shutil.which(name)
-    return Path(path) if path else None
-
-
-def run_as_admin(cmd: list[str]) -> bool:
-    """Run a command with administrator privileges (Windows)."""
-    if not is_windows():
-        return False
+def install_exe(exe_path: Path, silent: bool = True, args: Optional[list] = None) -> bool:
+    """Install an EXE setup."""
+    if not exe_path.exists():
+        raise FileNotFoundError(f"EXE not found: {exe_path}")
     
-    try:
-        import ctypes
-        # Use ShellExecute with 'runas' verb
-        cmd_str = " ".join(f'"{arg}"' if " " in arg else arg for arg in cmd)
-        result = ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", "cmd.exe", f"/c {cmd_str}", None, 1
-        )
-        return result > 32
-    except Exception as e:
-        logger.error(f"Failed to run as admin: {e}")
-        return False
+    cmd = [str(exe_path)]
+    if silent:
+        # Common silent install flags
+        cmd.extend(['/S', '/quiet', '/silent', '--silent', '-s', '/VERYSILENT', '/SUPPRESSMSGBOXES'])
+    if args:
+        cmd.extend(args)
+    
+    exit_code, stdout, stderr = run_command(cmd, timeout=600)
+    return exit_code == 0
+
+
+def uninstall_msi(product_code: str, silent: bool = True) -> bool:
+    """Uninstall an MSI package by product code."""
+    cmd = ['msiexec', '/x', product_code]
+    if silent:
+        cmd.extend(['/quiet', '/norestart'])
+    
+    exit_code, stdout, stderr = run_command(cmd, timeout=300)
+    return exit_code == 0
+
+
+def find_uninstall_string(app_name: str) -> Optional[str]:
+    """Find uninstall command from registry."""
+    import winreg
+    
+    uninstall_keys = [
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    ]
+    
+    for root_key in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+        for subkey in uninstall_keys:
+            try:
+                with winreg.OpenKey(root_key, subkey) as key:
+                    for i in range(winreg.QueryInfoKey(key)[0]):
+                        try:
+                            subkey_name = winreg.EnumKey(key, i)
+                            with winreg.OpenKey(key, subkey_name) as app_key:
+                                display_name = winreg.QueryValueEx(app_key, "DisplayName")[0]
+                                if app_name.lower() in display_name.lower():
+                                    return winreg.QueryValueEx(app_key, "UninstallString")[0]
+                        except (OSError, WindowsError):
+                            continue
+            except (OSError, WindowsError):
+                continue
+    return None
 
 
 def get_installed_programs() -> list[dict]:
-    """Get list of installed programs from Windows registry."""
-    programs = []
-    if not is_windows():
-        return programs
-    
+    """Get list of installed programs from registry."""
     import winreg
     
-    reg_paths = [
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    programs = []
+    uninstall_keys = [
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
     ]
     
-    for hive, path in reg_paths:
-        try:
-            with winreg.OpenKey(hive, path) as key:
-                for i in range(winreg.QueryInfoKey(key)[0]):
-                    try:
-                        subkey_name = winreg.EnumKey(key, i)
-                        with winreg.OpenKey(key, subkey_name) as subkey:
-                            name = winreg.QueryValueEx(subkey, "DisplayName")[0]
-                            version = winreg.QueryValueEx(subkey, "DisplayVersion")[0] if winreg.QueryValueEx(subkey, "DisplayVersion") else ""
-                            publisher = winreg.QueryValueEx(subkey, "Publisher")[0] if winreg.QueryValueEx(subkey, "Publisher") else ""
-                            install_location = winreg.QueryValueEx(subkey, "InstallLocation")[0] if winreg.QueryValueEx(subkey, "InstallLocation") else ""
-                            uninstall_string = winreg.QueryValueEx(subkey, "UninstallString")[0] if winreg.QueryValueEx(subkey, "UninstallString") else ""
-                            programs.append({
-                                "name": name,
-                                "version": version,
-                                "publisher": publisher,
-                                "install_location": install_location,
-                                "uninstall_string": uninstall_string,
-                                "registry_key": subkey_name,
-                            })
-                    except (OSError, WindowsError):
-                        continue
-        except (OSError, WindowsError):
-            continue
-    
+    for root_key in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+        for subkey in uninstall_keys:
+            try:
+                with winreg.OpenKey(root_key, subkey) as key:
+                    for i in range(winreg.QueryInfoKey(key)[0]):
+                        try:
+                            subkey_name = winreg.EnumKey(key, i)
+                            with winreg.OpenKey(key, subkey_name) as app_key:
+                                try:
+                                    display_name = winreg.QueryValueEx(app_key, "DisplayName")[0]
+                                    version = winreg.QueryValueEx(app_key, "DisplayVersion")[0] if "DisplayVersion" in [winreg.EnumValue(app_key, j)[0] for j in range(winreg.QueryInfoKey(app_key)[1])] else ""
+                                    publisher = winreg.QueryValueEx(app_key, "Publisher")[0] if "Publisher" in [winreg.EnumValue(app_key, j)[0] for j in range(winreg.QueryInfoKey(app_key)[1])] else ""
+                                    uninstall_string = winreg.QueryValueEx(app_key, "UninstallString")[0] if "UninstallString" in [winreg.EnumValue(app_key, j)[0] for j in range(winreg.QueryInfoKey(app_key)[1])] else ""
+                                    programs.append({
+                                        "name": display_name,
+                                        "version": version,
+                                        "publisher": publisher,
+                                        "uninstall_string": uninstall_string,
+                                        "registry_key": subkey_name,
+                                    })
+                                except (OSError, WindowsError):
+                                    continue
+                        except (OSError, WindowsError):
+                            continue
+            except (OSError, WindowsError):
+                continue
     return programs
 
 
-def find_installed_app(name: str) -> Optional[dict]:
-    """Find an installed application by name."""
-    programs = get_installed_programs()
-    name_lower = name.lower()
-    for prog in programs:
-        if name_lower in prog["name"].lower():
-            return prog
-    return None
+def extract_zip(zip_path: Path, dest_dir: Path) -> Path:
+    """Extract ZIP archive."""
+    import zipfile
+    
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        zf.extractall(dest_dir)
+    
+    return dest_dir
+
+
+def is_portable_app(path: Path) -> bool:
+    """Check if a path looks like a portable app (no installer)."""
+    # Check for common portable indicators
+    if path.suffix.lower() == '.exe':
+        # Single exe in a folder might be portable
+        pass
+    return False
+
+
+__all__ = [
+    'is_windows',
+    'is_admin',
+    'get_platform',
+    'get_architecture',
+    'is_windows_x64',
+    'run_command',
+    'run_command_async',
+    'calculate_hash',
+    'verify_hash',
+    'normalize_path',
+    'ensure_dir',
+    'parse_owner_repo',
+    'format_size',
+    'get_temp_dir',
+    'clean_temp_dir',
+    'download_file',
+    'install_msi',
+    'install_exe',
+    'uninstall_msi',
+    'find_uninstall_string',
+    'get_installed_programs',
+    'extract_zip',
+    'is_portable_app',
+]

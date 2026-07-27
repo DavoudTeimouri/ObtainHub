@@ -1,403 +1,407 @@
 """Tests for self_updater module."""
 
-import json
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 
-from obtainhub.core.self_updater import ReleaseInfo, SelfUpdater, check_and_update
-from obtainhub.core.exceptions import SelfUpdateFailedError, NetworkError
+from obtainhub.core.asset_matcher import (
+    AssetInfo,
+    Architecture,
+    InstallerType,
+    parse_asset,
+    detect_architecture,
+    detect_installer_type,
+    filter_windows_x64_installers,
+    find_best_installer,
+    find_zip_assets,
+    get_system_architecture,
+    is_windows_x64,
+    decide_download_action,
+    DownloadDecision,
+)
+from obtainhub.core.self_updater import (
+    ReleaseInfo,
+    SelfUpdater,
+    check_and_update,
+)
+from obtainhub.core.exceptions import SelfUpdateNotNeededError
 
 
-class TestReleaseInfo:
-    """Tests for ReleaseInfo dataclass."""
-
-    def test_properties(self):
-        """Test ReleaseInfo properties."""
-        assets = [
-            {"name": "obtainhub-1.0.0.msi", "browser_download_url": "https://example.com/obtainhub-1.0.0.msi"},
-            {"name": "obtainhub-1.0.0.exe", "browser_download_url": "https://example.com/obtainhub-1.0.0.exe"},
-            {"name": "source.tar.gz", "browser_download_url": "https://example.com/source.tar.gz"},
-        ]
-
-        release = ReleaseInfo(
-            version="1.0.0",
-            name="Release 1.0.0",
-            body="Release notes",
-            prerelease=False,
-            draft=False,
-            published_at="2024-01-01T00:00:00Z",
-            html_url="https://github.com/ObtainHub/ObtainHub/releases/tag/v1.0.0",
-            assets=assets,
+class TestAssetMatcher:
+    """Tests for asset matching and filtering."""
+    
+    def test_detect_architecture_x64(self):
+        """Test x64 architecture detection."""
+        assert detect_architecture("app-x64.msi") == Architecture.X64
+        assert detect_architecture("app_amd64.exe") == Architecture.X64
+        assert detect_architecture("app-win64.zip") == Architecture.X64
+        assert detect_architecture("app-64.msi") == Architecture.X64
+        assert detect_architecture("app_x64_setup.exe") == Architecture.X64
+    
+    def test_detect_architecture_x86(self):
+        """Test x86 architecture detection."""
+        assert detect_architecture("app-x86.msi") == Architecture.X86
+        assert detect_architecture("app_win32.exe") == Architecture.X86
+        assert detect_architecture("app-32bit.zip") == Architecture.X86
+        assert detect_architecture("app-32.msi") == Architecture.X86
+    
+    def test_detect_architecture_arm64(self):
+        """Test ARM64 architecture detection."""
+        assert detect_architecture("app-arm64.msi") == Architecture.ARM64
+        assert detect_architecture("app_aarch64.exe") == Architecture.ARM64
+    
+    def test_detect_architecture_unknown(self):
+        """Test unknown architecture."""
+        assert detect_architecture("app.msi") == Architecture.UNKNOWN
+        assert detect_architecture("random_file.txt") == Architecture.UNKNOWN
+    
+    def test_detect_installer_type_msi(self):
+        """Test MSI detection."""
+        assert detect_installer_type("app.msi") == InstallerType.MSI
+        assert detect_installer_type("APP.MSI") == InstallerType.MSI
+    
+    def test_detect_installer_type_exe_setup(self):
+        """Test Setup.exe detection."""
+        assert detect_installer_type("app-setup.exe") == InstallerType.EXE_SETUP
+        assert detect_installer_type("app_setup.exe") == InstallerType.EXE_SETUP
+        assert detect_installer_type("app-install.exe") == InstallerType.EXE_SETUP
+        assert detect_installer_type("app_install.exe") == InstallerType.EXE_SETUP
+        assert detect_installer_type("setup.exe") == InstallerType.EXE_SETUP
+        assert detect_installer_type("install.exe") == InstallerType.EXE_SETUP
+    
+    def test_detect_installer_type_zip(self):
+        """Test ZIP detection."""
+        assert detect_installer_type("app.zip") == InstallerType.ZIP_PORTABLE
+        assert detect_installer_type("app-portable.zip") == InstallerType.ZIP_PORTABLE
+        assert detect_installer_type("app.ZIP") == InstallerType.ZIP_PORTABLE
+    
+    def test_detect_installer_type_unknown(self):
+        """Test unknown type."""
+        assert detect_installer_type("app.tar.gz") == InstallerType.UNKNOWN
+        assert detect_installer_type("app.dmg") == InstallerType.UNKNOWN
+    
+    def test_parse_asset(self):
+        """Test parsing asset into AssetInfo."""
+        asset = parse_asset(
+            asset_name="MyApp-x64-setup.exe",
+            asset_url="https://github.com/owner/repo/releases/download/v1.0.0/MyApp-x64-setup.exe",
+            asset_size=1024000,
+            is_prerelease=False,
+            version="1.0.0"
         )
-
-        assert release.installer_asset is not None
-        assert release.installer_asset["name"] == "obtainhub-1.0.0.msi"
-        assert release.installer_download_url == "https://example.com/obtainhub-1.0.0.msi"
-        assert release.installer_filename == "obtainhub-1.0.0.msi"
-
-    def test_no_installer_asset(self):
-        """Test when no installer asset is present."""
-        assets = [
-            {"name": "source.tar.gz", "browser_download_url": "https://example.com/source.tar.gz"},
-            {"name": "source.zip", "browser_download_url": "https://example.com/source.zip"},
-        ]
-
-        release = ReleaseInfo(
-            version="1.0.0",
-            name="Release 1.0.0",
-            body="",
-            prerelease=False,
-            draft=False,
-            published_at="2024-01-01T00:00:00Z",
-            html_url="https://github.com/ObtainHub/ObtainHub/releases/tag/v1.0.0",
-            assets=assets,
+        
+        assert asset.name == "MyApp-x64-setup.exe"
+        assert asset.installer_type == InstallerType.EXE_SETUP
+        assert asset.architecture == Architecture.X64
+        assert asset.is_prerelease is False
+        assert asset.version == "1.0.0"
+        assert asset.is_windows_x64_installer is True
+    
+    def test_parse_asset_msi(self):
+        """Test parsing MSI asset."""
+        asset = parse_asset(
+            asset_name="MyApp-x64.msi",
+            asset_url="https://example.com/MyApp-x64.msi",
+            asset_size=5000000,
+            is_prerelease=True,
+            version="2.0.0-beta"
         )
-
-        assert release.installer_asset is None
-        assert release.installer_download_url is None
-        assert release.installer_filename is None
+        
+        assert asset.installer_type == InstallerType.MSI
+        assert asset.architecture == Architecture.X64
+        assert asset.is_prerelease is True
+        assert asset.is_windows_x64_installer is True
+    
+    def test_parse_asset_zip(self):
+        """Test parsing ZIP asset."""
+        asset = parse_asset(
+            asset_name="MyApp-portable.zip",
+            asset_url="https://example.com/MyApp-portable.zip",
+            asset_size=2000000,
+            is_prerelease=False,
+            version="1.0.0"
+        )
+        
+        assert asset.installer_type == InstallerType.ZIP_PORTABLE
+        assert asset.is_zip_portable is True
+        assert asset.is_windows_x64_installer is False
+    
+    def test_filter_windows_x64_installers(self):
+        """Test filtering for Windows x64 installers."""
+        assets = [
+            AssetInfo("a", "u", 1, InstallerType.MSI, Architecture.X64, False, "1.0"),
+            AssetInfo("b", "u", 1, InstallerType.EXE_SETUP, Architecture.X64, False, "1.0"),
+            AssetInfo("c", "u", 1, InstallerType.ZIP_PORTABLE, Architecture.X64, False, "1.0"),
+            AssetInfo("d", "u", 1, InstallerType.MSI, Architecture.X86, False, "1.0"),
+            AssetInfo("e", "u", 1, InstallerType.MSI, Architecture.X64, True, "1.0"),  # prerelease
+        ]
+        
+        # Without prerelease
+        filtered = filter_windows_x64_installers(assets, allow_prerelease=False)
+        assert len(filtered) == 2
+        assert all(a.architecture == Architecture.X64 for a in filtered)
+        assert all(a.installer_type in (InstallerType.MSI, InstallerType.EXE_SETUP) for a in filtered)
+        
+        # With prerelease
+        filtered = filter_windows_x64_installers(assets, allow_prerelease=True)
+        assert len(filtered) == 3
+    
+    def test_find_best_installer_prefers_msi(self):
+        """Test that MSI is preferred over EXE."""
+        assets = [
+            AssetInfo("app-setup.exe", "u", 1, InstallerType.EXE_SETUP, Architecture.X64, False, "1.0"),
+            AssetInfo("app.msi", "u", 1, InstallerType.MSI, Architecture.X64, False, "1.0"),
+        ]
+        
+        best = find_best_installer(assets)
+        assert best is not None
+        assert best.installer_type == InstallerType.MSI
+        assert best.name == "app.msi"
+    
+    def test_find_best_installer_returns_none_when_no_match(self):
+        """Test returning None when no Windows x64 installer."""
+        assets = [
+            AssetInfo("app.zip", "u", 1, InstallerType.ZIP_PORTABLE, Architecture.X64, False, "1.0"),
+            AssetInfo("app.msi", "u", 1, InstallerType.MSI, Architecture.X86, False, "1.0"),
+        ]
+        
+        best = find_best_installer(assets)
+        assert best is None
+    
+    def test_find_zip_assets(self):
+        """Test finding ZIP assets."""
+        assets = [
+            AssetInfo("app.zip", "u", 1, InstallerType.ZIP_PORTABLE, Architecture.X64, False, "1.0"),
+            AssetInfo("app-portable.zip", "u", 1, InstallerType.ZIP_PORTABLE, Architecture.X86, False, "1.0"),
+            AssetInfo("app.msi", "u", 1, InstallerType.MSI, Architecture.X64, False, "1.0"),
+        ]
+        
+        zips = find_zip_assets(assets)
+        assert len(zips) == 2
+        assert all(z.installer_type == InstallerType.ZIP_PORTABLE for z in zips)
+    
+    def test_decide_download_action_installer_found(self):
+        """Test decision when installer found."""
+        assets = [
+            AssetInfo("app.msi", "u", 1, InstallerType.MSI, Architecture.X64, False, "1.0"),
+        ]
+        
+        decision = decide_download_action(assets, allow_prerelease=False, requires_manual_uninstall=False)
+        
+        assert decision.action == 'install'
+        assert decision.asset is not None
+        assert decision.asset.name == "app.msi"
+        assert decision.requires_confirmation is False
+    
+    def test_decide_download_action_manual_uninstall(self):
+        """Test decision when manual uninstall required."""
+        assets = [
+            AssetInfo("app.msi", "u", 1, InstallerType.MSI, Architecture.X64, False, "1.0"),
+        ]
+        
+        decision = decide_download_action(assets, allow_prerelease=False, requires_manual_uninstall=True)
+        
+        assert decision.action == 'manual_uninstall'
+        assert decision.requires_confirmation is True
+        assert "manual uninstallation" in decision.message
+        assert "Auto-Uninstall" in decision.confirmation_prompt
+    
+    def test_decide_download_action_zip_fallback(self):
+        """Test ZIP download-only fallback."""
+        assets = [
+            AssetInfo("app-portable.zip", "u", 1, InstallerType.ZIP_PORTABLE, Architecture.X64, False, "1.0"),
+        ]
+        
+        decision = decide_download_action(assets, allow_prerelease=False)
+        
+        assert decision.action == 'download_only'
+        assert decision.asset is not None
+        assert decision.asset.installer_type == InstallerType.ZIP_PORTABLE
+        assert "No Windows x64 installer" in decision.message
+    
+    def test_decide_download_action_skip(self):
+        """Test skip when no suitable assets."""
+        assets = [
+            AssetInfo("app.dmg", "u", 1, InstallerType.UNKNOWN, Architecture.UNKNOWN, False, "1.0"),
+        ]
+        
+        decision = decide_download_action(assets)
+        
+        assert decision.action == 'skip'
+        assert decision.asset is None
+    
+    def test_is_windows_x64(self):
+        """Test platform detection."""
+        # This will depend on actual platform, just verify it runs
+        result = is_windows_x64()
+        assert isinstance(result, bool)
 
 
 class TestSelfUpdater:
-    """Tests for SelfUpdater class."""
-
+    """Tests for SelfUpdater."""
+    
     @pytest.fixture
     def mock_config(self):
-        """Create mock config manager."""
-        config = Mock()
-        config.config = Mock()
-        config.config.skip_self_update = False
-        config.config.github_token = None
-        return config
-
-    def test_init(self):
-        """Test SelfUpdater initialization."""
-        updater = SelfUpdater(
-            current_version="1.0.0",
-            skip_check=True,
-            github_token="test-token",
-            timeout=60,
-        )
-        assert updater.current_version == "1.0.0"
-        assert updater.skip_check is True
-        assert updater.github_token == "test-token"
-        assert updater.timeout == 60
-
-    def test_version_comparison(self):
-        """Test version comparison logic."""
-        updater = SelfUpdater(current_version="1.0.0")
-
-        assert updater._is_newer_version("2.0.0") is True
-        assert updater._is_newer_version("1.1.0") is True
-        assert updater._is_newer_version("1.0.1") is True
-        assert updater._is_newer_version("1.0.0") is False
-        assert updater._is_newer_version("0.9.0") is False
-        assert updater._is_newer_version("v2.0.0") is True
-        assert updater._is_newer_version("1.10.0") is True
-
-    def test_compare_versions(self):
-        """Test version comparison helper."""
-        updater = SelfUpdater()
-
-        assert updater._compare_versions("1.0.0", "2.0.0") == -1
-        assert updater._compare_versions("2.0.0", "1.0.0") == 1
-        assert updater._compare_versions("1.0.0", "1.0.0") == 0
-        assert updater._compare_versions("1.10.0", "1.2.0") == 1
-        assert updater._compare_versions("v1.0.0", "1.0.0") == 0
-        assert updater._compare_versions("1.0.0-beta", "1.0.0") == 0
-
-    def test_check_for_update_skipped(self):
-        """Test check_for_update when skip_check is True."""
-        updater = SelfUpdater(current_version="1.0.0", skip_check=True)
-        result, release = updater.check_for_update()
-
-        assert result is False
-        assert release is None
-
-    @patch("obtainhub.core.self_updater.urlopen")
-    def test_fetch_latest_release(self, mock_urlopen):
-        """Test fetching latest release from GitHub API."""
-        mock_response = Mock()
-        mock_response.status = 200
-        mock_response.read.return_value = json.dumps({
-            "tag_name": "v2.0.0",
-            "name": "Release 2.0.0",
+        """Mock config."""
+        with patch('obtainhub.core.self_updater.get_config') as mock:
+            config = Mock()
+            config.github_token = ""
+            config.auto_update = True
+            config.skip_self_update = False
+            config.auto_confirm_prerelease = False
+            config.get_download_dir.return_value = Path("/tmp/downloads")
+            mock.return_value = config
+            yield config
+    
+    def test_normalize_version(self, mock_config):
+        """Test version normalization."""
+        updater = SelfUpdater("1.0.0")
+        v1 = updater._normalize_version("1.0.0")
+        v2 = updater._normalize_version("v1.0.0")
+        v3 = updater._normalize_version("V2.5.3")
+        
+        assert v1 == v2
+        assert v3 == (2, 5, 3)
+    
+    def test_compare_versions(self, mock_config):
+        """Test version comparison."""
+        updater = SelfUpdater("1.0.0")
+        
+        assert updater._compare_versions((1, 0, 0), (1, 0, 0)) == 0
+        assert updater._compare_versions((1, 0, 0), (2, 0, 0)) == -1
+        assert updater._compare_versions((2, 0, 0), (1, 0, 0)) == 1
+        assert updater._compare_versions((1, 1, 0), (1, 0, 0)) == 1
+        assert updater._compare_versions((1, 0, 1), (1, 0, 0)) == 1
+    
+    def test_compare_versions_prerelease(self, mock_config):
+        """Test version comparison with prerelease."""
+        updater = SelfUpdater("1.0.0")
+        
+        v1 = updater._normalize_version("1.0.0")
+        v2 = updater._normalize_version("1.0.0-alpha")
+        
+        # 1.0.0 > 1.0.0-alpha
+        assert updater._compare_versions(v1, v2) == 1
+        assert updater._compare_versions(v2, v1) == -1
+    
+    @patch('obtainhub.core.self_updater.SelfUpdater._make_request')
+    def test_fetch_latest_release(self, mock_request, mock_config):
+        """Test fetching latest release."""
+        mock_request.return_value = {
+            "tag_name": "v1.0.0",
+            "name": "Release 1.0.0",
             "body": "Release notes",
             "prerelease": False,
             "draft": False,
             "published_at": "2024-01-01T00:00:00Z",
-            "html_url": "https://github.com/ObtainHub/ObtainHub/releases/tag/v2.0.0",
+            "html_url": "https://github.com/ObtainHub/ObtainHub/releases/tag/v1.0.0",
             "assets": [
-                {"name": "obtainhub-2.0.0.msi", "browser_download_url": "https://example.com/obtainhub-2.0.0.msi"}
+                {
+                    "name": "ObtainHub-x64.msi",
+                    "browser_download_url": "https://example.com/ObtainHub-x64.msi",
+                    "size": 1000000,
+                }
             ],
-        }).encode()
-        mock_urlopen.return_value.__enter__.return_value = mock_response
-
-        updater = SelfUpdater(current_version="1.0.0")
-        release = updater._fetch_latest_release()
-
-        assert release.version == "2.0.0"
-        assert release.name == "Release 2.0.0"
-        assert release.installer_filename == "obtainhub-2.0.0.msi"
-
-    @patch("obtainhub.core.self_updater.urlopen")
-    def test_fetch_latest_release_404(self, mock_urlopen):
-        """Test fetch latest release when repo not found."""
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.HTTPError(
-            "https://api.github.com/repos/ObtainHub/ObtainHub/releases/latest",
-            404, "Not Found", {}, None
-        )
-
-        updater = SelfUpdater(current_version="1.0.0")
-
-        with pytest.raises(NetworkError) as exc_info:
-            updater._fetch_latest_release()
-        assert "not found" in str(exc_info.value).lower()
-
-    @patch("obtainhub.core.self_updater.urlopen")
-    def test_fetch_latest_release_rate_limit(self, mock_urlopen):
-        """Test fetch latest release when rate limited."""
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.HTTPError(
-            "https://api.github.com/repos/ObtainHub/ObtainHub/releases/latest",
-            403, "Forbidden", {}, None
-        )
-
-        updater = SelfUpdater(current_version="1.0.0")
-
-        with pytest.raises(NetworkError) as exc_info:
-            updater._fetch_latest_release()
-        assert "rate limit" in str(exc_info.value).lower() or "forbidden" in str(exc_info.value).lower()
-
-    @patch("obtainhub.core.self_updater.urlopen")
-    def test_download_installer(self, mock_urlopen):
-        """Test downloading installer."""
-        mock_response = Mock()
-        mock_response.status = 200
-        mock_response.headers = {"Content-Length": "1024"}
-        mock_response.read.side_effect = [b"chunk1", b"chunk2", b""]
-        mock_urlopen.return_value.__enter__.return_value = mock_response
-
-        release = ReleaseInfo(
-            version="2.0.0",
-            name="Release 2.0.0",
+        }
+        
+        updater = SelfUpdater("0.9.0")
+        release = updater.fetch_latest_release()
+        
+        assert release.version == "1.0.0"
+        assert release.prerelease is False
+        assert len(release.assets) == 1
+        assert release.assets[0].name == "ObtainHub-x64.msi"
+        assert release.assets[0].is_windows_x64_installer is True
+    
+    @patch('obtainhub.core.self_updater.SelfUpdater.fetch_latest_release')
+    @patch('obtainhub.core.self_updater.is_windows_x64')
+    def test_check_for_update_no_update_needed(self, mock_is_windows, mock_fetch, mock_config):
+        """Test check_for_update when already on latest."""
+        mock_is_windows.return_value = True
+        mock_fetch.return_value = ReleaseInfo(
+            version="1.0.0",
+            name="Release 1.0.0",
+            tag_name="v1.0.0",
             body="",
             prerelease=False,
             draft=False,
-            published_at="2024-01-01T00:00:00Z",
-            html_url="https://github.com/ObtainHub/ObtainHub/releases/tag/v2.0.0",
-            assets=[{"name": "obtainhub-2.0.0.msi", "browser_download_url": "https://example.com/obtainhub-2.0.0.msi"}],
+            published_at="",
+            html_url="",
+            assets=[
+                AssetInfo("ObtainHub-x64.msi", "u", 1, InstallerType.MSI, Architecture.X64, False, "1.0.0"),
+            ],
         )
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dest_dir = Path(tmpdir)
-            updater = SelfUpdater(current_version="1.0.0")
-            installer_path = updater.download_installer(release, dest_dir)
-
-            assert installer_path.exists()
-            assert installer_path.name == "obtainhub-2.0.0.msi"
-
-    @patch("obtainhub.core.self_updater.urlopen")
-    def test_download_installer_failure(self, mock_urlopen):
-        """Test download installer failure handling."""
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.URLError("Connection failed")
-
-        release = ReleaseInfo(
-            version="2.0.0",
-            name="Release 2.0.0",
+        
+        updater = SelfUpdater("1.0.0")
+        
+        with pytest.raises(SelfUpdateNotNeededError):
+            updater.check_for_update()
+    
+    @patch('obtainhub.core.self_updater.SelfUpdater.fetch_latest_release')
+    def test_check_for_update_prerelease_skipped(self, mock_fetch, mock_config):
+        """Test prerelease is skipped by default."""
+        mock_fetch.return_value = ReleaseInfo(
+            version="2.0.0-beta",
+            name="Release 2.0.0-beta",
+            tag_name="v2.0.0-beta",
+            body="",
+            prerelease=True,
+            draft=False,
+            published_at="",
+            html_url="",
+            assets=[],
+        )
+        
+        updater = SelfUpdater("1.0.0")
+        result = updater.check_for_update(allow_prerelease=False)
+        
+        assert result is None
+    
+    @patch('obtainhub.core.self_updater.SelfUpdater.fetch_latest_release')
+    @patch('obtainhub.core.self_updater.is_windows_x64')
+    def test_check_for_update_prerelease_allowed(self, mock_is_windows, mock_fetch, mock_config):
+        """Test prerelease is allowed when flag set."""
+        mock_is_windows.return_value = True
+        mock_fetch.return_value = ReleaseInfo(
+            version="2.0.0-beta",
+            name="Release 2.0.0-beta",
+            tag_name="v2.0.0-beta",
+            body="",
+            prerelease=True,
+            draft=False,
+            published_at="",
+            html_url="",
+            assets=[
+                AssetInfo("ObtainHub-x64.msi", "u", 1, InstallerType.MSI, Architecture.X64, True, "2.0.0-beta"),
+            ],
+        )
+        
+        updater = SelfUpdater("1.0.0")
+        result = updater.check_for_update(allow_prerelease=True)
+        
+        assert result is not None
+        assert result.version == "2.0.0-beta"
+        assert result.prerelease is True
+    
+    @patch('obtainhub.core.self_updater.SelfUpdater.fetch_latest_release')
+    def test_check_for_update_no_installer(self, mock_fetch, mock_config):
+        """Test when no Windows x64 installer in release."""
+        mock_fetch.return_value = ReleaseInfo(
+            version="1.0.0",
+            name="Release 1.0.0",
+            tag_name="v1.0.0",
             body="",
             prerelease=False,
             draft=False,
-            published_at="2024-01-01T00:00:00Z",
-            html_url="https://github.com/ObtainHub/ObtainHub/releases/tag/v2.0.0",
-            assets=[{"name": "obtainhub-2.0.0.msi", "browser_download_url": "https://example.com/obtainhub-2.0.0.msi"}],
+            published_at="",
+            html_url="",
+            assets=[
+                AssetInfo("ObtainHub.dmg", "u", 1, InstallerType.UNKNOWN, Architecture.UNKNOWN, False, "1.0.0"),
+            ],
         )
-
-        updater = SelfUpdater(current_version="1.0.0")
-
-        with pytest.raises(SelfUpdateFailedError) as exc_info:
-            updater.download_installer(release, Path("/tmp"))
-        assert "Download failed" in str(exc_info.value)
-
-    def test_download_installer_no_asset(self):
-        """Test download installer when no installer asset."""
-        release = ReleaseInfo(
-            version="2.0.0",
-            name="Release 2.0.0",
-            body="",
-            prerelease=False,
-            draft=False,
-            published_at="2024-01-01T00:00:00Z",
-            html_url="https://github.com/ObtainHub/ObtainHub/releases/tag/v2.0.0",
-            assets=[{"name": "source.tar.gz", "browser_download_url": "https://example.com/source.tar.gz"}],
-        )
-
-        updater = SelfUpdater(current_version="1.0.0")
-
-        with pytest.raises(SelfUpdateFailedError) as exc_info:
-            updater.download_installer(release, Path("/tmp"))
-        assert "No Windows installer found" in str(exc_info.value)
-
-    @patch("obtainhub.core.self_updater.subprocess.Popen")
-    def test_execute_installer_msi(self, mock_popen):
-        """Test executing MSI installer."""
-        mock_process = Mock()
-        mock_popen.return_value = mock_process
-
-        updater = SelfUpdater(current_version="1.0.0")
-
-        with tempfile.NamedTemporaryFile(suffix=".msi", delete=False) as f:
-            installer_path = Path(f.name)
-
-        try:
-            result = updater.execute_installer(installer_path)
-            assert result is True
-            mock_popen.assert_called_once()
-            call_args = mock_popen.call_args[0][0]
-            assert call_args[0] == "msiexec.exe"
-            assert "/i" in call_args
-            assert "/quiet" in call_args
-            assert "/norestart" in call_args
-        finally:
-            installer_path.unlink(missing_ok=True)
-
-    @patch("obtainhub.core.self_updater.subprocess.Popen")
-    def test_execute_installer_exe(self, mock_popen):
-        """Test executing EXE installer."""
-        mock_process = Mock()
-        mock_popen.return_value = mock_process
-
-        updater = SelfUpdater(current_version="1.0.0")
-
-        with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as f:
-            installer_path = Path(f.name)
-
-        try:
-            result = updater.execute_installer(installer_path)
-            assert result is True
-            mock_popen.assert_called_once()
-            call_args = mock_popen.call_args[0][0]
-            assert "/verysilent" in call_args
-            assert "/norestart" in call_args
-        finally:
-            installer_path.unlink(missing_ok=True)
-
-    def test_execute_installer_not_found(self):
-        """Test executing installer when file doesn't exist."""
-        updater = SelfUpdater(current_version="1.0.0")
-
-        result = updater.execute_installer(Path("/nonexistent/installer.msi"))
-        assert result is False
-
-    def test_execute_installer_unsupported_type(self):
-        """Test executing installer with unsupported extension."""
-        updater = SelfUpdater(current_version="1.0.0")
-
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
-            installer_path = Path(f.name)
-
-        try:
-            result = updater.execute_installer(installer_path)
-            assert result is False
-        finally:
-            installer_path.unlink(missing_ok=True)
-
-    @patch("obtainhub.core.self_updater.SelfUpdater.check_for_update")
-    @patch("obtainhub.core.self_updater.SelfUpdater.download_installer")
-    @patch("obtainhub.core.self_updater.SelfUpdater.execute_installer")
-    def test_perform_self_update_success(self, mock_execute, mock_download, mock_check):
-        """Test successful self-update flow."""
-        mock_check.return_value = (True, Mock(
-            version="2.0.0",
-            name="Release 2.0.0",
-            body="Release notes",
-            installer_download_url="https://example.com/installer.msi",
-            installer_filename="installer.msi",
-        ))
-        mock_download.return_value = Path("/tmp/installer.msi")
-        mock_execute.return_value = True
-
-        updater = SelfUpdater(current_version="1.0.0")
-        result = updater.perform_self_update()
-
-        assert result is True
-        mock_check.assert_called_once()
-        mock_download.assert_called_once()
-        mock_execute.assert_called_once()
-
-    @patch("obtainhub.core.self_updater.SelfUpdater.check_for_update")
-    def test_perform_self_update_not_needed(self, mock_check):
-        """Test self-update when no update available."""
-        mock_check.return_value = (False, None)
-
-        updater = SelfUpdater(current_version="1.0.0")
-        result = updater.perform_self_update()
-
-        assert result is False
-
-    @patch("obtainhub.core.self_updater.SelfUpdater.check_for_update")
-    @patch("obtainhub.core.self_updater.SelfUpdater.download_installer")
-    def test_perform_self_update_download_fails(self, mock_download, mock_check):
-        """Test self-update when download fails."""
-        mock_check.return_value = (True, Mock())
-        mock_download.side_effect = SelfUpdateFailedError("Download failed")
-
-        updater = SelfUpdater(current_version="1.0.0")
-        result = updater.perform_self_update()
-
-        assert result is False
-
-    @patch("obtainhub.core.self_updater.SelfUpdater.check_for_update")
-    @patch("obtainhub.core.self_updater.SelfUpdater.download_installer")
-    @patch("obtainhub.core.self_updater.SelfUpdater.execute_installer")
-    def test_perform_self_update_execute_fails(self, mock_execute, mock_download, mock_check):
-        """Test self-update when installer execution fails."""
-        mock_check.return_value = (True, Mock())
-        mock_download.return_value = Path("/tmp/installer.msi")
-        mock_execute.return_value = False
-
-        updater = SelfUpdater(current_version="1.0.0")
-        result = updater.perform_self_update()
-
-        assert result is False
-
-
-class TestCheckAndUpdate:
-    """Tests for check_and_update convenience function."""
-
-    @patch("obtainhub.core.self_updater.SelfUpdater.perform_self_update")
-    @patch("obtainhub.core.self_updater.get_config_manager")
-    def test_check_and_update_skip_from_config(self, mock_get_config, mock_perform):
-        """Test check_and_update respects config skip_self_update."""
-        mock_perform.return_value = True
-        config = Mock()
-        config.config = Mock()
-        config.config.skip_self_update = True
-        mock_get_config.return_value = config
-
-        result = check_and_update(
-            skip_check=False,
-        )
-
-        assert result is False
-        mock_perform.assert_not_called()
-
-    @patch("obtainhub.core.self_updater.SelfUpdater.perform_self_update")
-    def test_check_and_update_explicit_skip(self, mock_perform):
-        """Test check_and_update respects explicit skip_check."""
-        mock_perform.return_value = True
-
-        result = check_and_update(
-            skip_check=True,
-        )
-
-        assert result is False
-        mock_perform.assert_not_called()
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+        
+        updater = SelfUpdater("0.9.0")
+        result = updater.check_for_update()
+        
+        assert result is None

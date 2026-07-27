@@ -1,42 +1,42 @@
 # ObtainHub
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/ObtainHub/ObtainHub)
-[![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://python.org)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+**GitHub-based Package Updater and Manager for Windows x64**
 
-**ObtainHub** is a GitHub-based package updater and manager for Windows, designed to simplify installing and updating applications directly from GitHub releases.
+ObtainHub (`ohub`) is a command-line tool for managing and updating Windows applications distributed via GitHub Releases. It downloads and executes `.msi` and `-Setup.exe` installers compiled for x64 architecture.
 
 ## Features
 
-- 🚀 **GitHub Release Integration** - Install and update apps directly from GitHub releases
-- 🔄 **Self-Update Mechanism** - Automatically checks for and applies ObtainHub updates
-- 📦 **Multiple Installer Support** - Handles MSI, EXE, and ZIP/Portable installers
-- 🔍 **Smart Version Detection** - Compares versions and detects updates automatically
-- ⚙️ **Custom Manifest Sources** - Add your own application manifests
-- 🛡️ **Verification** - Checksum and signature verification for downloads
-- 📋 **State Management** - Tracks installed applications with full metadata
+- **Windows x64 Only**: Strictly targets 64-bit Windows (x64/AMD64)
+- **Native Installers**: Only downloads and executes `.msi` and `-Setup.exe` files
+- **Self-Update**: Checks for and installs its own updates on every run
+- **Prerelease Support**: Optional `--prerelease` flag with explicit confirmation prompts
+- **ZIP Fallback**: Portable `.zip` archives are downloaded only (no auto-install)
+- **Manual Uninstall Detection**: Prompts for manual uninstall when required
+- **GitHub Token Support**: Higher API rate limits with personal access token
+- **Structured Logging**: JSON and console output with rotation
 
 ## Installation
 
-### From Source
+### Option 1: Download Installer (Recommended)
 
-```bash
+Download the latest **`.msi`** or **`-Setup.exe`** from the [Releases](https://github.com/ObtainHub/ObtainHub/releases) page.
+
+> **Note**: Only Windows x64 installers are provided. No Linux, macOS, or ARM64 builds.
+
+### Option 2: Build from Source
+
+```cmd
 git clone https://github.com/ObtainHub/ObtainHub.git
 cd ObtainHub
-pip install -e .
+python -m pip install -e .
 ```
 
-### Using pip (once published)
-
-```bash
-pip install obtainhub
-```
+Requires Python 3.10+ on Windows x64.
 
 ## Quick Start
 
-```bash
-# Install an application from GitHub
+```cmd
+# Install an application from GitHub releases
 ohub install microsoft/vscode
 
 # Check for updates
@@ -45,187 +45,196 @@ ohub check
 # Update all installed applications
 ohub update
 
-# List installed applications
-ohub list
-
 # Add a custom manifest source
 ohub source add my-source https://example.com/manifest.json
+
+# View configuration
+ohub config --list
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `ohub install <owner/repo>` | Install an application from GitHub |
-| `ohub update` | Update all installed applications |
-| `ohub check` | Check for available updates |
-| `ohub list` | List installed applications |
-| `ohub info <owner/repo>` | Show detailed app information |
-| `ohub uninstall <owner/repo>` | Uninstall an application |
-| `ohub source <add\|remove\|list>` | Manage manifest sources |
+| `install <owner/repo>` | Install an application from GitHub releases |
+| `update` | Update all installed applications |
+| `check` | Check for available updates |
+| `source` | Manage manifest sources (add/remove/list/enable/disable) |
+| `config` | View or modify configuration |
 
-## Global Options
+### Global Options
 
 | Option | Description |
 |--------|-------------|
-| `--skip-self-update` | Skip self-update check |
-| `--verbose` | Enable verbose output |
-| `--config-dir <path>` | Use custom configuration directory |
+| `--skip-self-update` | Skip ObtainHub self-update check on startup |
+| `--prerelease`, `-p` | Include prerelease versions (requires confirmation) |
+| `--verbose`, `-v` | Enable verbose output |
+| `--config-dir PATH` | Use custom configuration directory |
+
+## Self-Update Behavior
+
+ObtainHub checks for its own updates **on every command execution** (except `config`).
+
+1. Fetches latest release from GitHub
+2. Filters for Windows x64 `.msi` or `-Setup.exe` assets
+3. If newer version found:
+   - Downloads installer
+   - **Prerelease**: Prompts `"Warning: Version X.Y.Z is a Prerelease. Are you sure you want to proceed? [y/N]"`
+   - Launches installer detached (allows file replacement)
+   - Exits current instance
+
+Use `--skip-self-update` or set `skip_self_update: true` in config to disable.
+
+## Prerelease Handling
+
+By default, only **Stable** releases are considered.
+
+```cmd
+# Include prereleases (will prompt for confirmation)
+ohub install owner/repo --prerelease
+ohub update --prerelease
+```
+
+**Confirmation prompt:**
+```
+Warning: Version 2.0.0-beta.1 is a Prerelease.
+Are you sure you want to proceed? [y/N]
+```
+
+Use `--auto-confirm-prerelease` config option for CI/CD (not recommended for interactive use).
+
+## ZIP Archive Handling
+
+If a release only provides `.zip` (portable/archive), ObtainHub **downloads only**:
+
+```
+No Windows x64 installer (.msi/.exe) found.
+Downloading portable archive: App-portable.zip
+```
+
+The file is saved to your downloads folder (`~/Downloads/ObtainHub` by default). No automatic extraction or installation is attempted.
+
+## Manual Uninstall Detection
+
+Some applications require manual uninstallation before upgrading.
+
+When detected:
+```
+Notice: AppName requires manual uninstallation of the previous version.
+Installer downloaded. Do you want ohub to attempt auto-uninstalling the previous version, or will you perform it manually?
+[1: Attempt Auto-Uninstall / 2: Manual / Abort]
+```
+
+- **1**: ObtainHub attempts silent uninstall via MSI/EXE
+- **2**: You manually uninstall, then re-run install
+- **Abort**: Cancel the operation
 
 ## Configuration
 
-ObtainHub stores configuration in:
-- **Windows**: `%APPDATA%\ObtainHub\config.json`
-- **Linux/macOS**: `~/.config/obtainhub/config.json`
-
-### Configuration Options
+Config file: `%USERPROFILE%\.config\obtainhub\config.json`
 
 ```json
 {
-  "download_dir": "~/Downloads/ObtainHub",
-  "auto_update": true,
-  "skip_self_update": false,
-  "verbose": false,
-  "log_level": "INFO",
-  "manifest_sources": [
-    "https://raw.githubusercontent.com/ObtainHub/manifests/main/index.json"
-  ],
   "github_token": "",
-  "request_timeout": 30,
-  "max_retries": 3,
-  "preferred_installer_type": "auto",
-  "verify_signatures": true,
-  "verify_checksums": true,
-  "backup_before_update": true
+  "install_dir": "C:\\Users\\<user>\\Applications\\ObtainHub",
+  "download_dir": "C:\\Users\\<user>\\Downloads\\ObtainHub",
+  "update_interval_hours": 24,
+  "proxy": "",
+  "auto_update": true,
+  "log_level": "INFO",
+  "max_parallel_downloads": 3,
+  "manifest_sources": [
+    {
+      "name": "default",
+      "url": "https://raw.githubusercontent.com/ObtainHub/manifests/main/manifest.json",
+      "enabled": true
+    }
+  ],
+  "preferred_arch": "x64",
+  "allow_prerelease": false,
+  "skip_self_update": false,
+  "auto_confirm_prerelease": false
 }
 ```
 
-## State Management
+### Key Settings
 
-Installed applications are tracked in:
-- **Windows**: `%APPDATA%\ObtainHub\state.json`
-- **Linux/macOS**: `~/.config/obtainhub/state.json`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `github_token` | GitHub Personal Access Token (classic) for higher rate limits | (empty) |
+| `install_dir` | Where applications are installed | `~/Applications/ObtainHub` |
+| `download_dir` | Where installers are downloaded | `~/Downloads/ObtainHub` |
+| `auto_update` | Enable self-update checks | `true` |
+| `preferred_arch` | Target architecture | `x64` |
+| `allow_prerelease` | Include prereleases by default | `false` |
+| `skip_self_update` | Disable self-update on startup | `false` |
 
-Each application record includes:
-- Version and installer type
-- Installation path and executable location
-- Checksums and verification data
-- GitHub release metadata
+## Manifest Sources
 
-## Architecture
+Manifest sources define where to find application metadata. The default source points to the ObtainHub community manifests.
 
-```
-obtainhub/
-├── __init__.py           # Package metadata
-├── main.py               # CLI entry point
-├── core/
-│   ├── __init__.py       # Core exports
-│   ├── config.py         # Configuration management
-│   ├── state.py          # Application state tracking
-│   ├── logger.py         # Structured logging
-│   ├── self_updater.py   # Self-update mechanism
-│   └── exceptions.py     # Custom exceptions
-├── utils/
-│   ├── __init__.py       # Utility exports
-│   └── helpers.py        # Helper functions
-└── commands/             # Command implementations (future)
+```cmd
+# Add custom source
+ohub source add my-source https://my-server/manifest.json
+
+# List sources
+ohub source list
+
+# Remove source
+ohub source remove my-source
 ```
 
-## Self-Update Mechanism
-
-On every execution, `ohub`:
-1. Checks its version against the latest GitHub release
-2. If a newer version is found, downloads the installer
-3. Launches the installer silently in a detached process
-4. Exits gracefully to release file locks
-5. User restarts ObtainHub after installation completes
-
-## Manifest Format
-
-Custom manifest sources should provide JSON with this structure:
-
+Manifest format (JSON):
 ```json
 {
   "applications": [
     {
-      "name": "Visual Studio Code",
       "owner": "microsoft",
       "repo": "vscode",
-      "version": "1.85.0",
+      "name": "Visual Studio Code",
       "description": "Code editor",
-      "installer_type": "auto",
-      "checksum": "sha256:...",
-      "file_size": 123456789,
-      "release_date": "2024-01-01",
-      "release_notes": "https://github.com/microsoft/vscode/releases/tag/1.85.0",
-      "tags": ["editor", "ide"],
-      "homepage": "https://code.visualstudio.com",
-      "license": "MIT"
+      "requires_manual_uninstall": false
     }
   ]
 }
 ```
 
-## Development
+## Logging
 
-### Running Tests
+Logs are written to `%LOCALAPPDATA%\obtainhub\logs\`:
+- `obtainhub.log` - Human-readable
+- `obtainhub.json` - Structured JSON (rotating, 5MB max, 3 backups)
 
-```bash
-pip install pytest
-pytest tests/ -v
+## Building the Installer
+
+```cmd
+# Build MSI installer
+python -m pip install cx_Freeze
+python setup.py bdist_msi
+
+# Build NSIS installer (Setup.exe)
+makensis installer.nsi
 ```
 
-### Code Style
+Only Windows x64 builds are supported.
 
-```bash
-# Format code
-black obtainhub/ tests/
+## Requirements
 
-# Type check
-mypy obtainhub/
-
-# Lint
-ruff obtainhub/ tests/
-```
-
-## Project Structure
-
-```
-ObtainHub/
-├── obtainhub/              # Main package
-│   ├── main.py            # CLI entry point
-│   ├── core/              # Core modules
-│   └── utils/             # Utility functions
-├── tests/                 # Unit tests
-├── requirements.txt       # Dependencies
-├── README.md             # This file
-└── .gitignore            # Git ignore rules
-```
-
-## Roadmap
-
-- [ ] **Step 1**: Core infrastructure (config, state, self-updater, CLI) ✓
-- [ ] **Step 2**: Manifest system and GitHub API integration
-- [ ] **Step 3**: Download and installer execution engine
-- [ ] **Step 4**: Windows registry integration and uninstaller
-- [ ] **Step 5**: Package commands (install, update, uninstall)
-- [ ] **Step 6**: Cross-platform support (Linux/macOS)
-- [ ] **Step 7**: GUI and system tray integration
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `pytest tests/ -v`
-5. Submit a pull request
+- Windows 10/11 x64 (64-bit)
+- Python 3.10+ (if running from source)
+- Internet access for GitHub API
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## Links
+## Contributing
 
-- **Repository**: https://github.com/ObtainHub/ObtainHub
-- **Issues**: https://github.com/ObtainHub/ObtainHub/issues
-- **Releases**: https://github.com/ObtainHub/ObtainHub/releases
+1. Fork the repository
+2. Create a feature branch
+3. Make changes (Windows x64 focus only)
+4. Submit a Pull Request
+
+---
+
+**ObtainHub** - Simple, native Windows application management via GitHub Releases.
