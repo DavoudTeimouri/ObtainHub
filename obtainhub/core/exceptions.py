@@ -140,3 +140,33 @@ class ManifestNotFoundError(ManifestError):
 class ManifestValidationError(ManifestError):
     """Manifest validation failed."""
     pass
+
+
+class ManualUninstallRequired(ObtainHubError):
+    """Manual uninstall required before update."""
+    pass
+
+
+class PrereleaseConfirmationRequired(ObtainHubError):
+    """Prerelease confirmation required from user."""
+    pass
+
+
+class AssetNotFoundError(ObtainHubError):
+    """No suitable asset found."""
+    pass
+
+
+class AssetMatchError(ObtainHubError):
+    """Asset matching failed."""
+    pass
+
+
+class ArchitectureMismatchError(AssetMatchError):
+    """Architecture mismatch in asset."""
+    pass
+
+
+class InstallerTypeMismatchError(AssetMatchError):
+    """Installer type mismatch in asset."""
+    pass

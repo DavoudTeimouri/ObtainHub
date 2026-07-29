@@ -9,36 +9,43 @@ import time
 import platform
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+from typing import Optional, List
+from urllib import request, error
 
-from obtainhub import __version__
+from obtainhub.core.asset_matcher import (
+    AssetMatch,
+    InstallerType,
+    Architecture,
+    AssetMatcher,
+    is_windows_x64,
+    get_system_architecture,
+)
 from obtainhub.core.config import get_config
 from obtainhub.core.logger import get_logger
-from obtainhub.core.asset_matcher import (
-    AssetInfo,
-    Architecture,
-    InstallerType,
-    parse_asset,
-    find_best_installer,
-    find_zip_assets,
-    decide_download_action,
-    DownloadDecision,
-    is_windows_x64,
-)
 from obtainhub.core.exceptions import (
     SelfUpdateError,
     SelfUpdateNotNeededError,
     NetworkError,
-    NetworkRateLimitError,
     DownloadError,
     InstallerError,
     InstallerNotFoundError,
-    InstallerExecutionError,
+)
+from obtainhub.utils.helpers import (
+    calculate_hash,
+    verify_hash,
+    run_command,
+    install_msi,
+    install_exe,
+    get_temp_dir,
+    clean_temp_dir,
 )
 
-logger = get_logger()
+logger = get_logger(__name__)
+
+# ObtainHub GitHub repository
+OBTAINHUB_REPO_OWNER = "DavoudTeimouri"
+OBTAINHUB_REPO_NAME = "ObtainHub"
+GITHUB_API_URL = f"https://api.github.com/repos/{OBTAINHUB_REPO_OWNER}/{OBTAINHUB_REPO_NAME}"
 
 
 @dataclass
@@ -52,473 +59,269 @@ class ReleaseInfo:
     draft: bool
     published_at: str
     html_url: str
-    assets: list[AssetInfo]
-    
-    @property
-    def is_prerelease(self) -> bool:
-        return self.prerelease
-    
-    @property
-    def normalized_version(self) -> str:
-        """Normalize version string for comparison."""
-        v = self.version.lstrip('vV')
-        return v
-    
-    def get_windows_x64_installer(self) -> Optional[AssetInfo]:
-        """Get the best Windows x64 installer (MSI or Setup.exe)."""
-        return find_best_installer(self.assets, allow_prerelease=False)
-    
-    def get_windows_x64_installer_with_prerelease(self) -> Optional[AssetInfo]:
-        """Get the best Windows x64 installer including prereleases."""
-        return find_best_installer(self.assets, allow_prerelease=True)
-    
-    def get_zip_assets(self) -> list[AssetInfo]:
-        """Get all ZIP portable assets."""
-        return find_zip_assets(self.assets, allow_prerelease=False)
+    assets: List[AssetMatch]
 
 
 class SelfUpdater:
-    """Handles self-update checks and installation for ObtainHub (Windows x64)."""
-    
-    REPO_OWNER = "ObtainHub"
-    REPO_NAME = "ObtainHub"
-    GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
-    
-    def __init__(self, current_version: str = None):
-        self.current_version = current_version or __version__
+    """Handles self-updating of ObtainHub (Windows x64 only)."""
+
+    def __init__(self, current_version: str):
+        self.current_version = current_version.lstrip('vV')
         self.config = get_config()
-        self.github_token = self.config.github_token
-    
-    def _get_headers(self) -> dict:
-        """Get HTTP headers for GitHub API requests."""
-        headers = {
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": f"ObtainHub/{self.current_version}",
-        }
-        if self.github_token:
-            headers["Authorization"] = f"token {self.github_token}"
-        return headers
-    
-    def _make_request(self, url: str) -> dict:
-        """Make HTTP request to GitHub API."""
-        headers = self._get_headers()
-        req = Request(url, headers=headers)
-        
-        try:
-            with urlopen(req, timeout=30) as response:
-                data = response.read().decode('utf-8')
-                return json.loads(data)
-        except HTTPError as e:
-            if e.code == 403:
-                # Check for rate limit
-                retry_after = e.headers.get('Retry-After')
-                reset_time = e.headers.get('X-RateLimit-Reset')
-                raise NetworkRateLimitError(
-                    "GitHub API rate limit exceeded",
-                    retry_after=int(retry_after) if retry_after else None,
-                )
-            elif e.code == 404:
-                raise SelfUpdateError(f"Repository not found: {url}")
-            else:
-                raise NetworkError(f"HTTP {e.code}: {e.reason}")
-        except URLError as e:
-            raise NetworkError(f"Network error: {e.reason}")
-        except json.JSONDecodeError as e:
-            raise NetworkError(f"Invalid JSON response: {e}")
-        except Exception as e:
-            raise NetworkError(f"Request failed: {e}")
-    
-    def fetch_latest_release(self, allow_prerelease: bool = False) -> ReleaseInfo:
-        """Fetch the latest release from GitHub."""
-        url = f"{self.GITHUB_API_URL}/releases"
-        if not allow_prerelease:
-            url += "/latest"
-        else:
-            url += "?per_page=10"
-        
-        data = self._make_request(url)
-        
-        if allow_prerelease:
-            # Find first non-draft release
-            for release in data:
-                if not release.get('draft', False):
-                    data = release
-                    break
-            else:
-                raise SelfUpdateError("No releases found")
-        elif isinstance(data, list):
-            data = data[0] if data else {}
-        
-        assets = []
-        for asset in data.get('assets', []):
-            asset_info = parse_asset(
-                asset_name=asset['name'],
-                asset_url=asset['browser_download_url'],
-                asset_size=asset['size'],
-                is_prerelease=data.get('prerelease', False),
-                version=data.get('tag_name', '').lstrip('vV'),
-            )
-            assets.append(asset_info)
-        
-        return ReleaseInfo(
-            version=data.get('tag_name', '').lstrip('vV'),
-            name=data.get('name', ''),
-            tag_name=data.get('tag_name', ''),
-            body=data.get('body', ''),
-            prerelease=data.get('prerelease', False),
-            draft=data.get('draft', False),
-            published_at=data.get('published_at', ''),
-            html_url=data.get('html_url', ''),
-            assets=assets,
-        )
-    
-    def check_for_update(self, allow_prerelease: bool = False) -> Optional[ReleaseInfo]:
-        """Check if an update is available.
-        
-        Args:
-            allow_prerelease: If True, include prereleases in check
-            
-        Returns:
-            ReleaseInfo if update available, None if current is latest
-            
-        Raises:
-            SelfUpdateNotNeededError: If already on latest version
-        """
-        if not is_windows_x64():
-            logger.warning("Self-update only supported on Windows x64")
-            return None
-        
-        release = self.fetch_latest_release(allow_prerelease=allow_prerelease)
-        
-        # Skip prereleases unless explicitly allowed
-        if release.is_prerelease and not allow_prerelease:
-            logger.info(f"Latest release {release.version} is a prerelease, skipping")
-            return None
-        
-        # Check if we have a Windows x64 installer
-        installer = release.get_windows_x64_installer_with_prerelease() if allow_prerelease else release.get_windows_x64_installer()
-        if not installer:
-            logger.warning(f"No Windows x64 installer found in release {release.version}")
-            return None
-        
-        current = self._normalize_version(self.current_version)
-        latest = self._normalize_version(release.version)
-        
-        if self._compare_versions(current, latest) >= 0:
-            raise SelfUpdateNotNeededError(f"Already on latest version ({self.current_version})")
-        
-        logger.info(f"Update available: {self.current_version} -> {release.version}")
-        return release
-    
-    def _normalize_version(self, version: str) -> tuple:
-        """Normalize version string to tuple for comparison."""
-        # Remove 'v' prefix
-        v = version.lstrip('vV')
-        # Split by dots and convert to ints where possible
-        parts = []
-        for part in v.split('.'):
-            # Handle pre-release suffixes
-            if '-' in part:
-                num_part, pre_part = part.split('-', 1)
-                parts.append(int(num_part) if num_part.isdigit() else 0)
-                parts.append(pre_part)
-            else:
-                parts.append(int(part) if part.isdigit() else 0)
-        return tuple(parts)
-    
-    def _compare_versions(self, v1: tuple, v2: tuple) -> int:
-        """Compare two version tuples. Returns -1, 0, or 1."""
-        # Pad shorter tuple with zeros
-        max_len = max(len(v1), len(v2))
-        v1 = list(v1) + [0] * (max_len - len(v1))
-        v2 = list(v2) + [0] * (max_len - len(v2))
-        
-        for a, b in zip(v1, v2):
-            if isinstance(a, str) or isinstance(b, str):
-                # Handle prerelease comparison: stable (int 0) > prerelease (str)
-                if isinstance(a, int) and a == 0 and isinstance(b, str):
-                    return 1  # stable > prerelease
-                if isinstance(b, int) and b == 0 and isinstance(a, str):
-                    return -1  # prerelease < stable
-                # Both are strings or mixed non-zero
-                a_str = str(a)
-                b_str = str(b)
-                if a_str < b_str:
-                    return -1
-                elif a_str > b_str:
-                    return 1
-            else:
-                if a < b:
-                    return -1
-                elif a > b:
-                    return 1
+        self.session = request.build_opener()
+        self.asset_matcher = AssetMatcher(allow_x86_fallback=False)
+
+        # Add GitHub token if configured
+        if self.config.github_token:
+            self.session.addheaders = [('Authorization', f'token {self.config.github_token}')]
+
+    def _normalize_version(self, version: str) -> str:
+        """Normalize version string."""
+        return version.lstrip('vV')
+
+    def _compare_versions(self, v1: str, v2: str) -> int:
+        """Compare two version strings. Returns -1, 0, or 1."""
+        def parse(v: str):
+            v = self._normalize_version(v)
+            parts = []
+            for part in v.split('.'):
+                if '-' in part:
+                    num, pre = part.split('-', 1)
+                    parts.append(int(num) if num.isdigit() else 0)
+                    parts.append(pre)
+                else:
+                    parts.append(int(part) if part.isdigit() else 0)
+            return parts
+
+        p1 = parse(v1)
+        p2 = parse(v2)
+
+        for a, b in zip(p1, p2):
+            # Handle prerelease vs release comparison
+            if isinstance(a, str) and isinstance(b, int):
+                return -1  # prerelease < release
+            if isinstance(a, int) and isinstance(b, str):
+                return 1   # release > prerelease
+            if a != b:
+                if isinstance(a, int) and isinstance(b, int):
+                    return 1 if a > b else -1
+                return 1 if str(a) > str(b) else -1
+
+        if len(p1) != len(p2):
+            # Handle cases like 1.0 vs 1.0.0
+            remaining = p1[len(p2):] if len(p1) > len(p2) else p2[len(p1):]
+            for r in remaining:
+                if isinstance(r, int) and r > 0:
+                    return 1 if len(p1) > len(p2) else -1
+                if isinstance(r, str):
+                    return -1 if len(p1) > len(p2) else 1
         return 0
-    
-    def download_installer(self, asset: AssetInfo, dest_dir: Optional[Path] = None) -> Path:
-        """Download an installer asset.
-        
-        Args:
-            asset: AssetInfo to download
-            dest_dir: Destination directory (defaults to config download_dir)
-            
-        Returns:
-            Path to downloaded file
-        """
-        dest_dir = dest_dir or self.config.get_download_dir()
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        
-        dest_path = dest_dir / asset.name
-        logger.info(f"Downloading {asset.name} ({asset.size} bytes)...")
-        
-        headers = self._get_headers()
-        req = Request(asset.url, headers=headers)
-        
+
+    def _is_newer(self, version: str) -> bool:
+        """Check if version is newer than current."""
+        return self._compare_versions(version, self.current_version) > 0
+
+    def fetch_latest_release(self, allow_prerelease: bool = False) -> Optional[ReleaseInfo]:
+        """Fetch latest release from GitHub API."""
         try:
-            with urlopen(req, timeout=300) as response, open(dest_path, 'wb') as f:
-                total = asset.size
-                downloaded = 0
-                chunk_size = 8192
+            url = f"{GITHUB_API_URL}/releases"
+            if not allow_prerelease:
+                url += "/latest"
+            
+            req = request.Request(url)
+            if self.config.github_token:
+                req.add_header('Authorization', f'token {self.config.github_token}')
+            
+            with self.session.open(req, timeout=30) as response:
+                if response.status == 404:
+                    return None
+                data = json.load(response)
                 
-                while True:
-                    chunk = response.read(chunk_size)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    downloaded += len(chunk)
+                # Handle paginated list vs single release
+                if isinstance(data, list):
+                    releases = data
+                else:
+                    releases = [data]
+                
+                for rel in releases:
+                    if rel.get('draft'):
+                        continue
+                    if not allow_prerelease and rel.get('prerelease'):
+                        continue
                     
-                    if total > 0:
-                        percent = (downloaded / total) * 100
-                        if downloaded % (chunk_size * 100) == 0:
-                            logger.debug(f"Download progress: {percent:.1f}%")
-            
-            # Verify file size
-            actual_size = dest_path.stat().st_size
-            if actual_size != asset.size:
-                raise DownloadError(f"Size mismatch: expected {asset.size}, got {actual_size}")
-            
-            logger.info(f"Downloaded to {dest_path}")
-            return dest_path
-            
-        except HTTPError as e:
-            if dest_path.exists():
-                dest_path.unlink()
-            raise DownloadError(f"Download failed: HTTP {e.code}")
-        except URLError as e:
-            if dest_path.exists():
-                dest_path.unlink()
-            raise DownloadError(f"Download failed: {e.reason}")
+                    assets = []
+                    for asset_data in rel.get('assets', []):
+                        match = AssetMatch(
+                            name=asset_data.get('name', ''),
+                            url=asset_data.get('browser_download_url', ''),
+                            architecture=Architecture.UNKNOWN,
+                            installer_type=InstallerType.UNKNOWN,
+                            is_download_only=False,
+                            size=asset_data.get('size', 0),
+                            sha256=asset_data.get('sha256', ''),
+                        )
+                        # Detect architecture and installer type
+                        match.architecture = self.asset_matcher._detect_architecture(match.name)
+                        match.installer_type = self.asset_matcher._detect_installer_type(match.name)
+                        match.is_download_only = match.installer_type == InstallerType.ZIP
+                        assets.append(match)
+                    
+                    return ReleaseInfo(
+                        version=rel.get('tag_name', '').lstrip('vV'),
+                        name=rel.get('name', ''),
+                        tag_name=rel.get('tag_name', ''),
+                        body=rel.get('body', ''),
+                        prerelease=rel.get('prerelease', False),
+                        draft=rel.get('draft', False),
+                        published_at=rel.get('published_at', ''),
+                        html_url=rel.get('html_url', ''),
+                        assets=assets,
+                    )
+        except error.HTTPError as e:
+            raise NetworkError(f"GitHub API error: {e.code} {e.reason}")
+        except error.URLError as e:
+            raise NetworkError(f"Network error: {e.reason}")
         except Exception as e:
-            if dest_path.exists():
-                dest_path.unlink()
-            raise DownloadError(f"Download failed: {e}")
-    
-    def execute_installer(self, installer_path: Path, silent: bool = True) -> bool:
-        """Execute the downloaded installer in a detached process.
-        
-        Args:
-            installer_path: Path to installer
-            silent: Run silently (no UI)
-            
-        Returns:
-            True if installer launched successfully
-        """
-        if not installer_path.exists():
-            raise InstallerError(f"Installer not found: {installer_path}")
-        
-        suffix = installer_path.suffix.lower()
-        
-        if suffix == '.msi':
-            return self._execute_msi(installer_path, silent)
-        elif suffix == '.exe':
-            return self._execute_exe(installer_path, silent)
-        else:
-            raise InstallerUnsupportedTypeError(f"Unsupported installer type: {suffix}")
-    
-    def _execute_msi(self, installer_path: Path, silent: bool) -> bool:
-        """Execute MSI installer."""
-        args = ['msiexec', '/i', str(installer_path)]
-        if silent:
-            args.extend(['/quiet', '/norestart'])
-        
-        logger.info(f"Launching MSI installer: {' '.join(args)}")
-        
-        try:
-            # Use CREATE_NEW_PROCESS_GROUP and DETACHED_PROCESS for true detachment
-            creation_flags = 0
-            if hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP'):
-                creation_flags |= subprocess.CREATE_NEW_PROCESS_GROUP
-            if hasattr(subprocess, 'DETACHED_PROCESS'):
-                creation_flags |= subprocess.DETACHED_PROCESS
-            
-            proc = subprocess.Popen(
-                args,
-                creationflags=creation_flags,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-            )
-            
-            # Give it a moment to start
-            time.sleep(1)
-            
-            if proc.poll() is not None:
-                # Process exited immediately
-                return False
-            
-            logger.info("MSI installer launched successfully (detached)")
-            return True
-            
-        except Exception as e:
-            raise InstallerExecutionError(f"Failed to launch MSI: {e}")
-    
-    def _execute_exe(self, installer_path: Path, silent: bool) -> bool:
-        """Execute EXE installer."""
-        args = [str(installer_path)]
-        if silent:
-            # Common silent install flags
-            silent_flags = ['/S', '/quiet', '/silent', '--silent', '-s', '/VERYSILENT', '/SUPPRESSMSGBOXES']
-            args.extend(silent_flags)
-        
-        logger.info(f"Launching EXE installer: {' '.join(args)}")
-        
-        try:
-            creation_flags = 0
-            if hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP'):
-                creation_flags |= subprocess.CREATE_NEW_PROCESS_GROUP
-            if hasattr(subprocess, 'DETACHED_PROCESS'):
-                creation_flags |= subprocess.DETACHED_PROCESS
-            
-            proc = subprocess.Popen(
-                args,
-                creationflags=creation_flags,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-            )
-            
-            time.sleep(1)
-            
-            if proc.poll() is not None:
-                return False
-            
-            logger.info("EXE installer launched successfully (detached)")
-            return True
-            
-        except Exception as e:
-            raise InstallerExecutionError(f"Failed to launch EXE: {e}")
-    
-    def perform_self_update(self, allow_prerelease: bool = False, skip_confirmation: bool = False) -> bool:
-        """Perform complete self-update check and installation.
-        
-        Args:
-            allow_prerelease: Include prereleases
-            skip_confirmation: Skip confirmation prompts
-            
-        Returns:
-            True if update was performed, False if not needed
-            
-        Raises:
-            SelfUpdateError: If update fails
-        """
+            raise SelfUpdateError(f"Failed to fetch release: {e}")
+        return None
+
+    def check_for_update(self, allow_prerelease: bool = False) -> Optional[ReleaseInfo]:
+        """Check for available updates."""
         if not is_windows_x64():
             raise SelfUpdateError("Self-update only supported on Windows x64")
         
-        # Check config for auto-update
-        if not allow_prerelease and not self.config.auto_update:
-            logger.info("Auto-update disabled in config")
-            return False
-        
-        # Check for update
-        try:
-            release = self.check_for_update(allow_prerelease=allow_prerelease)
-        except SelfUpdateNotNeededError:
-            logger.info("No update needed")
-            return False
-        except SelfUpdateError:
-            raise
-        except Exception as e:
-            raise SelfUpdateError(f"Update check failed: {e}")
-        
+        release = self.fetch_latest_release(allow_prerelease=allow_prerelease)
         if not release:
-            return False
+            raise SelfUpdateNotNeededError("No releases found")
         
-        # Prerelease confirmation
-        if release.is_prerelease and not skip_confirmation and not self.config.auto_confirm_prerelease:
-            if not self._confirm_prerelease(release.version):
-                logger.info("Prerelease update cancelled by user")
-                return False
+        if release.prerelease and not allow_prerelease:
+            raise SelfUpdateNotNeededError("Prerelease skipped (use --prerelease to include)")
         
-        # Find installer
-        installer = release.get_windows_x64_installer_with_prerelease() if allow_prerelease else release.get_windows_x64_installer()
+        if not self._is_newer(release.version):
+            raise SelfUpdateNotNeededError(f"Already at latest version ({self.current_version})")
+        
+        return release
+
+    def find_windows_x64_installer(self, release: ReleaseInfo, allow_prerelease: bool = False) -> Optional[AssetMatch]:
+        """Find the best Windows x64 installer asset."""
+        # Filter prereleases if not allowed
+        assets = release.assets
+        if not allow_prerelease:
+            assets = [a for a in assets if not a.name.endswith(('.sha256', '.asc', '.sig', '.blockmap'))]
+        
+        # Filter for x64 architecture
+        x64_assets = [a for a in assets if a.architecture == Architecture.X64]
+        if not x64_assets:
+            return None
+        
+        # Sort by installer preference (MSI > EXE > ZIP)
+        type_priority = {InstallerType.MSI: 0, InstallerType.EXE: 1, InstallerType.ZIP: 2, InstallerType.UNKNOWN: 3}
+        x64_assets.sort(key=lambda a: type_priority.get(a.installer_type, 99))
+        
+        return x64_assets[0] if x64_assets else None
+
+    def download_installer(self, asset: AssetMatch, dest_dir: Optional[Path] = None) -> Path:
+        """Download installer asset."""
+        if dest_dir is None:
+            dest_dir = Path(get_temp_dir()) / "obtainhub_update"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        
+        dest_path = dest_dir / asset.name
+        logger.info(f"Downloading {asset.name} from {asset.url}")
+        
+        try:
+            req = request.Request(asset.url)
+            if self.config.github_token:
+                req.add_header('Authorization', f'token {self.config.github_token}')
+            
+            with self.session.open(req, timeout=300) as response:
+                total_size = int(response.headers.get('Content-Length', 0))
+                downloaded = 0
+                
+                with open(dest_path, 'wb') as f:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            progress = (downloaded / total_size) * 100
+                            logger.debug(f"Download progress: {progress:.1f}%")
+                
+                logger.info(f"Downloaded {dest_path} ({downloaded} bytes)")
+                
+                # Verify checksum if available
+                if asset.sha256:
+                    if not verify_hash(dest_path, asset.sha256, 'sha256'):
+                        raise DownloadChecksumError(f"Checksum mismatch for {asset.name}")
+                
+                return dest_path
+        except error.URLError as e:
+            raise DownloadError(f"Download failed: {e.reason}")
+        except Exception as e:
+            if dest_path.exists():
+                dest_path.unlink(missing_ok=True)
+            raise DownloadError(f"Download failed: {e}")
+
+    def install_msi(self, msi_path: Path, quiet: bool = True) -> bool:
+        """Install MSI package."""
+        return install_msi(msi_path, quiet=quiet)
+
+    def install_exe(self, exe_path: Path, silent_args: Optional[List[str]] = None) -> bool:
+        """Install EXE package."""
+        return install_exe(exe_path, silent_args=silent_args)
+
+    def perform_self_update(self, release: ReleaseInfo, allow_prerelease: bool = False) -> bool:
+        """Perform self-update using the release."""
+        installer = self.find_windows_x64_installer(release, allow_prerelease)
         if not installer:
-            raise InstallerNotFoundError(f"No Windows x64 installer in release {release.version}")
+            raise InstallerNotFoundError("No suitable Windows x64 installer found")
         
-        logger.info(f"Downloading installer: {installer.name}")
+        logger.info(f"Found installer: {installer.name} ({installer.installer_type.value})")
+        
+        # Download installer
         installer_path = self.download_installer(installer)
         
-        # Execute installer
-        logger.info("Launching installer...")
-        success = self.execute_installer(installer_path)
-        
-        if not success:
-            raise InstallerExecutionError("Installer failed to launch")
-        
-        logger.info(f"ObtainHub {release.version} installer launched. Please complete installation.")
-        logger.info("Exiting current instance to allow file replacement...")
-        
-        # Exit gracefully so files can be replaced
-        sys.exit(0)
-    
-    def _confirm_prerelease(self, version: str) -> bool:
-        """Prompt user for prerelease confirmation."""
-        print(f"\nWarning: Version {version} is a Prerelease.")
-        print("Are you sure you want to proceed? [y/N] ", end='', flush=True)
-        
         try:
-            response = input().strip().lower()
-            return response == 'y'
-        except (EOFError, KeyboardInterrupt):
-            return False
+            # Install based on type
+            if installer.installer_type == InstallerType.MSI:
+                success = self.install_msi(installer_path)
+            elif installer.installer_type == InstallerType.EXE:
+                success = self.install_exe(installer_path)
+            else:
+                raise InstallerUnsupportedTypeError(f"Unsupported installer type: {installer.installer_type}")
+            
+            if success:
+                logger.info("Self-update completed successfully")
+                return True
+            else:
+                raise InstallerExecutionError("Installer returned non-zero exit code")
+        finally:
+            # Cleanup downloaded installer
+            if installer_path.exists():
+                installer_path.unlink(missing_ok=True)
 
 
-def check_and_update(
-    current_version: str = None,
-    allow_prerelease: bool = False,
-    skip_self_update: bool = False,
-) -> bool:
-    """Convenience function to check and perform self-update.
-    
-    Args:
-        current_version: Current version (defaults to package version)
-        allow_prerelease: Check prereleases
-        skip_self_update: Skip self-update entirely
-        
-    Returns:
-        True if update was performed, False otherwise
-    """
+def check_and_update(current_version: str, skip_self_update: bool = False) -> Optional[bool]:
+    """Check for updates and perform self-update if available."""
     if skip_self_update:
-        logger.info("Self-update skipped (--skip-self-update)")
-        return False
+        return None
     
     config = get_config()
     if config.skip_self_update:
-        logger.info("Self-update skipped (config setting)")
-        return False
+        return None
     
     updater = SelfUpdater(current_version)
-    
     try:
-        return updater.perform_self_update(allow_prerelease=allow_prerelease)
+        updater.check_for_update()
+        # If we get here, no update needed
+        return False
     except SelfUpdateNotNeededError:
         return False
     except SelfUpdateError as e:
-        logger.error(f"Self-update failed: {e}")
-        # Don't crash on self-update failure, just log and continue
+        logger.error(f"Self-update check failed: {e}")
         return False
-
-
-__all__ = [
-    'ReleaseInfo',
-    'SelfUpdater',
-    'check_and_update',
-]
+    except Exception as e:
+        logger.error(f"Unexpected error during self-update check: {e}")
+        return False

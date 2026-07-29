@@ -1,280 +1,248 @@
-"""Asset matching and filtering for Windows x64 installers."""
+"""Asset matching for Windows x64 installers."""
 
-import platform
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
-from pathlib import Path
+from typing import List, Optional
 
-
-class InstallerType(Enum):
-    """Supported installer types for Windows x64."""
-    MSI = "msi"
-    EXE_SETUP = "exe_setup"
-    ZIP_PORTABLE = "zip_portable"
-    UNKNOWN = "unknown"
+from obtainhub.core.exceptions import AssetMatchError
 
 
 class Architecture(Enum):
-    """Supported architectures."""
-    X64 = "x64"
-    X86 = "x86"
-    ARM64 = "arm64"
+    """CPU architecture types."""
     UNKNOWN = "unknown"
+    X64 = "x64"
+    ARM64 = "arm64"
+    X86 = "x86"
+
+
+class InstallerType(Enum):
+    """Installer file types."""
+    UNKNOWN = "unknown"
+    MSI = "msi"
+    EXE = "exe"
+    ZIP = "zip"
 
 
 @dataclass
-class AssetInfo:
-    """Information about a release asset."""
+class AssetMatch:
+    """Matched asset with metadata."""
     name: str
     url: str
-    size: int
-    installer_type: InstallerType
     architecture: Architecture
-    is_prerelease: bool = False
-    version: str = ""
-    
-    @property
-    def is_windows_x64_installer(self) -> bool:
-        """Check if this is a Windows x64 installer (MSI or Setup.exe)."""
-        return (self.architecture == Architecture.X64 and
-                self.installer_type in (InstallerType.MSI, InstallerType.EXE_SETUP))
-    
-    @property
-    def is_zip_portable(self) -> bool:
-        """Check if this is a ZIP portable archive."""
-        return self.installer_type == InstallerType.ZIP_PORTABLE
+    installer_type: InstallerType
+    is_download_only: bool
+    size: int
+    sha256: str = ""
 
 
-def detect_architecture(asset_name: str) -> Architecture:
-    """Detect architecture from asset filename."""
-    name_lower = asset_name.lower()
-    
-    # x64 patterns (most specific first)
-    x64_patterns = [
-        r'(?:^|[-_])x64(?:[-_.]|$)',
-        r'(?:^|[-_])amd64(?:[-_.]|$)',
-        r'(?:^|[-_])win64(?:[-_.]|$)',
-        r'(?:^|[-_])64(?:[-_.]|$)',
-        r'x86_64',
-    ]
-    
-    # x86 patterns
-    x86_patterns = [
-        r'(?:^|[-_])x86(?:[-_.]|$)',
-        r'(?:^|[-_])win32(?:[-_.]|$)',
-        r'(?:^|[-_])32bit(?:[-_.]|$)',
-        r'(?:^|[-_])32-bit(?:[-_.]|$)',
-        r'(?:^|[-_])32(?:[-_.]|$)',
-    ]
-    
-    # ARM64 patterns
-    arm64_patterns = [
-        r'(?:^|[-_])arm64(?:[-_.]|$)',
-        r'(?:^|[-_])aarch64(?:[-_.]|$)',
-    ]
-    
-    for pattern in x64_patterns:
-        if re.search(pattern, name_lower):
-            return Architecture.X64
-    
-    for pattern in arm64_patterns:
-        if re.search(pattern, name_lower):
-            return Architecture.ARM64
-    
-    for pattern in x86_patterns:
-        if re.search(pattern, name_lower):
-            return Architecture.X86
-    
-    # Default to x64 for Windows installers without explicit arch
-    if any(ext in name_lower for ext in ['.msi', '.exe', '.zip']):
-        if 'setup' in name_lower or 'install' in name_lower:
-            return Architecture.X64
-    
-    return Architecture.UNKNOWN
+class AssetMatcher:
+    """Match and filter GitHub release assets for Windows x64."""
 
+    def __init__(
+        self,
+        prefer_x64: bool = True,
+        allow_x86_fallback: bool = False,
+        allow_prerelease: bool = False,
+        allow_arm64: bool = False,
+    ):
+        self.prefer_x64 = prefer_x64
+        self.allow_x86_fallback = allow_x86_fallback
+        self.allow_prerelease = allow_prerelease
+        self.allow_arm64 = allow_arm64
 
-def detect_installer_type(asset_name: str) -> InstallerType:
-    """Detect installer type from asset filename."""
-    name_lower = asset_name.lower()
-    
-    if name_lower.endswith('.msi'):
-        return InstallerType.MSI
-    
-    if name_lower.endswith('.exe'):
-        # Check for setup/installer patterns
-        setup_patterns = [
-            r'setup',
-            r'install',
-            r'-setup\.',
-            r'_setup\.',
-            r'-install\.',
-            r'_install\.',
+        # Architecture detection patterns
+        self.arch_regexes = {
+            Architecture.X64: [
+                re.compile(r'[_-]?x64[_-]?', re.IGNORECASE),
+                re.compile(r'[_-]?amd64[_-]?', re.IGNORECASE),
+                re.compile(r'[_-]?x86[_-]?64[_-]?', re.IGNORECASE),
+                re.compile(r'[_-]?64bit[_-]?', re.IGNORECASE),
+                re.compile(r'[_-]?win64[_-]?', re.IGNORECASE),
+                re.compile(r'(?<![a-zA-Z0-9])64(?![a-zA-Z0-9])', re.IGNORECASE),
+            ],
+            Architecture.ARM64: [
+                re.compile(r'[_-]?arm64[_-]?', re.IGNORECASE),
+                re.compile(r'[_-]?aarch64[_-]?', re.IGNORECASE),
+            ],
+            Architecture.X86: [
+                re.compile(r'(?<![a-zA-Z0-9])x86(?![_-]?64)', re.IGNORECASE),
+                re.compile(r'[_-]?win32[_-]?', re.IGNORECASE),
+                re.compile(r'[_-]?32bit[_-]?', re.IGNORECASE),
+                re.compile(r'(?<![a-zA-Z0-9])32(?![a-zA-Z0-9])', re.IGNORECASE),
+            ],
+        }
+
+        # Installer type detection
+        self.installer_regexes = {
+            InstallerType.MSI: re.compile(r'\.msi$', re.IGNORECASE),
+            InstallerType.EXE: re.compile(r'-Setup\.exe$|\.exe$', re.IGNORECASE),
+            InstallerType.ZIP: re.compile(r'\.zip$', re.IGNORECASE),
+        }
+
+        # Exclusion patterns
+        self.exclusion_regexes = [
+            re.compile(r'\.sha256$', re.IGNORECASE),
+            re.compile(r'\.sha512$', re.IGNORECASE),
+            re.compile(r'\.asc$', re.IGNORECASE),
+            re.compile(r'\.sig$', re.IGNORECASE),
+            re.compile(r'\.txt$', re.IGNORECASE),
+            re.compile(r'\.md$', re.IGNORECASE),
+            re.compile(r'checksum', re.IGNORECASE),
+            re.compile(r'signature', re.IGNORECASE),
+            re.compile(r'\.blockmap$', re.IGNORECASE),
+            re.compile(r'\.dmg$', re.IGNORECASE),
+            re.compile(r'\.AppImage$', re.IGNORECASE),
+            re.compile(r'\.deb$', re.IGNORECASE),
+            re.compile(r'\.rpm$', re.IGNORECASE),
+            re.compile(r'\.tar\.(gz|bz2|xz)$', re.IGNORECASE),
         ]
-        for pattern in setup_patterns:
-            if re.search(pattern, name_lower):
-                return InstallerType.EXE_SETUP
-        # Generic .exe - could be portable, treat as setup
-        return InstallerType.EXE_SETUP
-    
-    if name_lower.endswith('.zip'):
-        return InstallerType.ZIP_PORTABLE
-    
-    return InstallerType.UNKNOWN
 
+    def _detect_architecture(self, name: str) -> Architecture:
+        """Detect architecture from filename."""
+        name_lower = name.lower()
 
-def parse_asset(asset_name: str, asset_url: str, asset_size: int, is_prerelease: bool = False, version: str = "") -> AssetInfo:
-    """Parse a GitHub release asset into AssetInfo."""
-    installer_type = detect_installer_type(asset_name)
-    architecture = detect_architecture(asset_name)
-    
-    return AssetInfo(
-        name=asset_name,
-        url=asset_url,
-        size=asset_size,
-        installer_type=installer_type,
-        architecture=architecture,
-        is_prerelease=is_prerelease,
-        version=version,
-    )
+        # Check in order of preference: ARM64, X64, X86
+        for arch in [Architecture.ARM64, Architecture.X64, Architecture.X86]:
+            patterns = self.arch_regexes.get(arch, [])
+            for pattern in patterns:
+                if pattern.search(name_lower):
+                    # Check if this architecture is allowed
+                    if arch == Architecture.ARM64 and not self.allow_arm64:
+                        return Architecture.UNKNOWN
+                    if arch == Architecture.X86 and not self.allow_x86_fallback:
+                        return Architecture.UNKNOWN
+                    return arch
+        return Architecture.UNKNOWN
 
+    def _detect_installer_type(self, name: str) -> InstallerType:
+        """Detect installer type from filename."""
+        for installer_type, regex in self.installer_regexes.items():
+            if regex.search(name):
+                return installer_type
+        return InstallerType.UNKNOWN
 
-def filter_windows_x64_installers(assets: list[AssetInfo], allow_prerelease: bool = False) -> list[AssetInfo]:
-    """Filter assets to only Windows x64 installers (MSI and Setup.exe)."""
-    filtered = []
-    for asset in assets:
-        if not asset.is_windows_x64_installer:
-            continue
-        if asset.is_prerelease and not allow_prerelease:
-            continue
-        filtered.append(asset)
-    return filtered
+    def _is_excluded(self, name: str) -> bool:
+        """Check if asset should be excluded."""
+        for regex in self.exclusion_regexes:
+            if regex.search(name):
+                return True
+        return False
 
+    def _sort_key(self, match: AssetMatch) -> tuple:
+        """Sort key for asset matching preference."""
+        # Architecture priority: X64 > ARM64 > X86
+        arch_priority = {
+            Architecture.X64: 0,
+            Architecture.ARM64: 1,
+            Architecture.X86: 2,
+            Architecture.UNKNOWN: 3,
+        }
+        # Installer priority: MSI > EXE > ZIP
+        type_priority = {
+            InstallerType.MSI: 0,
+            InstallerType.EXE: 1,
+            InstallerType.ZIP: 2,
+            InstallerType.UNKNOWN: 3,
+        }
+        # Prefer installers (non-download-only) over download-only assets
+        return (
+            match.is_download_only,
+            arch_priority.get(match.architecture, 3),
+            type_priority.get(match.installer_type, 3),
+            -match.size,
+        )
 
-def find_best_installer(assets: list[AssetInfo], allow_prerelease: bool = False) -> Optional[AssetInfo]:
-    """Find the best Windows x64 installer from assets.
-    
-    Priority:
-    1. MSI (preferred for system installs)
-    2. Setup.exe
-    """
-    filtered = filter_windows_x64_installers(assets, allow_prerelease)
-    
-    if not filtered:
-        return None
-    
-    # Sort: MSI first, then by version (newest first)
-    def sort_key(asset: AssetInfo):
-        type_priority = 0 if asset.installer_type == InstallerType.MSI else 1
-        return (type_priority, asset.version)
-    
-    filtered.sort(key=sort_key)
-    return filtered[0]
+    def match_assets(self, assets: List[dict]) -> List[AssetMatch]:
+        """
+        Match and filter assets for Windows x64.
 
+        Args:
+            assets: List of asset dicts from GitHub API with 'name', 'browser_download_url', 'size', 'sha256'
 
-def find_zip_assets(assets: list[AssetInfo], allow_prerelease: bool = False) -> list[AssetInfo]:
-    """Find all ZIP portable assets."""
-    filtered = []
-    for asset in assets:
-        if not asset.is_zip_portable:
-            continue
-        if asset.is_prerelease and not allow_prerelease:
-            continue
-        filtered.append(asset)
-    return filtered
+        Returns:
+            List of AssetMatch sorted by preference (best first)
+        """
+        matches = []
+
+        for asset in assets:
+            name = asset.get("name", "")
+            url = asset.get("browser_download_url", "")
+            size = asset.get("size", 0)
+            sha256 = asset.get("sha256", "")
+
+            if not name or not url:
+                continue
+
+            # Skip excluded files
+            if self._is_excluded(name):
+                continue
+
+            # Detect architecture
+            arch = self._detect_architecture(name)
+
+            # Skip if architecture is explicitly disallowed
+            name_lower = name.lower()
+            if not self.allow_arm64:
+                arm64_matched = any(p.search(name_lower) for p in self.arch_regexes.get(Architecture.ARM64, []))
+                if arm64_matched:
+                    continue
+
+            if not self.allow_x86_fallback:
+                x86_matched = any(p.search(name_lower) for p in self.arch_regexes.get(Architecture.X86, []))
+                if x86_matched:
+                    continue
+
+            # Detect installer type
+            installer_type = self._detect_installer_type(name)
+
+            # Determine if download-only (ZIP) vs installer
+            is_download_only = installer_type == InstallerType.ZIP
+
+            match = AssetMatch(
+                name=name,
+                url=url,
+                architecture=arch,
+                installer_type=installer_type,
+                is_download_only=is_download_only,
+                size=size,
+                sha256=sha256,
+            )
+            matches.append(match)
+
+        # Sort by preference
+        matches.sort(key=self._sort_key)
+        return matches
+
+    def get_best_match(self, assets: List[dict]) -> Optional[AssetMatch]:
+        """Get the single best matching asset."""
+        # Handle case where pre-matched AssetMatch objects are passed
+        if assets and isinstance(assets[0], AssetMatch):
+            matches = assets
+        else:
+            matches = self.match_assets(assets)
+        return matches[0] if matches else None
 
 
 def get_system_architecture() -> Architecture:
     """Get the current system architecture."""
+    import sys
+    import platform
+
+    if sys.platform != "win32":
+        return Architecture.UNKNOWN
+
     machine = platform.machine().lower()
-    if machine in ('amd64', 'x86_64'):
+    if machine in ("amd64", "x86_64"):
         return Architecture.X64
-    elif machine in ('i386', 'i686', 'x86'):
-        return Architecture.X86
-    elif machine in ('arm64', 'aarch64'):
+    elif machine in ("arm64", "aarch64"):
         return Architecture.ARM64
+    elif machine in ("x86", "i386", "i686"):
+        return Architecture.X86
     return Architecture.UNKNOWN
 
 
 def is_windows_x64() -> bool:
     """Check if running on Windows x64."""
-    return platform.system().lower() == 'windows' and get_system_architecture() == Architecture.X64
-
-
-@dataclass
-class DownloadDecision:
-    """Decision on how to handle a download."""
-    action: str  # 'install', 'download_only', 'manual_uninstall', 'skip'
-    asset: Optional[AssetInfo] = None
-    message: str = ""
-    requires_confirmation: bool = False
-    confirmation_prompt: str = ""
-
-
-def decide_download_action(
-    assets: list[AssetInfo],
-    allow_prerelease: bool = False,
-    requires_manual_uninstall: bool = False,
-) -> DownloadDecision:
-    """Decide what action to take based on available assets."""
-    
-    # First, look for Windows x64 installers
-    installer = find_best_installer(assets, allow_prerelease)
-    
-    if installer:
-        if requires_manual_uninstall:
-            return DownloadDecision(
-                action='manual_uninstall',
-                asset=installer,
-                message=f"Notice: This application requires manual uninstallation of the previous version.",
-                requires_confirmation=True,
-                confirmation_prompt=(
-                    "Installer downloaded. Do you want ohub to attempt auto-uninstalling "
-                    "the previous version, or will you perform it manually? "
-                    "[1: Attempt Auto-Uninstall / 2: Manual / Abort]"
-                ),
-            )
-        return DownloadDecision(
-            action='install',
-            asset=installer,
-            message=f"Found Windows x64 installer: {installer.name}",
-        )
-    
-    # No installer found, check for ZIP
-    zip_assets = find_zip_assets(assets, allow_prerelease)
-    if zip_assets:
-        # Prefer x64 ZIP if available
-        x64_zips = [a for a in zip_assets if a.architecture == Architecture.X64]
-        chosen = x64_zips[0] if x64_zips else zip_assets[0]
-        
-        return DownloadDecision(
-            action='download_only',
-            asset=chosen,
-            message=(
-                f"No Windows x64 installer (.msi/.exe) found. "
-                f"Downloading portable archive: {chosen.name}"
-            ),
-        )
-    
-    return DownloadDecision(
-        action='skip',
-        message="No suitable Windows x64 assets found in release.",
-    )
-
-
-__all__ = [
-    'InstallerType',
-    'Architecture',
-    'AssetInfo',
-    'DownloadDecision',
-    'detect_architecture',
-    'detect_installer_type',
-    'parse_asset',
-    'filter_windows_x64_installers',
-    'find_best_installer',
-    'find_zip_assets',
-    'get_system_architecture',
-    'is_windows_x64',
-    'decide_download_action',
-]
+    import sys
+    return sys.platform == "win32" and get_system_architecture() == Architecture.X64
