@@ -55,16 +55,14 @@ from obtainhub.core.exceptions import (
 from obtainhub.core.github_client import (
     GitHubClient,
     ReleaseInfo,
-    ReleaseAsset,
 )
 from obtainhub.core.asset_matcher import (
     InstallerType,
     Architecture,
     AssetMatch,
     AssetMatcher,
-    get_system_architecture,
-    is_windows_x64,
 )
+from obtainhub.utils.helpers import get_architecture as get_system_architecture, is_windows_x64
 
 __all__ = [
     # Config
@@ -116,7 +114,6 @@ __all__ = [
     "InstallerTypeMismatchError",
     # GitHub Client
     "GitHubClient",
-    "ReleaseAsset",
     # Asset Matcher
     "InstallerType",
     "Architecture",

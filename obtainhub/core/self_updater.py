@@ -17,9 +17,8 @@ from obtainhub.core.asset_matcher import (
     InstallerType,
     Architecture,
     AssetMatcher,
-    is_windows_x64,
-    get_system_architecture,
 )
+from obtainhub.utils.helpers import is_windows_x64, get_architecture as get_system_architecture
 from obtainhub.core.config import get_config
 from obtainhub.core.logger import get_logger
 from obtainhub.core.exceptions import (

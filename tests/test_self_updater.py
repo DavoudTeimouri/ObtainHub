@@ -10,9 +10,8 @@ from obtainhub.core.asset_matcher import (
     InstallerType,
     Architecture,
     AssetMatcher,
-    get_system_architecture,
-    is_windows_x64,
 )
+from obtainhub.utils.helpers import get_architecture as get_system_architecture, is_windows_x64
 from obtainhub.core.self_updater import (
     ReleaseInfo,
     SelfUpdater,
@@ -132,7 +131,7 @@ class TestAssetMatcher:
             {"name": "app-x64.msi", "browser_download_url": "url2", "size": 100},
         ]
         matches = matcher.match_assets(assets)
-        best = matcher.get_best_match(matches)
+        best = matcher.get_best_match(assets)
         assert best is not None
         assert best.installer_type == InstallerType.MSI
 
@@ -257,7 +256,7 @@ class TestSystemArchitecture:
     def test_get_system_architecture(self):
         """Test system architecture detection."""
         arch = get_system_architecture()
-        assert arch in [Architecture.X64, Architecture.ARM64, Architecture.X86, Architecture.UNKNOWN]
+        assert arch in ['x64', 'arm64', 'x86', 'unknown']
 
     def test_is_windows_x64(self):
         """Test Windows x64 check."""

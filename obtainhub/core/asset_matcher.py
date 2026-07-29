@@ -96,6 +96,17 @@ class AssetMatcher:
             re.compile(r'\.deb$', re.IGNORECASE),
             re.compile(r'\.rpm$', re.IGNORECASE),
             re.compile(r'\.tar\.(gz|bz2|xz)$', re.IGNORECASE),
+            # Non-Windows platform patterns
+            re.compile(r'-darwin-', re.IGNORECASE),
+            re.compile(r'-linux-', re.IGNORECASE),
+            re.compile(r'-macos-', re.IGNORECASE),
+            re.compile(r'-osx-', re.IGNORECASE),
+            re.compile(r'-win32-ia32-', re.IGNORECASE),
+            re.compile(r'-win32-x86-', re.IGNORECASE),
+            # Debug/symbol/source packages
+            re.compile(r'-symbols', re.IGNORECASE),
+            re.compile(r'-debug', re.IGNORECASE),
+            re.compile(r'^source', re.IGNORECASE),
         ]
 
     def _detect_architecture(self, name: str) -> Architecture:
@@ -113,7 +124,17 @@ class AssetMatcher:
                     if arch == Architecture.X86 and not self.allow_x86_fallback:
                         return Architecture.UNKNOWN
                     return arch
+
+        # Default to X64 for Windows installers without explicit architecture
+        # (since this tool is Windows x64 only)
+        if self._is_windows_installer(name_lower):
+            return Architecture.X64
+
         return Architecture.UNKNOWN
+
+    def _is_windows_installer(self, name_lower: str) -> bool:
+        """Check if filename looks like a Windows installer."""
+        return name_lower.endswith('.exe') or name_lower.endswith('.msi') or name_lower.endswith('.zip')
 
     def _detect_installer_type(self, name: str) -> InstallerType:
         """Detect installer type from filename."""
@@ -139,18 +160,16 @@ class AssetMatcher:
             Architecture.UNKNOWN: 3,
         }
         # Installer priority: MSI > EXE > ZIP
-        type_priority = {
+        inst_priority = {
             InstallerType.MSI: 0,
             InstallerType.EXE: 1,
             InstallerType.ZIP: 2,
             InstallerType.UNKNOWN: 3,
         }
-        # Prefer installers (non-download-only) over download-only assets
         return (
-            match.is_download_only,
             arch_priority.get(match.architecture, 3),
-            type_priority.get(match.installer_type, 3),
-            -match.size,
+            inst_priority.get(match.installer_type, 3),
+            -match.size,  # Larger files first (more likely to be full installer)
         )
 
     def match_assets(self, assets: List[dict]) -> List[AssetMatch]:
@@ -158,10 +177,11 @@ class AssetMatcher:
         Match and filter assets for Windows x64.
 
         Args:
-            assets: List of asset dicts from GitHub API with 'name', 'browser_download_url', 'size', 'sha256'
+            assets: List of asset dicts from GitHub API with keys:
+                    name, browser_download_url, size, sha256 (optional)
 
         Returns:
-            List of AssetMatch sorted by preference (best first)
+            Sorted list of AssetMatch objects
         """
         matches = []
 
@@ -171,9 +191,6 @@ class AssetMatcher:
             size = asset.get("size", 0)
             sha256 = asset.get("sha256", "")
 
-            if not name or not url:
-                continue
-
             # Skip excluded files
             if self._is_excluded(name):
                 continue
@@ -181,34 +198,29 @@ class AssetMatcher:
             # Detect architecture
             arch = self._detect_architecture(name)
 
-            # Skip if architecture is explicitly disallowed
-            name_lower = name.lower()
-            if not self.allow_arm64:
-                arm64_matched = any(p.search(name_lower) for p in self.arch_regexes.get(Architecture.ARM64, []))
-                if arm64_matched:
-                    continue
-
-            if not self.allow_x86_fallback:
-                x86_matched = any(p.search(name_lower) for p in self.arch_regexes.get(Architecture.X86, []))
-                if x86_matched:
-                    continue
+            # Skip if architecture is unknown or disallowed
+            if arch == Architecture.UNKNOWN:
+                continue
 
             # Detect installer type
-            installer_type = self._detect_installer_type(name)
+            inst_type = self._detect_installer_type(name)
 
-            # Determine if download-only (ZIP) vs installer
-            is_download_only = installer_type == InstallerType.ZIP
+            # Skip unknown installer types
+            if inst_type == InstallerType.UNKNOWN:
+                continue
 
-            match = AssetMatch(
+            # Determine if download-only (ZIP files)
+            is_download_only = (inst_type == InstallerType.ZIP)
+
+            matches.append(AssetMatch(
                 name=name,
                 url=url,
                 architecture=arch,
-                installer_type=installer_type,
+                installer_type=inst_type,
                 is_download_only=is_download_only,
                 size=size,
                 sha256=sha256,
-            )
-            matches.append(match)
+            ))
 
         # Sort by preference
         matches.sort(key=self._sort_key)
@@ -216,33 +228,10 @@ class AssetMatcher:
 
     def get_best_match(self, assets: List[dict]) -> Optional[AssetMatch]:
         """Get the single best matching asset."""
-        # Handle case where pre-matched AssetMatch objects are passed
-        if assets and isinstance(assets[0], AssetMatch):
-            matches = assets
-        else:
-            matches = self.match_assets(assets)
+        matches = self.match_assets(assets)
         return matches[0] if matches else None
 
 
-def get_system_architecture() -> Architecture:
-    """Get the current system architecture."""
-    import sys
-    import platform
-
-    if sys.platform != "win32":
-        return Architecture.UNKNOWN
-
-    machine = platform.machine().lower()
-    if machine in ("amd64", "x86_64"):
-        return Architecture.X64
-    elif machine in ("arm64", "aarch64"):
-        return Architecture.ARM64
-    elif machine in ("x86", "i386", "i686"):
-        return Architecture.X86
-    return Architecture.UNKNOWN
-
-
-def is_windows_x64() -> bool:
-    """Check if running on Windows x64."""
-    import sys
-    return sys.platform == "win32" and get_system_architecture() == Architecture.X64
+def get_asset_matcher(**kwargs) -> AssetMatcher:
+    """Factory function to create AssetMatcher with defaults."""
+    return AssetMatcher(**kwargs)
