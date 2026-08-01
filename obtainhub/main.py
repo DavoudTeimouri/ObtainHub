@@ -4,7 +4,7 @@ import sys
 import argparse
 from typing import List, Optional
 
-from obtainhub.core.config import get_config_manager, ConfigManager
+from obtainhub.core.config import get_config_manager, ConfigManager, ManifestSource
 from obtainhub.core.state import get_state_manager, StateManager
 from obtainhub.core.logger import setup_logging, get_logger, LogLevel
 from obtainhub.core.self_updater import SelfUpdater, check_and_update
@@ -35,6 +35,9 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version", version="%(prog)s 0.1.0"
+    )
+    parser.add_argument(
+        "--skip-self-update", action="store_true", help="Skip self-update check on startup"
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
@@ -69,11 +72,44 @@ def main(args: Optional[List[str]] = None) -> int:
         "--yes", "-y", action="store_true", help="Auto-confirm prompts"
     )
 
+    # check
+    check_parser = subparsers.add_parser("check", help="Check for updates without installing")
+    check_parser.add_argument("app", nargs="?", help="App to check (default: all)")
+    check_parser.add_argument(
+        "--prerelease", action="store_true", help="Include prerelease versions"
+    )
+    check_parser.add_argument(
+        "--json", action="store_true", help="Output as JSON"
+    )
+
     # list
     list_parser = subparsers.add_parser("list", help="List installed apps")
     list_parser.add_argument(
         "--json", action="store_true", help="Output as JSON"
     )
+
+    # uninstall
+    uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall an app")
+    uninstall_parser.add_argument("app", help="App identifier (owner/repo)")
+    uninstall_parser.add_argument(
+        "--yes", "-y", action="store_true", help="Auto-confirm prompts"
+    )
+    uninstall_parser.add_argument(
+        "--keep-data", action="store_true", help="Keep downloaded installer files"
+    )
+
+    # source
+    source_parser = subparsers.add_parser("source", help="Manage custom sources")
+    source_subparsers = source_parser.add_subparsers(dest="source_action")
+    source_subparsers.add_parser("list", help="List configured sources")
+    add_parser = source_subparsers.add_parser("add", help="Add a custom source")
+    add_parser.add_argument("name", help="Source name")
+    add_parser.add_argument("url", help="Source URL (GitHub API or manifest)")
+    add_parser.add_argument(
+        "--type", choices=["github", "manifest"], default="github", help="Source type"
+    )
+    remove_parser = source_subparsers.add_parser("remove", help="Remove a source")
+    remove_parser.add_argument("name", help="Source name")
 
     # search
     search_parser = subparsers.add_parser("search", help="Search for apps")
@@ -121,6 +157,19 @@ def main(args: Optional[List[str]] = None) -> int:
         config_manager = get_config_manager()
         state_manager = get_state_manager()
 
+        # Self-update check (unless skipped)
+        if not parsed.skip_self_update and parsed.command != "self-update":
+            config = config_manager.load()
+            if config.self_update_enabled:
+                try:
+                    updater = SelfUpdater(config_manager, state_manager)
+                    result = updater.check_and_update(parsed.prerelease if hasattr(parsed, 'prerelease') else False, False)
+                    if result:
+                        print(f"Self-updated to {result}. Please re-run command.")
+                        return 0
+                except Exception:
+                    logger.debug("Self-update check failed, continuing")
+
         if parsed.command == "install":
             return cmd_install(
                 parsed, config_manager, state_manager, logger
@@ -129,8 +178,20 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_update(
                 parsed, config_manager, state_manager, logger
             )
+        elif parsed.command == "check":
+            return cmd_check(
+                parsed, config_manager, state_manager, logger
+            )
         elif parsed.command == "list":
             return cmd_list(parsed, state_manager)
+        elif parsed.command == "uninstall":
+            return cmd_uninstall(
+                parsed, config_manager, state_manager, logger
+            )
+        elif parsed.command == "source":
+            return cmd_source(
+                parsed, config_manager
+            )
         elif parsed.command == "search":
             return cmd_search(parsed, config_manager, logger)
         elif parsed.command == "config":
@@ -206,7 +267,7 @@ def cmd_install(
         downloaded_path = download_file(
             match.url,
             filename=match.name,
-            expected_sha256=None,  # Could add checksum verification later
+            expected_sha256=None,
         )
     except Exception as e:
         print(f"Download failed: {e}", file=sys.stderr)
@@ -355,6 +416,86 @@ def cmd_update(
     return 0
 
 
+def cmd_check(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle check command - check for updates without installing."""
+    token = config_manager.load().github_token
+    client = GitHubClient(token=token)
+    matcher = AssetMatcher(allow_arm64=False, allow_x86_fallback=False, require_installer=True)
+
+    apps_to_check = []
+    if parsed.app:
+        apps_to_check = [parsed.app]
+    else:
+        apps = state_manager.get_all_apps()
+        apps_to_check = [app.id for app in apps]
+
+    if not apps_to_check:
+        print("No apps to check.")
+        return 0
+
+    print(f"Checking updates for {len(apps_to_check)} app(s)...\n")
+
+    results = []
+    for app_id in apps_to_check:
+        try:
+            app = state_manager.get_app(app_id)
+            if not app:
+                print(f"Skipping {app_id}: not found in state")
+                continue
+
+            owner, repo = app_id.split("/", 1)
+            release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
+
+            current_version = app.version
+            latest_version = release.tag_name.lstrip("v")
+            has_update = latest_version > current_version
+
+            match = matcher.get_best_match(release.assets)
+            asset_info = f"{match.name} ({match.installer_type.name})" if match else "No suitable asset"
+
+            result = {
+                "app": app_id,
+                "current_version": current_version,
+                "latest_version": latest_version,
+                "has_update": has_update,
+                "prerelease": release.prerelease,
+                "asset": asset_info,
+                "release_url": release.html_url,
+            }
+            results.append(result)
+
+            if not parsed.json:
+                status = "UPDATE AVAILABLE" if has_update else "Up to date"
+                prerelease_str = " (prerelease)" if release.prerelease else ""
+                print(f"  {app.name} ({app_id})")
+                print(f"    Current:  {current_version}")
+                print(f"    Latest:   {latest_version}{prerelease_str}")
+                print(f"    Status:   {status}")
+                print(f"    Asset:    {asset_info}")
+                print()
+
+        except Exception as e:
+            logger.error(f"Failed to check {app_id}: {e}")
+            result = {
+                "app": app_id,
+                "error": str(e),
+            }
+            results.append(result)
+            if not parsed.json:
+                print(f"  {app_id}: Error - {e}\n")
+
+    if parsed.json:
+        import json
+        print(json.dumps(results, indent=2))
+
+    return 0
+
+
 def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
     """Handle list command."""
     apps = state_manager.get_all_apps()
@@ -367,9 +508,95 @@ def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
         import json
         print(json.dumps([a.to_dict() for a in apps], indent=2))
     else:
+        # Tabular format
+        print(f"{'Name':<25} {'Version':<15} {'ID':<30} {'Type':<10}")
+        print("-" * 80)
         for app in apps:
-            print(f"{app.name} ({app.version}) - {app.id} [{app.installer_type}]")
+            print(f"{app.name:<25} {app.version:<15} {app.id:<30} {app.installer_type:<10}")
     return 0
+
+
+def cmd_uninstall(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle uninstall command."""
+    app_id = parsed.app
+
+    if not parsed.yes:
+        confirm = input(f"Uninstall {app_id}? [y/N]: ").strip().lower()
+        if confirm != "y":
+            print("Cancelled.")
+            return 1
+
+    app = state_manager.get_app(app_id)
+    if not app:
+        print(f"App not found in state: {app_id}", file=sys.stderr)
+        return 1
+
+    installer = SilentInstaller()
+    success, message = installer.uninstall(app_id)
+
+    if success:
+        print(f"Success: {message}")
+        # Remove from state
+        state_manager.remove_app(app_id)
+        # Optionally remove installer file
+        if not parsed.keep_data and app.installer_path:
+            try:
+                Path(app.installer_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        return 0
+    else:
+        print(f"Uninstall failed: {message}")
+        print("Manual uninstall required. Use --keep-data to keep installer files.")
+        return 1
+
+
+def cmd_source(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+) -> int:
+    """Handle source command."""
+    config = config_manager.load()
+
+    if parsed.source_action == "list":
+        if not config.sources:
+            print("No custom sources configured.")
+            return 0
+        for src in config.sources:
+            print(f"  {src.name}: {src.url} ({src.type})")
+        return 0
+
+    elif parsed.source_action == "add":
+        # Check if source already exists
+        for src in config.sources:
+            if src.name == parsed.name:
+                print(f"Source '{parsed.name}' already exists.", file=sys.stderr)
+                return 1
+
+        new_source = ManifestSource(
+            name=parsed.name,
+            url=parsed.url,
+            type=parsed.type,
+        )
+        config.sources.append(new_source)
+        config_manager.save(config)
+        print(f"Added source: {parsed.name} -> {parsed.url}")
+        return 0
+
+    elif parsed.source_action == "remove":
+        config.sources = [s for s in config.sources if s.name != parsed.name]
+        config_manager.save(config)
+        print(f"Removed source: {parsed.name}")
+        return 0
+
+    else:
+        print("Usage: ohub source [list|add|remove]")
+        return 1
 
 
 def cmd_search(

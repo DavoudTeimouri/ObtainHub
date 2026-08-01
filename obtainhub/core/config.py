@@ -2,9 +2,9 @@
 
 import json
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Union
 
 
 @dataclass
@@ -28,24 +28,28 @@ class Config:
     """Main configuration for ObtainHub."""
     # GitHub API
     github_token: str = ""
-    
+    self_update_enabled: bool = True
+
     # Directories
     install_dir: str = str(Path.home() / "Applications" / "ObtainHub")
     download_dir: str = str(Path.home() / "Downloads" / "ObtainHub")
     config_dir: str = str(Path.home() / ".config" / "obtainhub")
     state_dir: str = str(Path.home() / ".local" / "share" / "obtainhub")
-    
+
     # Update behavior
     update_interval_hours: int = 24
     auto_update: bool = True
     allow_prerelease: bool = False
-    
+
     # Architecture preferences
     prefer_x64: bool = True
     allow_x86_fallback: bool = False
-    
+
     # Manual uninstall handling
     auto_attempt_uninstall: bool = False
+
+    # Custom sources
+    sources: List[ManifestSource] = field(default_factory=list)
     
     # Network
     proxy: str = ""
