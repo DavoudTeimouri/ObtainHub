@@ -33,9 +33,13 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build executable
+      - name: Build executable (onefile)
         run: |
-          python build/build_dist.py --exe-only
+          python build/build_dist.py --onefile
+
+      - name: Build executable (onedir)
+        run: |
+          python build/build_dist.py --onedir
 
       - name: Install Inno Setup
         run: |
@@ -43,7 +47,7 @@ jobs:
 
       - name: Build installer
         run: |
-          python build/build_dist.py --installer-only
+          python build/build_dist.py --installer
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -51,7 +55,8 @@ jobs:
           name: ObtainHub-Windows-x64
           path: |
             dist/ohub.exe
-            installer/ObtainHub-Setup-x64.exe
+            dist/ohub/
+            installer/ObtainHub-Setup.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -59,7 +64,7 @@ jobs:
         with:
           files: |
             dist/ohub.exe
-            installer/ObtainHub-Setup-x64.exe
+            installer/ObtainHub-Setup.exe
           prerelease: ${{ github.event.inputs.prerelease || false }}
           draft: false
           generate_release_notes: true
