@@ -1,388 +1,425 @@
-#!/usr/bin/env python3
-"""Main CLI entry point for ObtainHub."""
+"""ObtainHub CLI entry point."""
 
 import sys
 import argparse
-from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
-from obtainhub import __version__
-from obtainhub.core.config import get_config_manager, get_config
-from obtainhub.core.state import get_state_manager
-from obtainhub.core.logger import get_logger, setup_logging, LogLevel
-from obtainhub.core.self_updater import check_and_update
-from obtainhub.core.exceptions import CLIError, CLIArgumentError
-from obtainhub.core.asset_matcher import is_windows_x64
-from obtainhub.utils.helpers import parse_owner_repo
+from obtainhub.core.config import get_config_manager, ConfigManager
+from obtainhub.core.state import get_state_manager, StateManager
+from obtainhub.core.logger import setup_logging, get_logger, LogLevel
+from obtainhub.core.self_updater import SelfUpdater, check_and_update
+from obtainhub.core.github_client import GitHubClient
+from obtainhub.core.asset_matcher import AssetMatcher, InstallerType
+from obtainhub.core.downloader import download_file, Downloader
+from obtainhub.core.installer import install_app, InstallResult, SilentInstaller
+from obtainhub.core.exceptions import (
+    ObtainHubError,
+    InstallerError,
+    PrereleaseConfirmationRequired,
+    AssetNotFoundError,
+    AssetMatchError,
+    InstallerExecutionError,
+    ManualUninstallRequired,
+)
+from obtainhub.utils.helpers import get_architecture as get_system_architecture
 
-logger = get_logger()
 
-
-def create_parser() -> argparse.ArgumentParser:
-    """Create the main argument parser."""
+def main(args: Optional[List[str]] = None) -> int:
+    """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         prog="ohub",
-        description="ObtainHub - GitHub-based Package Updater and Manager for Windows x64",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  ohub install microsoft/vscode
-  ohub install owner/repo --download-only
-  ohub update
-  ohub check
-  ohub source add my-source https://example.com/manifest.json
-  ohub config --set download_dir=D:\\Downloads\\ObtainHub
+        description="ObtainHub - Manage Windows x64 apps via GitHub Releases",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="count", default=0, help="Increase verbosity"
+    )
+    parser.add_argument(
+        "--version", action="version", version="%(prog)s 0.1.0"
+    )
 
-Global Options:
-  --skip-self-update    Skip ObtainHub self-update check on startup
-  --prerelease, -p      Include prerelease versions in checks/updates
-  --verbose, -v         Enable verbose output
-  --config-dir PATH     Use custom configuration directory
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
 
-Note: ObtainHub only supports Windows x64. It installs .msi and -Setup.exe files.
-Portable .zip files are downloaded only (no auto-extract/install).
-        """,
-    )
-    
-    # Global options
-    parser.add_argument(
-        "-v", "--version",
-        action="version",
-        version=f"ObtainHub {__version__}",
-    )
-    parser.add_argument(
-        "--skip-self-update",
-        action="store_true",
-        help="Skip ObtainHub self-update check on startup",
-    )
-    parser.add_argument(
-        "--prerelease", "-p",
-        action="store_true",
-        help="Include prerelease versions (requires confirmation)",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output",
-    )
-    parser.add_argument(
-        "--config-dir",
-        type=Path,
-        help="Custom configuration directory",
-    )
-    
-    # Subcommands
-    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
-    
-    # install command
-    install_parser = subparsers.add_parser(
-        "install",
-        help="Install an application from GitHub releases",
-        description="Install an application from a GitHub repository's releases",
+    # install
+    install_parser = subparsers.add_parser("install", help="Install an app")
+    install_parser.add_argument("app", help="App identifier (owner/repo)")
+    install_parser.add_argument("--tag", help="Specific release tag")
+    install_parser.add_argument(
+        "--prerelease", action="store_true", help="Allow prerelease versions"
     )
     install_parser.add_argument(
-        "repo",
-        help="Repository in format 'owner/repo'",
+        "--force", action="store_true", help="Force reinstall"
     )
     install_parser.add_argument(
-        "--download-only",
-        action="store_true",
-        help="Download installer only, do not execute",
+        "--download-only", action="store_true", help="Only download, don't install"
     )
     install_parser.add_argument(
-        "--version",
-        help="Specific version to install (default: latest)",
+        "--yes", "-y", action="store_true", help="Auto-confirm prompts"
     )
-    install_parser.add_argument(
-        "--source",
-        help="Manifest source to use",
-    )
-    
-    # update command
-    update_parser = subparsers.add_parser(
-        "update",
-        help="Update all installed applications",
-        description="Check for and install updates for all installed applications",
+
+    # update
+    update_parser = subparsers.add_parser("update", help="Update installed apps")
+    update_parser.add_argument("app", nargs="?", help="App to update (default: all)")
+    update_parser.add_argument(
+        "--prerelease", action="store_true", help="Allow prerelease versions"
     )
     update_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Check for updates without installing",
+        "--dry-run", action="store_true", help="Show what would be updated"
     )
     update_parser.add_argument(
-        "--app",
-        help="Update specific app only (owner/repo)",
+        "--yes", "-y", action="store_true", help="Auto-confirm prompts"
     )
-    
-    # check command
-    check_parser = subparsers.add_parser(
-        "check",
-        help="Check for available updates",
-        description="Check for updates without installing",
+
+    # list
+    list_parser = subparsers.add_parser("list", help="List installed apps")
+    list_parser.add_argument(
+        "--json", action="store_true", help="Output as JSON"
     )
-    check_parser.add_argument(
-        "--app",
-        help="Check specific app only (owner/repo)",
+
+    # search
+    search_parser = subparsers.add_parser("search", help="Search for apps")
+    search_parser.add_argument("query", help="Search query")
+    search_parser.add_argument(
+        "--limit", type=int, default=10, help="Max results"
     )
-    
-    # source command
-    source_parser = subparsers.add_parser(
-        "source",
-        help="Manage manifest sources",
-        description="Add, remove, or list custom manifest sources",
+
+    # config
+    config_parser = subparsers.add_parser("config", help="Manage configuration")
+    config_subparsers = config_parser.add_subparsers(dest="config_action")
+    config_subparsers.add_parser("show", help="Show current config")
+    config_subparsers.add_parser("edit", help="Open config in editor")
+    set_parser = config_subparsers.add_parser("set", help="Set config value")
+    set_parser.add_argument("key", help="Config key")
+    set_parser.add_argument("value", help="Config value")
+    get_parser = config_subparsers.add_parser("get", help="Get config value")
+    get_parser.add_argument("key", help="Config key")
+
+    # self-update
+    self_update_parser = subparsers.add_parser("self-update", help="Update ohub itself")
+    self_update_parser.add_argument(
+        "--prerelease", action="store_true", help="Allow prerelease versions"
     )
-    source_subparsers = source_parser.add_subparsers(dest="source_action", metavar="ACTION")
-    
-    source_add = source_subparsers.add_parser("add", help="Add a manifest source")
-    source_add.add_argument("name", help="Source name")
-    source_add.add_argument("url", help="Manifest JSON URL")
-    
-    source_subparsers.add_parser("remove", help="Remove a manifest source").add_argument("name", help="Source name")
-    source_subparsers.add_parser("list", help="List manifest sources")
-    source_subparsers.add_parser("enable", help="Enable a manifest source").add_argument("name", help="Source name")
-    source_subparsers.add_parser("disable", help="Disable a manifest source").add_argument("name", help="Source name")
-    
-    # config command
-    config_parser = subparsers.add_parser(
-        "config",
-        help="View or modify configuration",
-        description="Display or change ObtainHub configuration",
+    self_update_parser.add_argument(
+        "--force", action="store_true", help="Force update even if same version"
     )
-    config_parser.add_argument("--get", help="Get a config value")
-    config_parser.add_argument("--set", nargs=2, metavar=("KEY", "VALUE"), help="Set a config value")
-    config_parser.add_argument("--list", action="store_true", help="List all config values")
-    config_parser.add_argument("--reset", action="store_true", help="Reset config to defaults")
-    
-    return parser
 
+    parsed = parser.parse_args(args)
 
-def confirm_prerelease(version: str) -> bool:
-    """Prompt user for prerelease confirmation."""
-    print(f"\nWarning: Version {version} is a Prerelease.")
-    print("Are you sure you want to proceed? [y/N] ", end='', flush=True)
-    try:
-        response = input().strip().lower()
-        return response == 'y'
-    except (EOFError, KeyboardInterrupt):
-        return False
-
-
-def confirm_manual_uninstall(app_name: str) -> int:
-    """Prompt user for manual uninstall action.
-    
-    Returns:
-        1 = Attempt auto-uninstall
-        2 = Manual (user will do it)
-        0 = Abort
-    """
-    print(f"\nNotice: {app_name} requires manual uninstallation of the previous version.")
-    print("Installer downloaded. Do you want ohub to attempt auto-uninstalling the previous version, or will you perform it manually?")
-    print("[1: Attempt Auto-Uninstall / 2: Manual / Abort] ", end='', flush=True)
-    try:
-        response = input().strip()
-        if response == '1':
-            return 1
-        elif response == '2':
-            return 2
-        return 0
-    except (EOFError, KeyboardInterrupt):
-        return 0
-
-
-def handle_install(args, config, state_mgr) -> int:
-    """Handle install command."""
-    # Parse repo
-    try:
-        owner, repo = parse_owner_repo(args.repo)
-    except ValueError as e:
-        raise CLIArgumentError(str(e))
-    
-    logger.info(f"Installing {owner}/{repo}", repo=args.repo)
-    
-    # TODO: Implement actual install logic
-    # This would:
-    # 1. Fetch release info from GitHub
-    # 2. Use asset_matcher to find best installer
-    # 3. Handle prerelease confirmation
-    # 4. Handle ZIP download-only fallback
-    # 5. Handle manual uninstall prompt
-    # 6. Download and execute installer
-    # 7. Update state
-    
-    print(f"Install command for {owner}/{repo} - not yet implemented")
-    if args.download_only:
-        print("  (download-only mode)")
-    if args.version:
-        print(f"  (version: {args.version})")
-    if args.source:
-        print(f"  (source: {args.source})")
-    
-    return 0
-
-
-def handle_update(args, config, state_mgr) -> int:
-    """Handle update command."""
-    logger.info("Checking for updates")
-    
-    if args.dry_run:
-        print("Update check (dry-run) - not yet implemented")
-    else:
-        print("Update - not yet implemented")
-    if args.app:
-        print(f"  (app: {args.app})")
-    
-    return 0
-
-
-def handle_check(args, config, state_mgr) -> int:
-    """Handle check command."""
-    logger.info("Checking for updates")
-    print("Check for updates - not yet implemented")
-    if args.app:
-        print(f"  (app: {args.app})")
-    return 0
-
-
-def handle_source(args, config_mgr) -> int:
-    """Handle source command."""
-    if args.source_action == "add":
-        config_mgr.add_manifest_source(args.name, args.url)
-        print(f"Added manifest source: {args.name} -> {args.url}")
-    elif args.source_action == "remove":
-        if config_mgr.remove_manifest_source(args.name):
-            print(f"Removed manifest source: {args.name}")
-        else:
-            print(f"Source not found: {args.name}")
-            return 1
-    elif args.source_action == "list":
-        sources = config_mgr.get_enabled_manifest_sources()
-        if sources:
-            for s in sources:
-                status = "enabled" if s.enabled else "disabled"
-                print(f"  {s.name} ({status}): {s.url}")
-        else:
-            print("No manifest sources configured")
-    elif args.source_action == "enable":
-        # TODO: implement
-        print(f"Enable source: {args.name} - not yet implemented")
-    elif args.source_action == "disable":
-        # TODO: implement
-        print(f"Disable source: {args.name} - not yet implemented")
-    else:
-        print("Source action required: add, remove, list, enable, disable")
-        return 1
-    return 0
-
-
-def handle_config(args, config_mgr) -> int:
-    """Handle config command."""
-    config = config_mgr.load()
-    
-    if args.list:
-        data = config.to_dict()
-        for key, value in sorted(data.items()):
-            if key == "github_token" and value:
-                value = "***REDACTED***"
-            print(f"  {key}: {value}")
-    elif args.get:
-        value = getattr(config, args.get, None)
-        if value is not None:
-            if args.get == "github_token" and value:
-                print("***REDACTED***")
-            else:
-                print(value)
-        else:
-            print(f"Unknown config key: {args.get}")
-            return 1
-    elif args.set:
-        key, value = args.set
-        # Type conversion
-        if key in ("update_interval_hours", "max_parallel_downloads"):
-            value = int(value)
-        elif key in ("auto_update", "allow_prerelease", "skip_self_update", "auto_confirm_prerelease"):
-            value = value.lower() in ("true", "1", "yes", "on")
-        config_mgr.set(key, value)
-        print(f"Set {key} = {value}")
-    elif args.reset:
-        config_mgr.reset()
-        print("Configuration reset to defaults")
-    else:
-        print("Config action required: --get, --set, --list, or --reset")
-        return 1
-    return 0
-
-
-def main() -> int:
-    """Main entry point."""
-    parser = create_parser()
-    args = parser.parse_args()
-    
-    # Platform check - ObtainHub only runs on Windows x64
-    if not is_windows_x64():
-        print("Error: ObtainHub only supports Windows x64 (64-bit).", file=sys.stderr)
-        print(f"Current platform: {sys.platform}, architecture: {__import__('platform').machine()}", file=sys.stderr)
-        return 1
-    
-    # Set up logging
-    log_level = LogLevel.DEBUG if args.verbose else LogLevel.INFO
-    config_mgr = get_config_manager(args.config_dir)
-    try:
-        config = config_mgr.load()
-        log_level = LogLevel[config.log_level]
-    except Exception:
-        pass
-    setup_logging(level=log_level)
-    
-    # Initialize state manager
-    state_mgr = get_state_manager()
-    
-    # Global options
-    skip_self_update = args.skip_self_update or config.skip_self_update
-    allow_prerelease = args.prerelease or config.allow_prerelease
-    
-    # Self-update check (before any subcommand)
-    if not skip_self_update and args.command != "config":
-        try:
-            updated = check_and_update(
-                current_version=__version__,
-                allow_prerelease=allow_prerelease,
-                skip_self_update=skip_self_update,
-            )
-            if updated:
-                # If self-update happened, we should have exited
-                return 0
-        except Exception as e:
-            logger.warning(f"Self-update check failed: {e}")
-            # Continue anyway
-    
-    # Handle commands
-    if not args.command:
+    if not parsed.command:
         parser.print_help()
         return 0
-    
+
+    # Setup logging
+    log_level = LogLevel.WARNING
+    if parsed.verbose == 1:
+        log_level = LogLevel.INFO
+    elif parsed.verbose >= 2:
+        log_level = LogLevel.DEBUG
+    setup_logging(level=log_level)
+    logger = get_logger(__name__)
+
     try:
-        if args.command == "install":
-            return handle_install(args, config, state_mgr)
-        elif args.command == "update":
-            return handle_update(args, config, state_mgr)
-        elif args.command == "check":
-            return handle_check(args, config, state_mgr)
-        elif args.command == "source":
-            return handle_source(args, config_mgr)
-        elif args.command == "config":
-            return handle_config(args, config_mgr)
+        config_manager = get_config_manager()
+        state_manager = get_state_manager()
+
+        if parsed.command == "install":
+            return cmd_install(
+                parsed, config_manager, state_manager, logger
+            )
+        elif parsed.command == "update":
+            return cmd_update(
+                parsed, config_manager, state_manager, logger
+            )
+        elif parsed.command == "list":
+            return cmd_list(parsed, state_manager)
+        elif parsed.command == "search":
+            return cmd_search(parsed, config_manager, logger)
+        elif parsed.command == "config":
+            return cmd_config(parsed, config_manager)
+        elif parsed.command == "self-update":
+            return cmd_self_update(parsed, config_manager, state_manager, logger)
         else:
             parser.print_help()
             return 1
-    except CLIError as e:
+
+    except ObtainHubError as e:
         logger.error(str(e))
+        print(f"Error: {e}", file=sys.stderr)
         return 1
-    except KeyboardInterrupt:
-        print("\nAborted.")
-        return 130
     except Exception as e:
-        logger.exception(f"Unexpected error: {e}")
+        logger.exception("Unexpected error")
+        print(f"Unexpected error: {e}", file=sys.stderr)
         return 1
+
+
+def cmd_install(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle install command."""
+    app_id = parsed.app
+    logger.info(f"Installing {app_id}")
+
+    # Parse owner/repo
+    if "/" not in app_id:
+        print(f"Error: App must be in format 'owner/repo'", file=sys.stderr)
+        return 1
+    owner, repo = app_id.split("/", 1)
+
+    # Get GitHub client
+    token = config_manager.load().github_token
+    client = GitHubClient(token=token)
+
+    # Fetch release
+    if parsed.tag:
+        release = client.get_release_by_tag(owner, repo, parsed.tag)
+    else:
+        release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
+
+    # Check prerelease
+    if release.prerelease and not parsed.prerelease:
+        print(f"Warning: {release.tag_name} is a prerelease. Use --prerelease to install.")
+        if not parsed.yes:
+            confirm = input("Continue anyway? [y/N]: ").strip().lower()
+            if confirm != "y":
+                print("Cancelled.")
+                return 1
+
+    # Match asset
+    matcher = AssetMatcher(
+        allow_arm64=False,
+        allow_x86_fallback=False,
+        require_installer=not parsed.download_only,
+    )
+    match = matcher.get_best_match(release.assets)
+
+    if not match:
+        print(f"Error: No suitable asset found for {app_id}", file=sys.stderr)
+        return 1
+
+    print(f"Found: {match.name} ({match.architecture.value}, {match.installer_type.name})")
+
+    # Download
+    print(f"Downloading...")
+    try:
+        downloaded_path = download_file(
+            match.url,
+            filename=match.name,
+            expected_sha256=None,  # Could add checksum verification later
+        )
+    except Exception as e:
+        print(f"Download failed: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Downloaded to: {downloaded_path}")
+
+    # Install
+    if parsed.download_only or match.installer_type == InstallerType.ZIP:
+        print(f"Download-only mode: {downloaded_path}")
+        return 0
+
+    result, message = install_app(
+        downloaded_path,
+        match.installer_type,
+        app_id,
+        download_only=parsed.download_only,
+        force=parsed.force,
+    )
+
+    if result == InstallResult.SUCCESS:
+        print(f"Success: {message}")
+        # Record in state
+        installer = SilentInstaller()
+        installer.record_installation(
+            app_id=app_id,
+            name=repo,
+            version=release.tag_name.lstrip("v"),
+            installer_type=match.installer_type,
+            installer_path=str(downloaded_path),
+            source_url=release.html_url,
+            tag=release.tag_name,
+        )
+        return 0
+    elif result == InstallResult.DOWNLOAD_ONLY:
+        print(f"Download only: {message}")
+        return 0
+    elif result == InstallResult.MANUAL_UNINSTALL_REQUIRED:
+        print(message)
+        if parsed.yes:
+            print("Auto-uninstall not implemented yet. Please uninstall manually.")
+            return 1
+        return 1
+    else:
+        print(f"Install failed: {message}", file=sys.stderr)
+        return 1
+
+
+def cmd_update(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle update command."""
+    token = config_manager.load().github_token
+    client = GitHubClient(token=token)
+    matcher = AssetMatcher(allow_arm64=False, allow_x86_fallback=False, require_installer=True)
+    installer = SilentInstaller()
+
+    apps_to_update = []
+    if parsed.app:
+        apps_to_update = [parsed.app]
+    else:
+        apps = state_manager.get_all_apps()
+        apps_to_update = [app.id for app in apps]
+
+    if not apps_to_update:
+        print("No apps to update.")
+        return 0
+
+    print(f"Checking updates for {len(apps_to_update)} app(s)...")
+
+    updated_count = 0
+    for app_id in apps_to_update:
+        try:
+            app = state_manager.get_app(app_id)
+            if not app:
+                print(f"Skipping {app_id}: not found in state")
+                continue
+
+            owner, repo = app_id.split("/", 1)
+            print(f"\nChecking {app_id} (current: {app.version})...")
+
+            release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
+
+            # Version comparison (simple string comparison for now)
+            if release.tag_name.lstrip("v") <= app.version:
+                print(f"  Already up to date ({app.version})")
+                continue
+
+            if release.prerelease and not parsed.prerelease:
+                print(f"  New version {release.tag_name} is prerelease. Use --prerelease to update.")
+                continue
+
+            match = matcher.get_best_match(release.assets)
+            if not match:
+                print(f"  No suitable asset found")
+                continue
+
+            print(f"  Found update: {release.tag_name} ({match.name})")
+
+            if parsed.dry_run:
+                print(f"  [DRY RUN] Would download and install {match.name}")
+                continue
+
+            if not parsed.yes:
+                confirm = input(f"  Update to {release.tag_name}? [y/N]: ").strip().lower()
+                if confirm != "y":
+                    print(f"  Skipped")
+                    continue
+
+            # Download
+            print(f"  Downloading...")
+            downloaded_path = download_file(match.url, filename=match.name)
+
+            # Install
+            result, message = installer.install(
+                downloaded_path,
+                match.installer_type,
+                app_id,
+                force=True,
+            )
+
+            if result == InstallResult.SUCCESS:
+                print(f"  Success: {message}")
+                installer.record_update(
+                    app_id=app_id,
+                    version=release.tag_name.lstrip("v"),
+                    installer_type=match.installer_type,
+                    installer_path=str(downloaded_path),
+                    source_url=release.html_url,
+                    tag=release.tag_name,
+                )
+                updated_count += 1
+            elif result == InstallResult.MANUAL_UNINSTALL_REQUIRED:
+                print(f"  {message}")
+            else:
+                print(f"  Failed: {message}")
+
+        except Exception as e:
+            logger.error(f"Failed to update {app_id}: {e}")
+            print(f"  Error updating {app_id}: {e}")
+
+    print(f"\nDone. Updated {updated_count}/{len(apps_to_update)} app(s).")
+    return 0
+
+
+def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
+    """Handle list command."""
+    apps = state_manager.get_all_apps()
+
+    if not apps:
+        print("No apps installed.")
+        return 0
+
+    if parsed.json:
+        import json
+        print(json.dumps([a.to_dict() for a in apps], indent=2))
+    else:
+        for app in apps:
+            print(f"{app.name} ({app.version}) - {app.id} [{app.installer_type}]")
+    return 0
+
+
+def cmd_search(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    logger,
+) -> int:
+    """Handle search command (placeholder)."""
+    logger.info(f"Search: {parsed.query}")
+    print(f"Search '{parsed.query}' - not yet implemented")
+    return 0
+
+
+def cmd_config(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+) -> int:
+    """Handle config command."""
+    if parsed.config_action == "show":
+        config = config_manager.load()
+        import json
+        print(json.dumps(config.to_dict(), indent=2))
+    elif parsed.config_action == "set":
+        config_manager.set(parsed.key, parsed.value)
+        print(f"Set {parsed.key} = {parsed.value}")
+    elif parsed.config_action == "get":
+        config = config_manager.load()
+        value = config.get(parsed.key)
+        print(value if value is not None else "(not set)")
+    elif parsed.config_action == "edit":
+        print("Edit config - not yet implemented")
+    else:
+        print("Usage: ohub config [show|set|get|edit]")
+    return 0
+
+
+def cmd_self_update(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle self-update command."""
+    updater = SelfUpdater(config_manager, state_manager)
+    result = updater.check_and_update(parsed.prerelease, parsed.force)
+    if result:
+        print(f"Updated to {result}")
+    else:
+        print("Already up to date")
+    return 0
 
 
 if __name__ == "__main__":

@@ -62,6 +62,15 @@ from obtainhub.core.asset_matcher import (
     AssetMatch,
     AssetMatcher,
 )
+from obtainhub.core.downloader import (
+    Downloader,
+    download_file,
+)
+from obtainhub.core.installer import (
+    SilentInstaller,
+    InstallResult,
+    install_app,
+)
 from obtainhub.utils.helpers import get_architecture as get_system_architecture, is_windows_x64
 
 __all__ = [
@@ -112,6 +121,13 @@ __all__ = [
     "AssetMatchError",
     "ArchitectureMismatchError",
     "InstallerTypeMismatchError",
+    # Downloader
+    "Downloader",
+    "download_file",
+    # Installer
+    "SilentInstaller",
+    "InstallResult",
+    "install_app",
     # GitHub Client
     "GitHubClient",
     # Asset Matcher

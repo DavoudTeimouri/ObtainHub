@@ -1,16 +1,2 @@
-# ObtainHub - Core Dependencies
-# No external dependencies required for core functionality
-# Uses only Python 3.10+ standard library
-
-# Optional dependencies for extended features (commented out)
-# requests>=2.31.0        # For enhanced HTTP handling
-# pygithub>=2.0.0         # For GitHub API integration
-# tqdm>=4.65.0            # For progress bars
-# colorama>=0.4.6         # For colored console output on Windows
-
-# Development dependencies
-# pytest>=7.4.0           # Testing framework
-# pytest-cov>=4.1.0       # Coverage reporting
-# black>=23.0.0           # Code formatting
-# mypy>=1.5.0             # Type checking
-# ruff>=0.1.0             # Fast linting
+requests>=2.31.0
+urllib3>=2.0.0
