@@ -1,102 +1,45 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
+
+# Distribution / packaging
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+installer/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
 
 # Virtual environments
+.venv/
 venv/
 env/
 ENV/
-.venv/
-.venv*
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-.project
-.pydevproject
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.hypothesis/
-
-# Type checking
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Linting
-.ruff_cache/
-
-# Distribution
-*.whl
-*.tar.gz
-
-# Environment
-.env
-.env.local
-.env.*.local
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Project specific
+# Logs
 *.log
-logs/
-*.msi
-*.exe
-*.zip
-ObtainHub_Updates/
 
-# Config (local overrides)
-config.local.json
-state.local.json
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.bak
-
-# Coverage reports
+# Test coverage
 .coverage
-coverage.xml
+htmlcov/
+.pytest_cache/
 
-# Profiler
-*.prof
+# Local config
+config.json
+state.json
 
-# Jupyter
-.ipynb_checkpoints/
-
-# pip
-pip-log.txt
-pip-delete-this-directory.txt
-
-# wheel
-*.egg
+# Downloads
+downloads/
