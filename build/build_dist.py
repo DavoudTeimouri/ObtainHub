@@ -124,8 +124,10 @@ def build_executable(onedir=False, onefile=True):
         raise RuntimeError(f"Executable not found after build: {exe_path}")
 
 
-def create_spec_file():
+def create_spec_file(onedir=False):
     """Create PyInstaller spec file for more control."""
+    mode = 'ONEDIR' if onedir else 'ONEFILE'
+    
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
@@ -212,7 +214,6 @@ def build_with_spec(onedir=False):
         sys.executable, "-m", "PyInstaller",
         "--clean",
         "--noconfirm",
-        "--onedir" if onedir else "--onefile",
         str(SPEC_FILE),
     ]
     run_cmd(cmd)
@@ -537,11 +538,11 @@ def main():
         exe_path = None
         
         if args.onefile or args.all:
-            create_spec_file()
+            create_spec_file(onedir=False)
             exe_path = build_with_spec(onedir=False)
         
         if args.onedir:
-            create_spec_file()
+            create_spec_file(onedir=True)
             exe_path = build_with_spec(onedir=True)
         
         if args.installer or args.all:
