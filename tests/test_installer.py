@@ -28,8 +28,7 @@ class TestSilentInstaller:
     @pytest.fixture
     def state_manager(self, temp_dir):
         """Create StateManager instance."""
-        state_file = temp_dir / "state.json"
-        return StateManager(state_file=str(state_file))
+        return StateManager(state_dir=temp_dir)
 
     @pytest.fixture
     def installer(self, temp_dir, state_manager):
@@ -55,7 +54,7 @@ class TestSilentInstaller:
         exe_file.write_bytes(b"fake exe")
 
         result, message = installer.install(
-            exe_file, InstallerType.EXE_SETUP, "owner/repo"
+            exe_file, InstallerType.EXE, "owner/repo"
         )
 
         assert result == InstallResult.SUCCESS
@@ -88,18 +87,16 @@ class TestSilentInstaller:
         """Test manual uninstall required detection."""
         # Add app with manual uninstall required
         app = InstalledApp(
-            id="owner/repo",
-            name="repo",
+            name="owner/repo",
             version="1.0.0",
             installer_type="msi",
-            installer_path=str(temp_dir / "old.msi"),
+            install_path=str(temp_dir / "old.msi"),
             source_url="https://github.com/owner/repo/releases/tag/v1.0.0",
             tag="v1.0.0",
-            installed_at=1000,
-            updated_at=1000,
+            install_date="2024-01-01T00:00:00",
             requires_manual_uninstall=True,
         )
-        state_manager.add_app(app)
+        state_manager.add_installed_app(app)
 
         msi_file = temp_dir / "app.msi"
         msi_file.write_bytes(b"fake msi")
@@ -115,18 +112,16 @@ class TestSilentInstaller:
         """Test force flag overrides manual uninstall."""
         # Add app with manual uninstall required
         app = InstalledApp(
-            id="owner/repo",
-            name="repo",
+            name="owner/repo",
             version="1.0.0",
             installer_type="msi",
-            installer_path=str(temp_dir / "old.msi"),
+            install_path=str(temp_dir / "old.msi"),
             source_url="https://github.com/owner/repo/releases/tag/v1.0.0",
             tag="v1.0.0",
-            installed_at=1000,
-            updated_at=1000,
+            install_date="2024-01-01T00:00:00",
             requires_manual_uninstall=True,
         )
-        state_manager.add_app(app)
+        state_manager.add_installed_app(app)
 
         msi_file = temp_dir / "app.msi"
         msi_file.write_bytes(b"fake msi")
@@ -159,12 +154,12 @@ class TestSilentInstaller:
             tag="v1.0.0",
         )
 
-        assert app.id == "owner/repo"
+        assert app.name == "owner/repo"
         assert app.version == "1.0.0"
         assert app.installer_type == "msi"
 
         # Verify in state
-        stored = state_manager.get_app("owner/repo")
+        stored = state_manager.get_installed_app("owner/repo")
         assert stored is not None
         assert stored.version == "1.0.0"
 
@@ -172,17 +167,15 @@ class TestSilentInstaller:
         """Test recording update in state."""
         # Add initial app
         initial = InstalledApp(
-            id="owner/repo",
-            name="repo",
+            name="owner/repo",
             version="1.0.0",
             installer_type="msi",
-            installer_path=str(temp_dir / "old.msi"),
+            install_path=str(temp_dir / "old.msi"),
             source_url="https://github.com/owner/repo/releases/tag/v1.0.0",
             tag="v1.0.0",
-            installed_at=1000,
-            updated_at=1000,
+            install_date="2024-01-01T00:00:00",
         )
-        state_manager.add_app(initial)
+        state_manager.add_installed_app(initial)
 
         # Record update
         app = installer.record_update(
@@ -195,10 +188,10 @@ class TestSilentInstaller:
         )
 
         assert app.version == "2.0.0"
-        assert app.installer_path == str(temp_dir / "new.msi")
+        assert app.install_path == str(temp_dir / "new.msi")
 
         # Verify in state
-        stored = state_manager.get_app("owner/repo")
+        stored = state_manager.get_installed_app("owner/repo")
         assert stored.version == "2.0.0"
 
 

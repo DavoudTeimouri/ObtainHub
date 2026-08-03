@@ -125,11 +125,21 @@ ohub source remove my-source
 ```
 
 ### `ohub search <query>`
-Search for applications (placeholder — not yet implemented).
+Search GitHub repositories for applications with releases.
 
 ```cmd
 ohub search "text editor" --limit 10
 ```
+
+**Output format:**
+```
+  1. owner/repo
+     Description of the repository
+     Stars: 1,234 | ✓ Has releases
+     https://github.com/owner/repo
+```
+
+Filters and marks repositories that contain downloadable releases.
 
 ### `ohub config`
 Manage configuration.
@@ -243,14 +253,20 @@ Use `--force` to skip this check, or uninstall manually first.
 
 ### Build Commands
 ```cmd
-# Build everything
-python build/build_dist.py
+# Build everything (exe + installer + MSI + workflow)
+python build/build_dist.py --all
 
-# Build only executable
-python build/build_dist.py --exe-only
+# Build only executable (onefile)
+python build/build_dist.py --onefile
 
-# Build only installer (requires exe)
-python build/build_dist.py --installer-only
+# Build onedir executable
+python build/build_dist.py --onedir
+
+# Build Inno Setup installer (requires exe)
+python build/build_dist.py --installer
+
+# Build MSI with Python msilib (stdlib)
+python build/build_dist.py --msi
 
 # Generate GitHub Actions workflow
 python build/build_dist.py --workflow
@@ -260,19 +276,22 @@ python build/build_dist.py --clean
 ```
 
 ### Outputs
-- `dist/ohub.exe` — Standalone executable
-- `installer/ObtainHub-Setup-x64.exe` — Inno Setup installer
-- `installer/ObtainHub.msi` — WiX MSI installer (if WiX available)
+- `dist/ohub.exe` — Standalone onefile executable
+- `dist/ohub/ohub.exe` — Onedir executable (directory layout)
+- `installer/ObtainHub-Setup.exe` — Inno Setup installer (no desktop shortcuts, no launch prompt)
+- `installer/ObtainHub.msi` — Python msilib MSI installer
 
 ## GitHub Actions
 
 Automated builds on tag push (e.g., `git tag v0.1.0 && git push origin v0.1.0`):
 
 - Builds on `windows-latest`
-- Creates `ohub.exe` and `ObtainHub-Setup-x64.exe`
+- Creates `ohub.exe`, `ObtainHub-Setup.exe`, and `ObtainHub.msi`
 - Publishes to GitHub Releases as prerelease or stable
 
 Workflow: `.github/workflows/build.yml`
+
+**Note:** Only the existing release tag `v0.1.0-beta.1` is used. Assets are updated on this tag directly.
 
 ## Requirements
 

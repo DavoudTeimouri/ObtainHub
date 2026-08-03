@@ -254,6 +254,7 @@ def create_inno_setup_script():
 
     iss_content = f'''; ObtainHub Inno Setup Script
 ; Compiles ObtainHub-Setup.exe for Windows x64
+; Pure CLI tool - no desktop shortcuts, no launch prompts
 
 #define AppName "ObtainHub"
 #define AppVersion "0.1.0"
@@ -285,15 +286,9 @@ UninstallDisplayIcon={{app}}\\{{#AppExeName}}
 [Files]
 Source: "{DIST_DIR}\\ohub.exe"; DestDir: "{{app}}"; Flags: ignoreversion
 
-[Icons]
-Name: "{{autoprograms}}\\{{#AppName}}"; Filename: "{{app}}\\{{#AppExeName}}"
-Name: "{{autodesktop}}\\{{#AppName}}"; Filename: "{{app}}\\{{#AppExeName}}"; Tasks: desktopicon
-
-[Tasks]
-Name: "desktopicon"; Description: "{{cm:CreateDesktopIcon}}"; GroupDescription: "{{cm:AdditionalIcons}}"; Flags: unchecked
-
-[Run]
-Filename: "{{app}}\\{{#AppExeName}}"; Description: "{{cm:LaunchProgram,{{#AppName}}}}"; Flags: nowait postinstall skipifsilent
+; No Icons section - pure CLI tool, no shortcuts
+; No Tasks section - no desktop icon option
+; No Run section - no "Launch Application" checkbox
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{{app}}"
@@ -422,6 +417,86 @@ def build_msi(wxs_path):
         return None
 
 
+def create_msi_with_msilib():
+    """Create MSI installer using Python's msilib (stdlib)."""
+    if not check_platform():
+        print("Skipping MSI build (wrong platform).")
+        return None
+
+    print("Building MSI with Python msilib...")
+
+    import msilib
+    import uuid
+
+    msi_path = INSTALLER_DIR / "ObtainHub.msi"
+    INSTALLER_DIR.mkdir(exist_ok=True)
+
+    exe_path = DIST_DIR / "ohub.exe"
+    if not exe_path.exists():
+        print(f"ERROR: Executable not found: {exe_path}")
+        return None
+
+    try:
+        # Create MSI database
+        db = msilib.init_database(str(msi_path), "ObtainHub", "0.1.0", "Davoud Teimouri", "ObtainHub")
+
+        # Add properties
+        db.Properties.AddProperty("ProductName", "ObtainHub")
+        db.Properties.AddProperty("ProductVersion", "0.1.0")
+        db.Properties.AddProperty("Manufacturer", "Davoud Teimouri")
+        db.Properties.AddProperty("ProductCode", "{" + str(uuid.uuid4()).upper() + "}")
+        db.Properties.AddProperty("UpgradeCode", "{" + str(uuid.uuid4()).upper() + "}")
+
+        # Create directory structure
+        db.Directories.AddDirectory("TARGETDIR", "SourceDir", None)
+        db.Directories.AddDirectory("TARGETDIR", "ProgramFiles64Folder", None)
+        db.Directories.AddDirectory("ProgramFiles64Folder", "INSTALLFOLDER", "ObtainHub")
+
+        # Add component
+        comp = db.Components.AddComponent("MainExecutable", "INSTALLFOLDER")
+        db.Components.AddFile(
+            comp,
+            "ohub.exe",
+            str(exe_path),
+            "ohub.exe",
+            None,
+            0  # File size
+        )
+
+        # Add feature
+        feature = db.Features.AddFeature("ProductFeature", "ObtainHub", 1, "ObtainHub")
+        feature.Components.AddComponent("MainExecutable")
+
+        # Add shortcut to Program Menu (CLI tool - no desktop shortcut)
+        db.Shortcuts.AddShortcut(
+            "ProgramMenuShortcut",
+            "ProgramMenuFolder",
+            "ObtainHub",
+            "INSTALLFOLDER",
+            "ohub.exe",
+            None,
+            None,
+            None,
+            None,
+            0,
+            None,
+            "ObtainHub"
+        )
+
+        # Commit
+        db.Commit()
+        db.Close()
+
+        print(f"MSI built: {msi_path}")
+        return msi_path
+
+    except Exception as e:
+        print(f"ERROR building MSI: {e}")
+        if msi_path.exists():
+            msi_path.unlink()
+        return None
+
+
 def create_github_workflow():
     """Create GitHub Actions workflow for automated builds."""
     workflow_dir = ROOT / ".github" / "workflows"
@@ -466,17 +541,17 @@ jobs:
         run: |
           python build/build_dist.py --onefile
 
-      - name: Build executable (onedir)
-        run: |
-          python build/build_dist.py --onedir
-
       - name: Install Inno Setup
         run: |
-          choco install innosetup --version=6.2.2
+          choco install innosetup --version=6.2.2 --force
 
       - name: Build installer
         run: |
           python build/build_dist.py --installer
+
+      - name: Build MSI (WiX)
+        run: |
+          python build/build_dist.py --msi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -486,6 +561,7 @@ jobs:
             dist/ohub.exe
             dist/ohub/
             installer/ObtainHub-Setup.exe
+            installer/ObtainHub.msi
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -494,6 +570,7 @@ jobs:
           files: |
             dist/ohub.exe
             installer/ObtainHub-Setup.exe
+            installer/ObtainHub.msi
           prerelease: ${{ github.event.inputs.prerelease || false }}
           draft: false
           generate_release_notes: true
@@ -537,7 +614,7 @@ def main():
     parser.add_argument("--onefile", action="store_true", help="Build onefile executable (default)")
     parser.add_argument("--onedir", action="store_true", help="Build onedir executable")
     parser.add_argument("--installer", action="store_true", help="Build Inno Setup installer (requires exe)")
-    parser.add_argument("--msi", action="store_true", help="Build MSI with WiX (requires WiX toolset)")
+    parser.add_argument("--msi", action="store_true", help="Build MSI with Python msilib (stdlib)")
     parser.add_argument("--workflow", action="store_true", help="Generate GitHub Actions workflow")
     parser.add_argument("--verify", action="store_true", help="Verify built executable")
     parser.add_argument("--all", action="store_true", help="Build everything (onefile + installer)")
@@ -577,8 +654,7 @@ def main():
             build_inno_setup(iss_path)
 
         if args.msi:
-            wxs_path = create_wix_msi()
-            build_msi(wxs_path)
+            create_msi_with_msilib()
 
         if args.workflow or args.all:
             create_github_workflow()

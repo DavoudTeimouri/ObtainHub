@@ -302,7 +302,7 @@ class SelfUpdater:
                 installer_path.unlink(missing_ok=True)
 
 
-def check_and_update(current_version: str, skip_self_update: bool = False) -> Optional[bool]:
+def check_and_update(current_version: str, skip_self_update: bool = False, allow_prerelease: bool = False) -> Optional[bool]:
     """Check for updates and perform self-update if available."""
     if skip_self_update:
         return None
@@ -313,9 +313,7 @@ def check_and_update(current_version: str, skip_self_update: bool = False) -> Op
     
     updater = SelfUpdater(current_version)
     try:
-        updater.check_for_update()
-        # If we get here, no update needed
-        return False
+        release = updater.check_for_update(allow_prerelease=allow_prerelease)
     except SelfUpdateNotNeededError:
         return False
     except SelfUpdateError as e:
@@ -323,4 +321,12 @@ def check_and_update(current_version: str, skip_self_update: bool = False) -> Op
         return False
     except Exception as e:
         logger.error(f"Unexpected error during self-update check: {e}")
+        return False
+    
+    # Update is available - perform it
+    try:
+        success = updater.perform_self_update(release, allow_prerelease=allow_prerelease)
+        return success
+    except Exception as e:
+        logger.error(f"Self-update failed: {e}")
         return False

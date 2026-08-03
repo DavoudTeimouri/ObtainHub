@@ -604,9 +604,35 @@ def cmd_search(
     config_manager: ConfigManager,
     logger,
 ) -> int:
-    """Handle search command (placeholder)."""
-    logger.info(f"Search: {parsed.query}")
-    print(f"Search '{parsed.query}' - not yet implemented")
+    """Handle search command - search GitHub repositories."""
+    token = config_manager.load().github_token
+    client = GitHubClient(token=token)
+
+    print(f"Searching for: {parsed.query}")
+    repos = client.search_repositories(parsed.query, limit=parsed.limit)
+
+    if not repos:
+        print("No repositories found.")
+        return 0
+
+    print(f"\nFound {len(repos)} repositories:\n")
+
+    for i, repo in enumerate(repos, 1):
+        name = repo.get("full_name", "")
+        desc = repo.get("description", "No description") or "No description"
+        stars = repo.get("stargazers_count", 0)
+        url = repo.get("html_url", "")
+        has_releases = repo.get("has_releases", False)
+
+        # Check if repo likely has downloadable releases
+        release_indicator = "✓ Has releases" if has_releases else "✗ No releases"
+
+        print(f"  {i}. {name}")
+        print(f"     {desc[:80]}")
+        print(f"     Stars: {stars:,} | {release_indicator}")
+        print(f"     {url}")
+        print()
+
     return 0
 
 

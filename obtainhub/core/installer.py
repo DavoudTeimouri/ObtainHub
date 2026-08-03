@@ -3,6 +3,7 @@
 import os
 import subprocess
 import time
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Tuple
@@ -89,7 +90,7 @@ class SilentInstaller:
             return InstallResult.FAILED, f"Installer not found: {file_path}"
 
         # Check for existing installation
-        existing = self.state_manager.get_app(app_id)
+        existing = self.state_manager.get_installed_app(app_id)
         if existing and not force:
             # Check if manual uninstall is required
             if existing.requires_manual_uninstall:
@@ -109,7 +110,7 @@ class SilentInstaller:
         # Execute installer based on type
         if installer_type == InstallerType.MSI:
             return self._install_msi(file_path, app_id)
-        elif installer_type == InstallerType.EXE_SETUP:
+        elif installer_type == InstallerType.EXE:
             return self._install_exe(file_path, app_id)
         else:
             return InstallResult.FAILED, f"Unsupported installer type: {installer_type}"
@@ -246,16 +247,16 @@ class SilentInstaller:
         Returns:
             Tuple of (success, message)
         """
-        app = self.state_manager.get_app(app_id)
+        app = self.state_manager.get_installed_app(app_id)
         if not app and not force:
             return False, f"App not found in state: {app_id}"
 
         # Try MSI uninstall first if we have the product code
-        if app and app.installer_type == InstallerType.MSI and app.installer_path:
+        if app and app.installer_type == InstallerType.MSI.value and app.install_path:
             return self._uninstall_msi(app)
 
         # Try EXE uninstall
-        if app and app.installer_type == InstallerType.EXE_SETUP and app.installer_path:
+        if app and app.installer_type == InstallerType.EXE.value and app.install_path:
             return self._uninstall_exe(app)
 
         return False, "No uninstall method available (manual uninstall required)"
@@ -357,18 +358,16 @@ class SilentInstaller:
             InstalledApp object
         """
         app = InstalledApp(
-            id=app_id,
-            name=name,
+            name=app_id,
             version=version,
+            install_path=installer_path,
             installer_type=installer_type.value,
-            installer_path=installer_path,
             source_url=source_url,
             tag=tag,
-            installed_at=int(time.time()),
-            updated_at=int(time.time()),
+            install_date=datetime.now().isoformat(),
         )
 
-        self.state_manager.add_app(app)
+        self.state_manager.add_installed_app(app)
         logger.info(f"Recorded installation: {app_id} v{version}")
         return app
 
@@ -395,18 +394,18 @@ class SilentInstaller:
         Returns:
             Updated InstalledApp object
         """
-        app = self.state_manager.get_app(app_id)
+        app = self.state_manager.get_installed_app(app_id)
         if not app:
             raise InstallerError(f"App not found for update: {app_id}")
 
         app.version = version
         app.installer_type = installer_type.value
-        app.installer_path = installer_path
+        app.install_path = installer_path
         app.source_url = source_url
         app.tag = tag
-        app.updated_at = int(time.time())
+        app.install_date = datetime.now().isoformat()
 
-        self.state_manager.add_app(app)
+        self.state_manager.add_installed_app(app)
         logger.info(f"Recorded update: {app_id} v{version}")
         return app
 

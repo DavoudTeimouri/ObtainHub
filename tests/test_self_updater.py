@@ -437,59 +437,79 @@ class TestCheckAndUpdate:
 
     @patch('obtainhub.core.self_updater.is_windows_x64', return_value=True)
     @patch('obtainhub.core.self_updater.get_config')
-    def test_check_and_update_skip_flag(self, mock_get_config, mock_is_windows, mock_config):
+    def test_check_and_update_skip_flag(self, mock_get_config, mock_is_windows):
         """Test skip self-update flag."""
+        mock_config = Mock()
+        mock_config.skip_self_update = False
         mock_get_config.return_value = mock_config
         
-        with patch('obtainhub.core.self_updater.SelfUpdater.perform_self_update') as mock_perform:
-            mock_perform.return_value = True
+        with patch('obtainhub.core.self_updater.SelfUpdater') as mock_updater_class:
+            mock_updater = Mock()
+            mock_updater_class.return_value = mock_updater
+            mock_updater.perform_self_update.return_value = True
             result = check_and_update("1.0.0", skip_self_update=True)
             assert result is None  # Should skip and return None
-            mock_perform.assert_not_called()
+            mock_updater.perform_self_update.assert_not_called()
 
     @patch('obtainhub.core.self_updater.is_windows_x64', return_value=True)
     @patch('obtainhub.core.self_updater.get_config')
-    def test_check_and_update_config_skip(self, mock_get_config, mock_is_windows, mock_config):
+    def test_check_and_update_config_skip(self, mock_get_config, mock_is_windows):
         """Test config-based skip."""
+        mock_config = Mock()
         mock_config.skip_self_update = True
         mock_get_config.return_value = mock_config
         
-        with patch('obtainhub.core.self_updater.SelfUpdater.perform_self_update') as mock_perform:
-            mock_perform.return_value = True
+        with patch('obtainhub.core.self_updater.SelfUpdater') as mock_updater_class:
+            mock_updater = Mock()
+            mock_updater_class.return_value = mock_updater
+            mock_updater.perform_self_update.return_value = True
             result = check_and_update("1.0.0")
             assert result is None
-            mock_perform.assert_not_called()
+            mock_updater.perform_self_update.assert_not_called()
 
     @patch('obtainhub.core.self_updater.is_windows_x64', return_value=True)
     @patch('obtainhub.core.self_updater.get_config')
-    def test_check_and_update_not_needed(self, mock_get_config, mock_is_windows, mock_config):
+    def test_check_and_update_not_needed(self, mock_get_config, mock_is_windows):
         """Test when update not needed."""
+        mock_config = Mock()
+        mock_config.skip_self_update = False
         mock_get_config.return_value = mock_config
         
-        with patch('obtainhub.core.self_updater.SelfUpdater.perform_self_update') as mock_perform:
-            mock_perform.side_effect = SelfUpdateNotNeededError("Already latest")
+        with patch('obtainhub.core.self_updater.SelfUpdater') as mock_updater_class:
+            mock_updater = Mock()
+            mock_updater_class.return_value = mock_updater
+            mock_updater.check_for_update.side_effect = SelfUpdateNotNeededError("Already latest")
             result = check_and_update("2.0.0")
             assert result is False
 
     @patch('obtainhub.core.self_updater.is_windows_x64', return_value=True)
     @patch('obtainhub.core.self_updater.get_config')
-    def test_check_and_update_error(self, mock_get_config, mock_is_windows, mock_config):
+    def test_check_and_update_error(self, mock_get_config, mock_is_windows):
         """Test error handling."""
+        mock_config = Mock()
+        mock_config.skip_self_update = False
         mock_get_config.return_value = mock_config
         
-        with patch('obtainhub.core.self_updater.SelfUpdater.perform_self_update') as mock_perform:
-            mock_perform.side_effect = SelfUpdateError("Network error")
+        with patch('obtainhub.core.self_updater.SelfUpdater') as mock_updater_class:
+            mock_updater = Mock()
+            mock_updater_class.return_value = mock_updater
+            mock_updater.check_for_update.side_effect = SelfUpdateError("Network error")
             result = check_and_update("1.0.0")
             assert result is False
 
     @patch('obtainhub.core.self_updater.is_windows_x64', return_value=True)
     @patch('obtainhub.core.self_updater.get_config')
-    def test_check_and_update_success(self, mock_get_config, mock_is_windows, mock_config):
+    def test_check_and_update_success(self, mock_get_config, mock_is_windows):
         """Test successful update."""
+        mock_config = Mock()
+        mock_config.skip_self_update = False
         mock_get_config.return_value = mock_config
         
-        with patch('obtainhub.core.self_updater.SelfUpdater.perform_self_update') as mock_perform:
-            mock_perform.return_value = True
+        with patch('obtainhub.core.self_updater.SelfUpdater') as mock_updater_class:
+            mock_updater = Mock()
+            mock_updater_class.return_value = mock_updater
+            mock_updater.check_for_update.return_value = Mock()  # ReleaseInfo mock
+            mock_updater.perform_self_update.return_value = True
             result = check_and_update("1.0.0")
             assert result is True
 

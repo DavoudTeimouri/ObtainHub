@@ -154,6 +154,12 @@ class TestDownloader:
 class TestDownloadFile:
     """Test download_file convenience function."""
 
+    @pytest.fixture
+    def temp_dir(self):
+        """Create temporary directory."""
+        with tempfile.TemporaryDirectory() as tmp:
+            yield Path(tmp)
+
     @patch("obtainhub.core.downloader.Downloader.download")
     def test_download_file(self, mock_download, temp_dir):
         """Test download_file function."""

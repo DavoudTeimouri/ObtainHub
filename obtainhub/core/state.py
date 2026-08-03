@@ -71,6 +71,8 @@ class InstalledApp:
     installer_type: str = ""
     # For tracking if app was installed by ohub
     installed_by_ohub: bool = True
+    # Release tag
+    tag: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)

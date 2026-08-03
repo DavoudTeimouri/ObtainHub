@@ -3,6 +3,7 @@
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import List, Optional
@@ -186,3 +187,24 @@ class GitHubClient:
             if asset.get("name") == asset_name:
                 return asset.get("browser_download_url")
         return None
+
+    def search_repositories(self, query: str, limit: int = 10) -> List[dict]:
+        """
+        Search GitHub repositories.
+
+        Args:
+            query: Search query
+            limit: Maximum results to return
+
+        Returns:
+            List of repository dicts
+        """
+        self._wait_for_rate_limit()
+
+        url = f"{self.BASE_URL}/search/repositories?q={urllib.parse.quote(query)}&per_page={limit}&sort=stars&order=desc"
+        data = self._make_request(url)
+
+        if not isinstance(data, dict) or "items" not in data:
+            return []
+
+        return data["items"]
