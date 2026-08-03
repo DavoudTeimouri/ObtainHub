@@ -210,6 +210,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='{icon_path}',
+    onefile={str(not onedir).lower()},
 )
 '''
 
