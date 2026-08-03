@@ -128,25 +128,40 @@ def create_spec_file(onedir=False):
     """Create PyInstaller spec file for more control."""
     mode = 'ONEDIR' if onedir else 'ONEFILE'
     
+    # Use as_posix() for cross-platform path handling in spec file
+    main_py = (ROOT / "obtainhub" / "main.py").as_posix()
+    root_posix = ROOT.as_posix()
+    config_py = (ROOT / "obtainhub" / "core" / "config.py").as_posix()
+    state_py = (ROOT / "obtainhub" / "core" / "state.py").as_posix()
+    logger_py = (ROOT / "obtainhub" / "core" / "logger.py").as_posix()
+    exceptions_py = (ROOT / "obtainhub" / "core" / "exceptions.py").as_posix()
+    github_client_py = (ROOT / "obtainhub" / "core" / "github_client.py").as_posix()
+    asset_matcher_py = (ROOT / "obtainhub" / "core" / "asset_matcher.py").as_posix()
+    downloader_py = (ROOT / "obtainhub" / "core" / "downloader.py").as_posix()
+    installer_py = (ROOT / "obtainhub" / "core" / "installer.py").as_posix()
+    self_updater_py = (ROOT / "obtainhub" / "core" / "self_updater.py").as_posix()
+    helpers_py = (ROOT / "obtainhub" / "utils" / "helpers.py").as_posix()
+    icon_path = (ROOT / "assets" / "icon.ico").as_posix() if (ROOT / "assets" / "icon.ico").exists() else ""
+    
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
 
 a = Analysis(
-    ['{ROOT / "obtainhub" / "main.py"}'],
-    pathex=['{ROOT}'],
+    ['{main_py}'],
+    pathex=['{root_posix}'],
     binaries=[],
     datas=[
-        ('{ROOT / "obtainhub" / "core" / "config.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "core" / "state.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "core" / "logger.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "core" / "exceptions.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "core" / "github_client.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "core" / "asset_matcher.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "core" / "downloader.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "core" / "installer.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "core" / "self_updater.py"}', 'obtainhub/core'),
-        ('{ROOT / "obtainhub" / "utils" / "helpers.py"}', 'obtainhub/utils'),
+        ('{config_py}', 'obtainhub/core'),
+        ('{state_py}', 'obtainhub/core'),
+        ('{logger_py}', 'obtainhub/core'),
+        ('{exceptions_py}', 'obtainhub/core'),
+        ('{github_client_py}', 'obtainhub/core'),
+        ('{asset_matcher_py}', 'obtainhub/core'),
+        ('{downloader_py}', 'obtainhub/core'),
+        ('{installer_py}', 'obtainhub/core'),
+        ('{self_updater_py}', 'obtainhub/core'),
+        ('{helpers_py}', 'obtainhub/utils'),
     ],
     hiddenimports=[
         'obtainhub.core.config',
@@ -194,7 +209,7 @@ exe = EXE(
     target_arch='x86_64',
     codesign_identity=None,
     entitlements_file=None,
-    icon='{ROOT / "assets" / "icon.ico" if (ROOT / "assets" / "icon.ico").exists() else ""}',
+    icon='{icon_path}',
 )
 '''
 
