@@ -234,10 +234,16 @@ def build_with_spec(onedir=False):
     ]
     run_cmd(cmd)
 
-    exe_path = DIST_DIR / "ohub" / "ohub.exe" if onedir else DIST_DIR / "ohub.exe"
-    if exe_path.exists():
-        print(f"Executable built: {exe_path}")
-        return exe_path
+    # Check both possible output locations
+    exe_path_onedir = DIST_DIR / "ohub" / "ohub.exe"
+    exe_path_onefile = DIST_DIR / "ohub.exe"
+    
+    if exe_path_onedir.exists():
+        print(f"Executable built (onedir): {exe_path_onedir}")
+        return exe_path_onedir
+    elif exe_path_onefile.exists():
+        print(f"Executable built (onefile): {exe_path_onefile}")
+        return exe_path_onefile
     else:
         raise RuntimeError("Executable not found after build")
 
