@@ -45,7 +45,7 @@ jobs:
 
       - name: Install Inno Setup
         run: |
-          choco install innosetup --version=6.2.2
+          choco install innosetup --version=6.2.2 --force
 
       - name: Build installer
         run: |
