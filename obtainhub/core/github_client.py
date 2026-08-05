@@ -188,23 +188,41 @@ class GitHubClient:
                 return asset.get("browser_download_url")
         return None
 
-    def search_repositories(self, query: str, limit: int = 10) -> List[dict]:
+    def search_repositories(self, query: str, limit: int = 10, min_stars: int = 0, active_only: bool = True) -> List[dict]:
         """
-        Search GitHub repositories.
+        Search GitHub repositories with advanced filters.
 
         Args:
             query: Search query
             limit: Maximum results to return
+            min_stars: Minimum star count filter
+            active_only: Exclude archived and inactive repos (no updates in 2 years)
 
         Returns:
-            List of repository dicts
+            List of repository dicts sorted by stars descending
         """
         self._wait_for_rate_limit()
 
-        url = f"{self.BASE_URL}/search/repositories?q={urllib.parse.quote(query)}&per_page={limit}&sort=stars&order=desc"
+        # Build search qualifiers
+        qualifiers = []
+        if min_stars > 0:
+            qualifiers.append(f"stars:>={min_stars}")
+        if active_only:
+            qualifiers.append("archived:false")
+            # repos updated in last 2 years (approx 730 days)
+            from datetime import datetime, timedelta
+            cutoff = (datetime.utcnow() - timedelta(days=730)).strftime("%Y-%m-%d")
+            qualifiers.append(f"pushed:>{cutoff}")
+
+        full_query = query
+        if qualifiers:
+            full_query += " " + " ".join(qualifiers)
+
+        url = f"{self.BASE_URL}/search/repositories?q={urllib.parse.quote(full_query)}&per_page={limit}&sort=stars&order=desc"
         data = self._make_request(url)
 
         if not isinstance(data, dict) or "items" not in data:
             return []
 
+        # Ensure case-insensitive sorting already by stars desc from API
         return data["items"]

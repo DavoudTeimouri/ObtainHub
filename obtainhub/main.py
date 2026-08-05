@@ -112,10 +112,19 @@ def main(args: Optional[List[str]] = None) -> int:
     remove_parser.add_argument("name", help="Source name")
 
     # search
-    search_parser = subparsers.add_parser("search", help="Search for apps")
+    search_parser = subparsers.add_parser("search", help="Search GitHub repositories")
     search_parser.add_argument("query", help="Search query")
     search_parser.add_argument(
-        "--limit", type=int, default=10, help="Max results"
+        "--limit", type=int, default=10, help="Maximum results (default: 10)"
+    )
+    search_parser.add_argument(
+        "--min-stars", type=int, default=0, help="Minimum star count filter (default: 0)"
+    )
+    search_parser.add_argument(
+        "--active-only", action="store_true", default=True, help="Only active, non-archived repos (default: True)"
+    )
+    search_parser.add_argument(
+        "--include-inactive", action="store_false", dest="active_only", help="Include archived/inactive repos"
     )
 
     # config
@@ -609,7 +618,12 @@ def cmd_search(
     client = GitHubClient(token=token)
 
     print(f"Searching for: {parsed.query}")
-    repos = client.search_repositories(parsed.query, limit=parsed.limit)
+    repos = client.search_repositories(
+        parsed.query,
+        limit=parsed.limit,
+        min_stars=parsed.min_stars,
+        active_only=parsed.active_only
+    )
 
     if not repos:
         print("No repositories found.")
@@ -617,21 +631,23 @@ def cmd_search(
 
     print(f"\nFound {len(repos)} repositories:\n")
 
-    for i, repo in enumerate(repos, 1):
+    # Table header
+    print(f"{'Name':<40} {'Stars':>8} {'Latest Release':<18} {'Updated':<12} Description")
+    print("-" * 120)
+
+    for repo in repos:
         name = repo.get("full_name", "")
-        desc = repo.get("description", "No description") or "No description"
+        desc = (repo.get("description") or "No description")[:60]
         stars = repo.get("stargazers_count", 0)
-        url = repo.get("html_url", "")
-        has_releases = repo.get("has_releases", False)
+        updated = repo.get("updated_at", "")[:10]  # YYYY-MM-DD
 
-        # Check if repo likely has downloadable releases
-        release_indicator = "✓ Has releases" if has_releases else "✗ No releases"
+        # Get latest release tag if available
+        latest_release = ""
+        if repo.get("has_releases"):
+            # We could fetch releases, but for now show a marker
+            latest_release = "Has releases"
 
-        print(f"  {i}. {name}")
-        print(f"     {desc[:80]}")
-        print(f"     Stars: {stars:,} | {release_indicator}")
-        print(f"     {url}")
-        print()
+        print(f"{name:<40} {stars:>8,} {latest_release:<18} {updated:<12} {desc}")
 
     return 0
 

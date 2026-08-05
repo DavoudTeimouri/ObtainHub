@@ -128,18 +128,22 @@ ohub source remove my-source
 Search GitHub repositories for applications with releases.
 
 ```cmd
-ohub search "text editor" --limit 10
+ohub search "text editor" --limit 10 --min-stars 100 --active-only
+ohub search "terminal" --min-stars 50 --include-inactive
 ```
 
-**Output format:**
-```
-  1. owner/repo
-     Description of the repository
-     Stars: 1,234 | ✓ Has releases
-     https://github.com/owner/repo
-```
+**Options:**
+- `--limit <n>` - Maximum results (default: 10)
+- `--min-stars <n>` - Filter repositories with at least N stars (default: 0)
+- `--active-only` - Only show active, non-archived repos with recent activity (default: enabled)
+- `--include-inactive` - Include archived/inactive repositories
 
-Filters and marks repositories that contain downloadable releases.
+**Output format (sorted by stars descending):**
+```
+Name                                      Stars   Latest Release     Updated     Description
+------------------------------------------------------------------------------------------------------------------------
+owner/repo                                1,234   Has releases       2024-01-15  A text editor
+```
 
 ### `ohub config`
 Manage configuration.
