@@ -41,12 +41,12 @@ jobs:
 
       - name: Build executable (onefile)
         run: |
-          python build/build_dist.py --onefile
+          python build_dist.py --onefile
         working-directory: ${{ github.workspace }}
 
       - name: Build executable (onedir)
         run: |
-          python build/build_dist.py --onedir
+          python build_dist.py --onedir
         working-directory: ${{ github.workspace }}
 
       - name: Install Inno Setup
@@ -55,12 +55,12 @@ jobs:
 
       - name: Build installer
         run: |
-          python build/build_dist.py --installer
+          python build_dist.py --installer
         working-directory: ${{ github.workspace }}
 
       - name: Build MSI (msilib)
         run: |
-          python build/build_dist.py --msi
+          python build_dist.py --msi
         working-directory: ${{ github.workspace }}
 
       - name: Upload artifacts
