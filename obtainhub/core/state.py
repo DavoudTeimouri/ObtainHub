@@ -146,12 +146,22 @@ class StateManager:
                 return InstalledApp.from_dict(data)
         return None
 
+    # Alias for compatibility
+    def get_app(self, name: str) -> Optional[InstalledApp]:
+        """Alias for get_installed_app()."""
+        return self.get_installed_app(name)
+
     def list_installed_apps(self) -> List[InstalledApp]:
         """List all installed apps."""
         return [
             InstalledApp.from_dict(data)
             for data in self._state["installed_apps"].values()
         ]
+
+    # Alias for compatibility
+    def get_all_apps(self) -> List[InstalledApp]:
+        """Alias for list_installed_apps()."""
+        return self.list_installed_apps()
 
     def is_app_installed(self, name: str) -> bool:
         """Check if app is installed (case-insensitive)."""

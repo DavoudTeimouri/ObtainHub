@@ -45,11 +45,13 @@ class AssetMatcher:
         allow_x86_fallback: bool = False,
         allow_prerelease: bool = False,
         allow_arm64: bool = False,
+        require_installer: bool = False,
     ):
         self.prefer_x64 = prefer_x64
         self.allow_x86_fallback = allow_x86_fallback
         self.allow_prerelease = allow_prerelease
         self.allow_arm64 = allow_arm64
+        self.require_installer = require_installer
 
         # Architecture detection patterns
         self.arch_regexes = {

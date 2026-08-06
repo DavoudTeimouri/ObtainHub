@@ -46,8 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - PyInstaller spec file path handling for cross-platform compatibility
 - Asset matcher architecture detection (ARM64 before X64, word boundaries for "64")
-- State manager API consistency (`add_installed_app`, `get_installed_app`)
-- Self-updater `check_and_update` parameter handling
+- State manager API consistency (`add_installed_app`, `get_installed_app`, `get_all_apps`, `get_app`)
+- Self-updater `check_and_update` parameter handling and constructor signature
+- **Method signature mismatches resolved**: `AssetMatcher.__init__` now accepts `require_installer`, `SelfUpdater.__init__` accepts `config_manager`, `state_manager`, `current_version`
+- **CLI search enhancements**: Added `--min-stars` flag and case-insensitive search by default, results sorted by stars descending
 - All 121 unit tests passing
 
 ### Security

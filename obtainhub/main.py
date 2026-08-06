@@ -171,7 +171,8 @@ def main(args: Optional[List[str]] = None) -> int:
             config = config_manager.load()
             if config.self_update_enabled:
                 try:
-                    updater = SelfUpdater(config_manager, state_manager)
+                    from obtainhub import __version__
+                    updater = SelfUpdater(config_manager, state_manager, current_version=__version__)
                     result = updater.check_and_update(parsed.prerelease if hasattr(parsed, 'prerelease') else False, False)
                     if result:
                         print(f"Self-updated to {result}. Please re-run command.")
@@ -682,7 +683,8 @@ def cmd_self_update(
     logger,
 ) -> int:
     """Handle self-update command."""
-    updater = SelfUpdater(config_manager, state_manager)
+    from obtainhub import __version__
+    updater = SelfUpdater(config_manager, state_manager, current_version=__version__)
     result = updater.check_and_update(parsed.prerelease, parsed.force)
     if result:
         print(f"Updated to {result}")
