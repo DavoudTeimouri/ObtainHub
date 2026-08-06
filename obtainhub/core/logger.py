@@ -146,9 +146,15 @@ def setup_logging(
     
     log_dir.mkdir(parents=True, exist_ok=True)
     
-    # Root logger
+    # Root logger - handle LogLevel enum, int, or string
     root_logger = logging.getLogger()
-    root_logger.setLevel(level.value)
+    if hasattr(level, 'value'):
+        level_val = level.value
+    elif isinstance(level, str):
+        level_val = getattr(logging, level.upper(), logging.INFO)
+    else:
+        level_val = level
+    root_logger.setLevel(level_val)
     
     # Clear existing handlers
     root_logger.handlers.clear()
@@ -156,7 +162,7 @@ def setup_logging(
     # Console handler
     if console:
         console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setLevel(level.value)
+        console_handler.setLevel(level_val)
         console_handler.setFormatter(ConsoleFormatter())
         root_logger.addHandler(console_handler)
     
@@ -169,7 +175,7 @@ def setup_logging(
             backupCount=3,
             encoding='utf-8',
         )
-        file_handler.setLevel(level.value)
+        file_handler.setLevel(level_val)
         file_handler.setFormatter(JSONFormatter())
         root_logger.addHandler(file_handler)
     
@@ -181,7 +187,7 @@ def setup_logging(
         backupCount=3,
         encoding='utf-8',
     )
-    txt_handler.setLevel(level.value)
+    txt_handler.setLevel(level_val)
     txt_handler.setFormatter(ConsoleFormatter(use_colors=False))
     root_logger.addHandler(txt_handler)
 
