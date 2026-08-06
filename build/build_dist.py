@@ -664,7 +664,10 @@ def main():
             build_inno_setup(iss_path)
 
         if args.msi:
-            create_msi_with_msilib()
+            msi_result = create_msi_with_msilib()
+            if not msi_result:
+                print("ERROR: MSI build failed", file=sys.stderr)
+                return 1
 
         if args.workflow or args.all:
             create_github_workflow()
