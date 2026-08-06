@@ -252,52 +252,56 @@ def create_inno_setup_script():
     """Create Inno Setup script for Windows installer."""
     INSTALLER_DIR.mkdir(exist_ok=True)
 
-    iss_content = f'''; ObtainHub Inno Setup Script
-; Compiles ObtainHub-Setup.exe for Windows x64
-; Pure CLI tool - no desktop shortcuts, no launch prompts
+    iss_content = """ ; ObtainHub Inno Setup Script
+ ; Compiles ObtainHub-Setup.exe for Windows x64
+ ; Pure CLI tool - no desktop shortcuts, no launch prompts
 
-#define AppName "ObtainHub"
-#define AppVersion "0.1.0"
-#define AppPublisher "Davoud Teimouri"
-#define AppURL "https://github.com/DavoudTeimouri/ObtainHub"
-#define AppExeName "ohub.exe"
+ #define AppName "ObtainHub"
+ #define AppVersion "0.1.0"
+ #define AppPublisher "Davoud Teimouri"
+ #define AppURL "https://github.com/DavoudTeimouri/ObtainHub"
+ #define AppExeName "ohub.exe"
 
-[Setup]
-AppName={{#AppName}}
-AppVersion={{#AppVersion}}
-AppPublisher={{#AppPublisher}}
-AppPublisherURL={{#AppURL}}
-AppSupportURL={{#AppURL}}
-AppUpdatesURL={{#AppURL}}
-DefaultDirName={{autopf}}\\{{#AppName}}
-DefaultGroupName={{#AppName}}
-OutputDir={INSTALLER_DIR}
-OutputBaseFilename=ObtainHub-Setup
-SetupIconFile={ROOT / "assets" / "icon.ico" if (ROOT / "assets" / "icon.ico").exists() else ""}
-Compression=lzma/ultra
-SolidCompression=yes
-WizardStyle=modern
-ArchitecturesInstallIn64BitMode=x64
-ArchitecturesAllowed=x64
-PrivilegesRequired=admin
-DisableProgramGroupPage=yes
-UninstallDisplayIcon={{app}}\\{{#AppExeName}}
+ [Setup]
+ AppName={#AppName}
+ AppVersion={#AppVersion}
+ AppPublisher={#AppPublisher}
+ AppPublisherURL={#AppURL}
+ AppSupportURL={#AppURL}
+ AppUpdatesURL={#AppURL}
+ DefaultDirName={autopf}\\\\{#AppName}
+ DefaultGroupName={#AppName}
+ OutputDir={INSTALLER_DIR}
+ OutputBaseFilename=ObtainHub-Setup
+ SetupIconFile={ICON_PATH}
+ Compression=lzma/ultra
+ SolidCompression=yes
+ WizardStyle=modern
+ ArchitecturesInstallIn64BitMode=x64
+ ArchitecturesAllowed=x64
+ PrivilegesRequired=admin
+ DisableProgramGroupPage=yes
+ UninstallDisplayIcon={{app}}\\\\{#AppExeName}
 
-[Files]
-Source: "{DIST_DIR}\\ohub.exe"; DestDir: "{{app}}"; Flags: ignoreversion
+ [Files]
+ Source: "{DIST_DIR}\\\\ohub.exe"; DestDir: "{{app}}"; Flags: ignoreversion
 
-; No Icons section - pure CLI tool, no shortcuts
-; No Tasks section - no desktop icon option
-; No Run section - no "Launch Application" checkbox
+ ; No Icons section - pure CLI tool, no shortcuts
+ ; No Tasks section - no desktop icon option
+ ; No Run section - no "Launch Application" checkbox
 
-[UninstallDelete]
-Type: filesandordirs; Name: "{{app}}"
+ [UninstallDelete]
+ Type: filesandordirs; Name: "{{app}}"
 
-[Registry]
-Root: HKLM; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{{#AppName}}"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "{{#AppVersion}}"
-Root: HKLM; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{{#AppName}}"; ValueType: string; ValueName: "Publisher"; ValueData: "{{#AppPublisher}}"
-Root: HKLM; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{{#AppName}}"; ValueType: string; ValueName: "URLInfoAbout"; ValueData: "{{#AppURL}}"
-'''
+ [Registry]
+ Root: HKLM; Subkey: "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\{#AppName}"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "{#AppVersion}"
+ Root: HKLM; Subkey: "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\{#AppName}"; ValueType: string; ValueName: "Publisher"; ValueData: "{#AppPublisher}"
+ Root: HKLM; Subkey: "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\{#AppName}"; ValueType: string; ValueName: "URLInfoAbout"; ValueData: "{#AppURL}"
+ """.format(
+        INSTALLER_DIR=INSTALLER_DIR.as_posix(),
+        DIST_DIR=DIST_DIR.as_posix(),
+        ICON_PATH=(ROOT / "assets" / "icon.ico").as_posix() if (ROOT / "assets" / "icon.ico").exists() else ""
+    )
 
     iss_path = INSTALLER_DIR / "setup.iss"
     with open(iss_path, 'w') as f:
