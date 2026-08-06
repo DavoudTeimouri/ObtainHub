@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Language="1033" Manufacturer="ObtainHub" Name="ObtainHub" UpgradeCode="a1b2c3d4-e5f6-7890-abcd-ef1234567890" Version="0.1.0">
+    <Package Compressed="yes" InstallScope="perMachine" InstallerVersion="200"/>
+    <MediaTemplate EmbedCab="yes"/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="ObtainHub"/>
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Guid="b2c3d4e5-f6a7-8901-bcde-f23456789012" Id="MainExecutable">
+        <File Id="OhubEXE" KeyPath="yes" Source="dist/ohub.exe"/>
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="MainFeature" Level="1" Title="ObtainHub CLI">
+      <ComponentRef Id="MainExecutable"/>
+    </Feature>
+  </Product>
+</Wix>
