@@ -1,228 +1,219 @@
-"""GitHub REST API client for ObtainHub."""
+"""GitHub API client for ObtainHub."""
 
 import json
+import os
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+from urllib import request, error
+
+from obtainhub.core.logger import get_logger
+
+logger = get_logger(__name__)
+
+GITHUB_API_URL = "https://api.github.com"
 
 
 @dataclass
 class ReleaseInfo:
-    """GitHub Release information."""
-
+    """Information about a GitHub release."""
     tag_name: str
     name: str
     body: str
     published_at: str
     prerelease: bool
     draft: bool
-    assets: List[dict]
+    assets: List[Dict[str, Any]]
     html_url: str
 
 
 class GitHubClient:
-    """GitHub REST API client with token auth and rate-limit handling."""
+    """Client for interacting with GitHub REST API."""
 
-    BASE_URL = "https://api.github.com"
+    def __init__(self, token: Optional[str] = None):
+        # Check environment variables for token
+        self.token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("OBTAINHUB_TOKEN")
+        self.session = request.build_opener()
+        self._rate_limit_remaining = 60
+        self._rate_limit_reset = 0
 
-    def __init__(self, token: Optional[str] = None, timeout: int = 30):
-        """
-        Initialize GitHub client.
-
-        Args:
-            token: GitHub personal access token (optional)
-            timeout: Request timeout in seconds
-        """
-        self.token = token
-        self.timeout = timeout
-        self.rate_limit_remaining = 5000
-        self.rate_limit_reset = 0
-
-    def _make_request(self, url: str) -> dict:
-        """
-        Make HTTP request to GitHub API.
-
-        Args:
-            url: Full API URL
-
-        Returns:
-            Parsed JSON response
-
-        Raises:
-            urllib.error.HTTPError: On HTTP errors
-            ValueError: On rate limit exceeded
-        """
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "ObtainHub/0.1.0",
-        }
         if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+            self.session.addheaders = [('Authorization', f'Bearer {self.token}')]
+        self.session.addheaders = [
+            ('Accept', 'application/vnd.github.v3+json'),
+            ('User-Agent', 'ObtainHub/0.1.0')
+        ]
+        if self.token:
+            self.session.addheaders.append(('Authorization', f'Bearer {self.token}'))
 
-        req = urllib.request.Request(url, headers=headers)
+    def _make_request(self, url: str, params: Optional[Dict] = None) -> Optional[Dict]:
+        """Make HTTP request to GitHub API with rate limit handling."""
+        if params:
+            query = "&".join(f"{k}={v}" for k, v in params.items())
+            url = f"{url}?{query}"
+
+        req = request.Request(url)
+
+        # Check rate limit before making request
+        if self._rate_limit_remaining <= 1 and time.time() < self._rate_limit_reset:
+            wait_time = self._rate_limit_reset - time.time() + 1
+            logger.warning(f"Rate limit near exhaustion, waiting {wait_time:.0f}s")
+            time.sleep(wait_time)
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                self.rate_limit_remaining = int(response.headers.get("X-RateLimit-Remaining", "5000"))
-                self.rate_limit_reset = int(response.headers.get("X-RateLimit-Reset", "0"))
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 403 and "rate limit" in e.read().decode("utf-8", errors="ignore").lower():
-                raise ValueError("GitHub API rate limit exceeded")
-            raise
-        except urllib.error.URLError as e:
-            raise ValueError(f"Network error: {e}")
+            with self.session.open(req, timeout=30) as response:
+                # Update rate limit info from headers
+                self._rate_limit_remaining = int(response.headers.get('x-ratelimit-remaining', 60))
+                self._rate_limit_reset = int(response.headers.get('x-ratelimit-reset', time.time() + 3600))
 
-    def _wait_for_rate_limit(self):
-        """Wait if rate limit is exhausted."""
-        if self.rate_limit_remaining <= 0 and self.rate_limit_reset > 0:
-            wait_time = max(0, self.rate_limit_reset - int(time.time())) + 1
-            if wait_time > 0:
+                if response.status == 403 and self._rate_limit_remaining == 0:
+                    raise error.HTTPError(url, 403, "Rate limit exceeded", response.headers, None)
+
+                data = json.load(response)
+                return data
+        except error.HTTPError as e:
+            # Update rate limit from error response headers
+            if hasattr(e, 'headers') and e.headers:
+                self._rate_limit_remaining = int(e.headers.get('x-ratelimit-remaining', self._rate_limit_remaining))
+                self._rate_limit_reset = int(e.headers.get('x-ratelimit-reset', self._rate_limit_reset))
+            
+            if e.code == 403 and self._rate_limit_remaining == 0:
+                reset_time = int(e.headers.get('x-ratelimit-reset', time.time() + 3600))
+                wait_time = max(0, reset_time - time.time() + 1)
+                logger.warning(f"GitHub API rate limit exceeded. Waiting {wait_time:.0f}s for reset.")
                 time.sleep(wait_time)
+                # Retry once
+                return self._make_request(url, params)
+            elif e.code == 403:
+                logger.error("GitHub API rate limit exceeded. Set a GITHUB_TOKEN environment variable to increase limit from 60 to 5000 requests/hour.")
+                return None
+            elif e.code == 404:
+                return None
+            else:
+                logger.error(f"GitHub API error: {e.code} {e.reason}")
+                return None
+        except error.URLError as e:
+            logger.error(f"Network error: {e.reason}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            return None
 
-    def _parse_release(self, data: dict) -> ReleaseInfo:
-        """Parse release data from GitHub API."""
-        return ReleaseInfo(
-            tag_name=data.get("tag_name", ""),
-            name=data.get("name", ""),
-            body=data.get("body", "") or "",
-            published_at=data.get("published_at", ""),
-            prerelease=data.get("prerelease", False),
-            draft=data.get("draft", False),
-            assets=data.get("assets", []),
-            html_url=data.get("html_url", ""),
-        )
+    def get_repo(self, owner: str, repo: str) -> Optional[Dict]:
+        """Get repository information."""
+        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}"
+        return self._make_request(url)
 
-    def get_latest_release(self, owner: str, repo: str, include_prerelease: bool = False) -> ReleaseInfo:
-        """
-        Get the latest release for a repository.
+    def get_releases(self, owner: str, repo: str, per_page: int = 10) -> List[Dict]:
+        """Get all releases for a repository."""
+        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases"
+        params = {"per_page": per_page}
+        data = self._make_request(url, params)
+        return data if isinstance(data, list) else []
 
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            include_prerelease: If True, include prereleases in search
+    def get_latest_release(self, owner: str, repo: str, include_prerelease: bool = False) -> Optional[ReleaseInfo]:
+        """Get the latest release for a repository as ReleaseInfo."""
+        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases"
+        params = {"per_page": 10}
+        data = self._make_request(url, params)
+        if not data or not isinstance(data, list):
+            return None
 
-        Returns:
-            ReleaseInfo object with release details
-
-        Raises:
-            ValueError: If no releases found
-        """
-        self._wait_for_rate_limit()
-
-        url = f"{self.BASE_URL}/repos/{owner}/{repo}/releases"
-
-        if not include_prerelease:
-            url += "?per_page=10"
-
-        data = self._make_request(url)
-
-        if not isinstance(data, list) or len(data) == 0:
-            raise ValueError(f"No releases found for {owner}/{repo}")
-
-        if include_prerelease:
-            return self._parse_release(data[0])
-
-        # Find first non-prerelease
         for release in data:
-            if not release.get("prerelease", False):
-                return self._parse_release(release)
-
-        raise ValueError(f"No stable releases found for {owner}/{repo}")
-
-    def get_release_by_tag(self, owner: str, repo: str, tag: str) -> ReleaseInfo:
-        """
-        Get a specific release by tag name.
-
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            tag: Release tag name
-
-        Returns:
-            ReleaseInfo object
-        """
-        self._wait_for_rate_limit()
-
-        url = f"{self.BASE_URL}/repos/{owner}/{repo}/releases/tags/{tag}"
-        data = self._make_request(url)
-        return self._parse_release(data)
-
-    def get_all_releases(self, owner: str, repo: str) -> List[ReleaseInfo]:
-        """
-        Get all releases for a repository.
-
-        Args:
-            owner: Repository owner
-            repo: Repository name
-
-        Returns:
-            List of ReleaseInfo objects
-        """
-        self._wait_for_rate_limit()
-
-        url = f"{self.BASE_URL}/repos/{owner}/{repo}/releases"
-        data = self._make_request(url)
-
-        if not isinstance(data, list):
-            raise ValueError(f"Unexpected response format for {owner}/{repo}")
-
-        return [self._parse_release(r) for r in data]
-
-    def get_asset_download_url(self, release: ReleaseInfo, asset_name: str) -> Optional[str]:
-        """
-        Get download URL for a specific asset in a release.
-
-        Args:
-            release: ReleaseInfo object
-            asset_name: Exact asset filename
-
-        Returns:
-            Download URL or None if not found
-        """
-        for asset in release.assets:
-            if asset.get("name") == asset_name:
-                return asset.get("browser_download_url")
+            if release.get('draft'):
+                continue
+            if not include_prerelease and release.get('prerelease'):
+                continue
+            return self._parse_release(release)
         return None
 
-    def search_repositories(self, query: str, limit: int = 10, min_stars: int = 0, active_only: bool = True) -> List[dict]:
-        """
-        Search GitHub repositories with advanced filters.
+    def get_release_by_tag(self, owner: str, repo: str, tag: str) -> Optional[Dict]:
+        """Get a specific release by tag name."""
+        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/tags/{tag}"
+        return self._make_request(url)
 
-        Args:
-            query: Search query
-            limit: Maximum results to return
-            min_stars: Minimum star count filter
-            active_only: Exclude archived and inactive repos (no updates in 2 years)
+    def _parse_release(self, release_data: Dict) -> ReleaseInfo:
+        """Parse raw release data into ReleaseInfo dataclass."""
+        assets = []
+        for asset_data in release_data.get('assets', []):
+            assets.append({
+                'name': asset_data.get('name', ''),
+                'browser_download_url': asset_data.get('browser_download_url', ''),
+                'size': asset_data.get('size', 0),
+            })
 
-        Returns:
-            List of repository dicts sorted by stars descending
-        """
-        self._wait_for_rate_limit()
+        return ReleaseInfo(
+            tag_name=release_data.get('tag_name', ''),
+            name=release_data.get('name', ''),
+            body=release_data.get('body', ''),
+            published_at=release_data.get('published_at', ''),
+            prerelease=release_data.get('prerelease', False),
+            draft=release_data.get('draft', False),
+            assets=assets,
+            html_url=release_data.get('html_url', ''),
+        )
 
-        # Build search qualifiers
-        qualifiers = []
+    def search_repositories(
+        self,
+        query: str,
+        limit: int = 10,
+        min_stars: int = 0,
+        ignore_case: bool = True,
+        active_only: bool = True
+    ) -> List[Dict]:
+        """Search GitHub repositories."""
+        # Build search query
+        search_query = query
         if min_stars > 0:
-            qualifiers.append(f"stars:>={min_stars}")
+            search_query += f" stars:>={min_stars}"
         if active_only:
-            qualifiers.append("archived:false")
-            # repos updated in last 2 years (approx 730 days)
-            from datetime import datetime, timedelta
-            cutoff = (datetime.utcnow() - timedelta(days=730)).strftime("%Y-%m-%d")
-            qualifiers.append(f"pushed:>{cutoff}")
+            search_query += " archived:false"
 
-        full_query = query
-        if qualifiers:
-            full_query += " " + " ".join(qualifiers)
+        url = f"{GITHUB_API_URL}/search/repositories"
+        params = {
+            "q": search_query,
+            "sort": "stars",
+            "order": "desc",
+            "per_page": min(limit, 100)
+        }
 
-        url = f"{self.BASE_URL}/search/repositories?q={urllib.parse.quote(full_query)}&per_page={limit}&sort=stars&order=desc"
-        data = self._make_request(url)
-
-        if not isinstance(data, dict) or "items" not in data:
+        data = self._make_request(url, params)
+        if not data or "items" not in data:
             return []
 
-        # Ensure case-insensitive sorting already by stars desc from API
-        return data["items"]
+        repos = data["items"]
+
+        # Apply case-insensitive filtering if needed
+        if ignore_case:
+            query_lower = query.lower()
+            repos = [r for r in repos if query_lower in r.get("name", "").lower() or
+                     query_lower in r.get("description", "").lower()]
+
+        return repos[:limit]
+
+    def get_latest_release_parsed(self, owner: str, repo: str, include_prerelease: bool = False) -> Optional[ReleaseInfo]:
+        """Get the latest release as ReleaseInfo object."""
+        release = self.get_latest_release(owner, repo, include_prerelease)
+        if release:
+            return self._parse_release(release)
+        return None
+
+    def get_release_by_tag_parsed(self, owner: str, repo: str, tag: str) -> Optional[ReleaseInfo]:
+        """Get a specific release by tag as ReleaseInfo object."""
+        release = self.get_release_by_tag(owner, repo, tag)
+        if release:
+            return self._parse_release(release)
+        return None
+
+    def get_all_releases_parsed(self, owner: str, repo: str) -> List[ReleaseInfo]:
+        """Get all releases as ReleaseInfo objects."""
+        releases = self.get_releases(owner, repo)
+        return [self._parse_release(r) for r in releases]
+
+    def get_rate_limit_info(self) -> Dict[str, Any]:
+        """Get current rate limit status."""
+        return {
+            "remaining": self._rate_limit_remaining,
+            "reset": self._rate_limit_reset,
+            "has_token": bool(self.token)
+        }

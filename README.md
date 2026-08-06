@@ -14,6 +14,8 @@ ObtainHub (`ohub`) is a CLI tool for managing Windows x64 applications that are 
 - **Prerelease support** — opt-in with `--prerelease` flag
 - **Download-only mode** — fetch installers without executing them
 - **Custom sources** — add custom GitHub or manifest sources
+- **System app detection** — scan Windows Registry for installed applications
+- **GitHub token support** — higher rate limits with `GITHUB_TOKEN` environment variable
 
 ## Installation
 
@@ -47,11 +49,17 @@ ohub update
 # List installed apps
 ohub list
 
+# List all apps including system-installed
+ohub list --all
+
 # Uninstall an app
 ohub uninstall owner/repo
 
 # Self-update ObtainHub
 ohub self-update
+
+# Search GitHub repositories
+ohub search "text editor" --min-stars 100
 ```
 
 ## Commands Reference
@@ -93,8 +101,9 @@ ohub check --json                    # Output as JSON
 List all installed applications.
 
 ```cmd
-ohub list                            # Tabular output
+ohub list                            # Tabular output (ohub-managed apps)
 ohub list --json                     # JSON output
+ohub list --all                      # Include system-installed apps from Windows Registry
 ```
 
 **Output format:**
@@ -195,17 +204,25 @@ Config file: `%USERPROFILE%\.config\obtainhub\config.json`
 ```
 
 ### GitHub Token (Optional)
-Set a GitHub Personal Access Token to avoid rate limits:
+Set a GitHub Personal Access Token to avoid rate limits (60/hr → 5000/hr):
 
 ```cmd
-ohub config set github_token "ghp_xxxxxxxxxxxx"
+ohub config set github_token "ghp_xxx"
 ```
 
-Or set `GITHUB_TOKEN` environment variable.
+Or set `GITHUB_TOKEN` or `OBTAINHUB_TOKEN` environment variable:
+```cmd
+set GITHUB_TOKEN=ghp_xxx
+```
+
+When rate limited without a token, you'll see:
+```
+GitHub API rate limit exceeded. Set a GITHUB_TOKEN environment variable to increase limit from 60 to 5000 requests/hour.
+```
 
 ## State Tracking
 
-Installed apps are tracked in `%USERPROFILE%\.local\share\obtainhub\state.json`:
+Installed apps are tracked in `%APPDATA%\ObtainHub\state.json` (Windows) or `~/.obtainhub/state.json` (other platforms):
 
 ```json
 {
@@ -225,6 +242,16 @@ Installed apps are tracked in `%USERPROFILE%\.local\share\obtainhub\state.json`:
   }
 }
 ```
+
+## System Application Detection
+
+`ohub list --all` scans the Windows Registry for installed applications:
+
+- `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall`
+- `HKLM\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall`
+- `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall`
+
+This enables `ohub check` to match system-installed apps against GitHub repositories for update detection.
 
 ## Asset Selection Logic
 
@@ -258,25 +285,25 @@ Use `--force` to skip this check, or uninstall manually first.
 ### Build Commands
 ```cmd
 # Build everything (exe + installer + MSI + workflow)
-python build/build_dist.py --all
+python build_dist.py --all
 
 # Build only executable (onefile)
-python build/build_dist.py --onefile
+python build_dist.py --onefile
 
 # Build onedir executable
-python build/build_dist.py --onedir
+python build_dist.py --onedir
 
 # Build Inno Setup installer (requires exe)
-python build/build_dist.py --installer
+python build_dist.py --installer
 
 # Build MSI with Python msilib (stdlib)
-python build/build_dist.py --msi
+python build_dist.py --msi
 
 # Generate GitHub Actions workflow
-python build/build_dist.py --workflow
+python build_dist.py --workflow
 
 # Clean build artifacts
-python build/build_dist.py --clean
+python build_dist.py --clean
 ```
 
 ### Outputs
@@ -293,15 +320,15 @@ Automated builds on tag push (e.g., `git tag v0.1.0 && git push origin v0.1.0`):
 - Creates `ohub.exe`, `ObtainHub-Setup.exe`, and `ObtainHub.msi`
 - Publishes to GitHub Releases as prerelease or stable
 
-Workflow: `.github/workflows/build.yml`
+Workflow: `.github/workflows/release.yml`
 
-**Note:** Only the existing release tag `v0.1.0-beta.1` is used. Assets are updated on this tag directly.
+**Note:** Release tag `v0.1.0-beta.2` is used for pre-releases. Assets are updated on this tag directly.
 
 ## Requirements
 
 - Windows 10/11 x64
 - Python 3.11+ (for development)
-- GitHub API access (token optional, but recommended)
+- GitHub API access (token optional, but recommended for higher rate limits)
 
 ## License
 

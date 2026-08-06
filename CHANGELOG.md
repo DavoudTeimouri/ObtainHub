@@ -5,6 +5,29 @@ All notable changes to ObtainHub are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.0-beta.2] - 2026-08-06
+
+### Fixed
+- **GitHubClient.search_repositories**: Added `min_stars` parameter and `ignore_case` parameter for case-insensitive search filtering
+- **GitHub API Rate Limiting**: Added support for `GITHUB_TOKEN`/`OBTAINHUB_TOKEN` environment variables with Bearer token authentication
+- **Rate limit error handling**: Added clear warning when rate limit exceeded with instructions to set GITHUB_TOKEN
+- **State file persistence**: State file now stored in `%APPDATA%\ObtainHub\state.json` on Windows (or `~/.obtainhub/state.json` on other platforms)
+- **Logging cleanup**: Default console log level set to INFO, DEBUG logs suppressed unless `--verbose`/`--debug` flag passed
+- **System Registry Scanner**: Added `system_scanner.py` module using native `winreg` to scan installed applications from:
+  - `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall`
+  - `HKLM\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall`
+  - `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall`
+- **ohub list --all**: New flag to include system-installed applications from Windows Registry
+- **ohub check**: Now matches system application names against GitHub repositories for update checks
+
+### Changed
+- Release workflow target tag updated from `v0.1.0-beta.1` to `v0.1.0-beta.2` (Pre-Release)
+- Improved GitHub API search query construction with star filtering
+
+### Added
+- `GITHUB_TOKEN` / `OBTAINHUB_TOKEN` environment variable support for higher rate limits (5000/hr vs 60/hr)
+- System application detection for comprehensive app management
+
 ## [v0.1.0-beta.1] - 2026-08-03
 
 ### Added
@@ -62,14 +85,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No ARM64 native builds (explicitly rejected by default)
 - Manual uninstall required for apps installed outside ObtainHub
 - ZIP assets are download-only (no auto-install)
-
----
-
-## [Unreleased]
-
-### Planned
-- Manifest-based custom sources
-- Auto-uninstall attempt for manual uninstall cases
-- Progress bar for downloads
-- Parallel update checks for multiple apps
-- Shell completion scripts (PowerShell, Bash)

@@ -2,6 +2,7 @@
 
 import json
 import datetime
+import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -82,14 +83,23 @@ class InstalledApp:
         return cls(**data)
 
 
+def _get_state_dir() -> Path:
+    """Get the state directory path (%APPDATA% on Windows, ~/.obtainhub on others)."""
+    if os.name == "nt":  # Windows
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "ObtainHub"
+    # Fallback for Linux/macOS or if APPDATA not set
+    return Path.home() / ".obtainhub"
+
+
 class StateManager:
     """Manages persistent state for ObtainHub."""
 
     def __init__(self, state_dir: Optional[Path] = None):
-        config = get_config()
-        self.state_dir = state_dir or Path(config.state_dir)
-        self.state_file = self.state_dir / "state.json"
+        self.state_dir = state_dir or _get_state_dir()
         self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.state_file = self.state_dir / "state.json"
 
         self._state = {
             "schema_version": 1,
@@ -111,7 +121,7 @@ class StateManager:
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Failed to load state: {e}, starting fresh")
         else:
-            logger.debug("No state file found, starting fresh")
+            logger.debug(f"No state file found at {self.state_file}, starting fresh")
 
     def _save(self):
         """Save state to file."""

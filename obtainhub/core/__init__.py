@@ -95,7 +95,6 @@ __all__ = [
     "get_logger",
     "get_default_logger",
     # Self Updater
-    "ReleaseInfo",
     "SelfUpdater",
     "check_and_update",
     # Exceptions

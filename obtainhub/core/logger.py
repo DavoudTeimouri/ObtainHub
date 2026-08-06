@@ -139,13 +139,13 @@ def setup_logging(
     json_file: bool = True,
 ) -> None:
     """Set up global logging configuration."""
-    
+
     # Get log directory
     if log_dir is None:
         log_dir = Path.home() / ".local" / "share" / "obtainhub" / "logs"
-    
+
     log_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Root logger - handle LogLevel enum, int, or string
     root_logger = logging.getLogger()
     if hasattr(level, 'value'):
@@ -155,17 +155,17 @@ def setup_logging(
     else:
         level_val = level
     root_logger.setLevel(level_val)
-    
+
     # Clear existing handlers
     root_logger.handlers.clear()
-    
-    # Console handler
+
+    # Console handler - only show INFO and above unless verbose
     if console:
         console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(level_val)
         console_handler.setFormatter(ConsoleFormatter())
         root_logger.addHandler(console_handler)
-    
+
     # JSON file handler (rotating)
     if json_file:
         log_file = log_dir / "obtainhub.json"
@@ -175,10 +175,10 @@ def setup_logging(
             backupCount=3,
             encoding='utf-8',
         )
-        file_handler.setLevel(level_val)
+        file_handler.setLevel(logging.DEBUG)  # File gets all levels
         file_handler.setFormatter(JSONFormatter())
         root_logger.addHandler(file_handler)
-    
+
     # Human-readable file handler
     log_file_txt = log_dir / "obtainhub.log"
     txt_handler = logging.handlers.RotatingFileHandler(
@@ -187,7 +187,7 @@ def setup_logging(
         backupCount=3,
         encoding='utf-8',
     )
-    txt_handler.setLevel(level_val)
+    txt_handler.setLevel(logging.DEBUG)  # File gets all levels
     txt_handler.setFormatter(ConsoleFormatter(use_colors=False))
     root_logger.addHandler(txt_handler)
 

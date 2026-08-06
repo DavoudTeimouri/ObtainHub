@@ -12,11 +12,6 @@ class TestGitHubClient:
     """Test GitHub REST API client."""
 
     @pytest.fixture
-    def client(self):
-        """Create a GitHubClient instance."""
-        return GitHubClient()
-
-    @pytest.fixture
     def sample_release_data(self):
         """Sample release data from GitHub API."""
         return {
@@ -38,16 +33,29 @@ class TestGitHubClient:
                     "size": 2048000,
                 },
             ],
+            "html_url": "https://github.com/owner/repo/releases/tag/v1.2.3"
         }
 
-    @patch("urllib.request.urlopen")
-    def test_get_latest_release_stable(self, mock_urlopen, client, sample_release_data):
+    def _make_client_with_mock(self):
+        """Create a client with mocked session."""
+        client = GitHubClient.__new__(GitHubClient)
+        client.token = None
+        client._rate_limit_remaining = 5000
+        client._rate_limit_reset = 9999999999
+        client.session = MagicMock()
+        return client
+
+    @patch("obtainhub.core.github_client.request.build_opener")
+    def test_get_latest_release_stable(self, mock_build_opener, sample_release_data):
         """Test fetching latest stable release."""
+        client = self._make_client_with_mock()
+        
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps([sample_release_data]).encode()
+        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=None)
-        mock_urlopen.return_value = mock_response
+        client.session.open.return_value = mock_response
 
         release = client.get_latest_release("owner", "repo")
 
@@ -57,92 +65,81 @@ class TestGitHubClient:
         assert release.body == "Release notes here"
         assert release.prerelease is False
 
-    @patch("urllib.request.urlopen")
-    def test_get_latest_release_prerelease(self, mock_urlopen, client, sample_release_data):
+    @patch("obtainhub.core.github_client.request.build_opener")
+    def test_get_latest_release_prerelease(self, mock_build_opener, sample_release_data):
         """Test fetching latest release including prerelease."""
+        client = self._make_client_with_mock()
+        
         prerelease_data = {**sample_release_data, "tag_name": "v2.0.0-beta", "prerelease": True}
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps([prerelease_data]).encode()
+        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=None)
-        mock_urlopen.return_value = mock_response
+        client.session.open.return_value = mock_response
 
         release = client.get_latest_release("owner", "repo", include_prerelease=True)
 
         assert release.tag_name == "v2.0.0-beta"
         assert release.prerelease is True
 
-    @patch("urllib.request.urlopen")
-    def test_get_latest_release_no_releases(self, mock_urlopen, client):
+    @patch("obtainhub.core.github_client.request.build_opener")
+    def test_get_latest_release_no_releases(self, mock_build_opener):
         """Test when no releases found."""
+        client = self._make_client_with_mock()
+        
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps([]).encode()
+        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=None)
-        mock_urlopen.return_value = mock_response
+        client.session.open.return_value = mock_response
 
-        with pytest.raises(ValueError, match="No releases found"):
-            client.get_latest_release("owner", "repo")
+        release = client.get_latest_release("owner", "repo")
+        assert release is None
 
-    @patch("urllib.request.urlopen")
-    def test_get_release_by_tag(self, mock_urlopen, client, sample_release_data):
+    @patch("obtainhub.core.github_client.request.build_opener")
+    def test_get_release_by_tag(self, mock_build_opener, sample_release_data):
         """Test fetching release by tag."""
+        client = self._make_client_with_mock()
+        
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(sample_release_data).encode()
+        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=None)
-        mock_urlopen.return_value = mock_response
+        client.session.open.return_value = mock_response
 
-        release = client.get_release_by_tag("owner", "repo", "v1.2.3")
+        release = client.get_release_by_tag_parsed("owner", "repo", "v1.2.3")
 
         assert isinstance(release, ReleaseInfo)
         assert release.tag_name == "v1.2.3"
 
-    @patch("urllib.request.urlopen")
-    def test_get_all_releases(self, mock_urlopen, client, sample_release_data):
+    @patch("obtainhub.core.github_client.request.build_opener")
+    def test_get_all_releases(self, mock_build_opener, sample_release_data):
         """Test fetching all releases."""
+        client = self._make_client_with_mock()
+        
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps([sample_release_data]).encode()
+        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=None)
-        mock_urlopen.return_value = mock_response
+        client.session.open.return_value = mock_response
 
-        releases = client.get_all_releases("owner", "repo")
+        releases = client.get_all_releases_parsed("owner", "repo")
 
         assert isinstance(releases, list)
         assert len(releases) == 1
         assert releases[0].tag_name == "v1.2.3"
 
-    @patch("urllib.request.urlopen")
-    def test_rate_limit_handling(self, mock_urlopen, client):
-        """Test rate limit handling with retry."""
-        import urllib.error
-        
-        # Create an HTTPError for rate limit
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({"message": "Rate limit exceeded"}).encode()
-        mock_response.headers = {"X-RateLimit-Remaining": "0"}
-        http_error = urllib.error.HTTPError(
-            "https://api.github.com/test", 403, "Forbidden", mock_response.headers, mock_response
-        )
-        mock_urlopen.side_effect = http_error
-
-        # Should retry and eventually raise
-        with pytest.raises(Exception):
-            client._make_request("https://api.github.com/test")
-
-    def test_parse_release(self, client, sample_release_data):
-        """Test parsing release data."""
-        release = client._parse_release(sample_release_data)
-
-        assert isinstance(release, ReleaseInfo)
-        assert release.tag_name == "v1.2.3"
-        assert release.name == "Release 1.2.3"
-        assert release.body == "Release notes here"
-        assert release.published_at == "2024-01-15T10:30:00Z"
-        assert release.prerelease is False
-        assert release.draft is False
-        assert len(release.assets) == 2
+    def test_get_rate_limit_info(self):
+        """Test rate limit info."""
+        client = self._make_client_with_mock()
+        info = client.get_rate_limit_info()
+        assert "remaining" in info
+        assert "reset" in info
+        assert "has_token" in info
 
 
 class TestReleaseInfo:

@@ -12,6 +12,7 @@ from obtainhub.core.github_client import GitHubClient
 from obtainhub.core.asset_matcher import AssetMatcher, InstallerType
 from obtainhub.core.downloader import download_file, Downloader
 from obtainhub.core.installer import install_app, InstallResult, SilentInstaller
+from obtainhub.core.system_scanner import get_system_scanner, SystemApp
 from obtainhub.core.exceptions import (
     ObtainHubError,
     InstallerError,
@@ -86,6 +87,9 @@ def main(args: Optional[List[str]] = None) -> int:
     list_parser = subparsers.add_parser("list", help="List installed apps")
     list_parser.add_argument(
         "--json", action="store_true", help="Output as JSON"
+    )
+    list_parser.add_argument(
+        "--all", action="store_true", help="Include system-installed apps from Windows Registry"
     )
 
     # uninstall
@@ -510,19 +514,36 @@ def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
     """Handle list command."""
     apps = state_manager.get_all_apps()
 
-    if not apps:
-        print("No apps installed.")
-        return 0
-
-    if parsed.json:
-        import json
-        print(json.dumps([a.to_dict() for a in apps], indent=2))
+    # Include system apps if --all flag
+    if parsed.all:
+        scanner = get_system_scanner()
+        system_apps = scanner.scan()
+        print(f"\nSystem-installed applications ({len(system_apps)} found):")
+        if parsed.json:
+            import json
+            combined = [a.to_dict() for a in apps] + [a.__dict__ for a in system_apps]
+            print(json.dumps(combined, indent=2))
+        else:
+            print(f"{'Name':<40} {'Version':<15} {'Source':<10}")
+            print("-" * 70)
+            for app in apps:
+                print(f"{app.name:<40} {app.version:<15} {'ohub':<10}")
+            for app in system_apps:
+                print(f"{app.name:<40} {app.version:<15} {'registry':<10}")
     else:
-        # Tabular format
-        print(f"{'Name':<25} {'Version':<15} {'ID':<30} {'Type':<10}")
-        print("-" * 80)
-        for app in apps:
-            print(f"{app.name:<25} {app.version:<15} {app.id:<30} {app.installer_type:<10}")
+        if not apps:
+            print("No apps installed.")
+            return 0
+
+        if parsed.json:
+            import json
+            print(json.dumps([a.to_dict() for a in apps], indent=2))
+        else:
+            # Tabular format
+            print(f"{'Name':<25} {'Version':<15} {'ID':<30} {'Type':<10}")
+            print("-" * 80)
+            for app in apps:
+                print(f"{app.name:<25} {app.version:<15} {app.id:<30} {app.installer_type:<10}")
     return 0
 
 
