@@ -427,8 +427,10 @@ def create_msi_with_msilib():
 
     print("Building MSI with Python msilib...")
 
+    import warnings
     import msilib
     import uuid
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="msilib")
 
     msi_path = INSTALLER_DIR / "ObtainHub.msi"
     INSTALLER_DIR.mkdir(exist_ok=True)
@@ -440,7 +442,7 @@ def create_msi_with_msilib():
 
     try:
         # Create MSI database
-        db = msilib.init_database(str(msi_path), "ObtainHub", "0.1.0", "Davoud Teimouri", "ObtainHub")
+        db = msilib.init_database(str(msi_path), "ObtainHub", "ObtainHub", "0.1.0", "Davoud Teimouri", "{" + str(uuid.uuid4()).upper() + "}")
 
         # Add properties
         db.Properties.AddProperty("ProductName", "ObtainHub")
