@@ -418,10 +418,12 @@ def build_msi(wxs_path):
 
 
 def create_msi_with_msilib():
-    """Create MSI installer using Python's msilib (stdlib)."""
-    if not check_platform():
-        print("Skipping MSI build (wrong platform).")
-        return None
+    """Create MSI installer using Python's msilib (stdlib). Windows only."""
+    if not IS_WINDOWS:
+        raise RuntimeError(
+            "MSI build with msilib requires Windows platform. "
+            "Run on Windows x64 or use GitHub Actions (windows-latest)."
+        )
 
     print("Building MSI with Python msilib...")
 
@@ -514,6 +516,10 @@ on:
         description: 'Create prerelease'
         type: boolean
         default: false
+      target_tag:
+        description: 'Target release tag (default: v0.1.0-beta.1)'
+        type: string
+        default: 'v0.1.0-beta.1'
 
 permissions:
   contents: write
@@ -524,6 +530,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -549,7 +557,7 @@ jobs:
         run: |
           python build/build_dist.py --installer
 
-      - name: Build MSI (WiX)
+      - name: Build MSI (msilib)
         run: |
           python build/build_dist.py --msi
 
@@ -563,10 +571,11 @@ jobs:
             installer/ObtainHub-Setup.exe
             installer/ObtainHub.msi
 
-      - name: Create Release
+      - name: Create/Update Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         with:
+          tag_name: ${{ github.event.inputs.target_tag || github.ref_name }}
           files: |
             dist/ohub.exe
             installer/ObtainHub-Setup.exe
@@ -574,6 +583,7 @@ jobs:
           prerelease: ${{ github.event.inputs.prerelease || false }}
           draft: false
           generate_release_notes: true
+          overwrite: true
 '''
 
     workflow_path = workflow_dir / "build.yml"
