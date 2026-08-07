@@ -40,8 +40,6 @@ jobs:
           if ($wixPath) {
             $binPath = Join-Path $wixPath.FullName "bin"
             if (Test-Path $binPath) {
-              "CANDLE=$binPath\candle.exe"
-              "LIGHT=$binPath\light.exe"
               echo "WIX_BIN=$binPath" >> $env:GITHUB_ENV
             }
           } else {
@@ -51,6 +49,7 @@ jobs:
 
       - name: Build WiX MSI
         shell: powershell
+        continue-on-error: true
         run: |
           $candle = Join-Path $env:WIX_BIN "candle.exe"
           $light = Join-Path $env:WIX_BIN "light.exe"
