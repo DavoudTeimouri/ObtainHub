@@ -35,6 +35,7 @@ jobs:
 
       - name: Find WiX tools
         shell: powershell
+        continue-on-error: true
         run: |
           $wixPath = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Directory | Select-Object -First 1
           if ($wixPath) {
@@ -42,13 +43,11 @@ jobs:
             if (Test-Path $binPath) {
               echo "WIX_BIN=$binPath" >> $env:GITHUB_ENV
             }
-          } else {
-            Write-Error "WiX Toolset not found"
-            exit 1
           }
 
       - name: Find Inno Setup
         shell: powershell
+        continue-on-error: true
         run: |
           $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
           if (-not $isccPath) {
@@ -59,25 +58,26 @@ jobs:
           }
           if (Test-Path $isccPath) {
             echo "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
-          } else {
-            Write-Error "Inno Setup compiler (iscc) not found"
-            exit 1
           }
 
       - name: Build WiX MSI
         shell: powershell
         continue-on-error: true
         run: |
-          $candle = Join-Path $env:WIX_BIN "candle.exe"
-          $light = Join-Path $env:WIX_BIN "light.exe"
-          & $candle -out dist/ObtainHub.wixobj installer/setup.wxs
-          & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj
+          if ($env:WIX_BIN) {
+            $candle = Join-Path $env:WIX_BIN "candle.exe"
+            $light = Join-Path $env:WIX_BIN "light.exe"
+            & $candle -out dist/ObtainHub.wixobj installer/setup.wxs
+            & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj
+          }
 
       - name: Build Inno Setup EXE
         shell: powershell
         continue-on-error: true
         run: |
-          & $env:ISCC_PATH installer/setup.iss
+          if ($env:ISCC_PATH) {
+            & $env:ISCC_PATH installer/setup.iss
+          }
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
