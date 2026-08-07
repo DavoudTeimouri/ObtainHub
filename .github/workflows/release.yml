@@ -111,9 +111,10 @@ jobs:
           }
           
           Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
-          & $env:ISCC_PATH setup.iss 2>&1
+          $result = & $env:ISCC_PATH setup.iss 2>&1
           $exitCode = $LASTEXITCODE
           Write-Host "ISCC exit code: $exitCode"
+          Write-Host "ISCC output: $result"
           if ($exitCode -ne 0) {
             Write-Host "Inno Setup FAILED with exit code $exitCode"
             exit $exitCode
