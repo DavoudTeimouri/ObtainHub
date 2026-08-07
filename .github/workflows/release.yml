@@ -78,6 +78,10 @@ jobs:
         run: |
           if ($env:ISCC_PATH) {
             & $env:ISCC_PATH setup.iss
+            # Copy generated installer to root dist/
+            if (Test-Path "dist\ObtainHub-Setup.exe") {
+              Copy-Item "dist\ObtainHub-Setup.exe" "..\dist\ObtainHub-Setup.exe" -Force
+            }
           }
 
       - name: List dist directory
