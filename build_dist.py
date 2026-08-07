@@ -34,29 +34,23 @@ def main():
         print("ERROR: ohub.exe not found in dist/")
         sys.exit(1)
     
-    # Build WiX MSI - use full paths
+    # Build WiX MSI - locate tools via PATH
     print("Building WiX MSI...")
-    candle_path = r"C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe"
-    light_path = r"C:\Program Files (x86)\WiX Toolset v3.11\bin\light.exe"
-    
-    run([
-        candle_path,
-        "-out", "dist/ObtainHub.wixobj",
-        "installer/setup.wxs"
-    ])
-    run([
-        light_path,
-        "-out", "dist/ObtainHub.msi",
-        "dist/ObtainHub.wixobj"
-    ])
+    candle = shutil.which("candle")
+    light = shutil.which("light")
+    if not candle or not light:
+        print("ERROR: WiX tools (candle/light) not found in PATH")
+        sys.exit(1)
+    run([candle, "-out", "dist/ObtainHub.wixobj", "installer/setup.wxs"])
+    run([light, "-out", "dist/ObtainHub.msi", "dist/ObtainHub.wixobj"])
     
     # Build Inno Setup EXE installer
     print("Building Inno Setup EXE...")
-    iscc_path = r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-    run([
-        iscc_path,
-        "installer/setup.iss"
-    ])
+    iscc = shutil.which("iscc")
+    if not iscc:
+        print("ERROR: Inno Setup compiler (iscc) not found in PATH")
+        sys.exit(1)
+    run([iscc, "installer/setup.iss"])
     
     print("\nBuild complete!")
     print(f"  {dist_exe}")
