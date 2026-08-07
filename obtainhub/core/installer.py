@@ -110,7 +110,7 @@ class SilentInstaller:
         # Execute installer based on type
         if installer_type == InstallerType.MSI:
             return self._install_msi(file_path, app_id)
-        elif installer_type == InstallerType.EXE:
+        elif installer_type in (InstallerType.EXE_SETUP, InstallerType.EXE_STANDALONE):
             return self._install_exe(file_path, app_id)
         else:
             return InstallResult.FAILED, f"Unsupported installer type: {installer_type}"
@@ -256,7 +256,7 @@ class SilentInstaller:
             return self._uninstall_msi(app)
 
         # Try EXE uninstall
-        if app and app.installer_type == InstallerType.EXE.value and app.install_path:
+        if app and app.installer_type in (InstallerType.EXE_SETUP.value, InstallerType.EXE_STANDALONE.value) and app.installer_path:
             return self._uninstall_exe(app)
 
         return False, "No uninstall method available (manual uninstall required)"

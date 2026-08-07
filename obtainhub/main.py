@@ -35,7 +35,7 @@ def main(args: Optional[List[str]] = None) -> int:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0-beta.2"
+        "--version", action="version", version="%(prog)s 0.1.0-beta.3"
     )
     parser.add_argument(
         "--skip-self-update", action="store_true", help="Skip self-update check on startup"

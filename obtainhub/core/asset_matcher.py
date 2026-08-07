@@ -163,16 +163,17 @@ class AssetMatcher:
             Architecture.X86: 2,
             Architecture.UNKNOWN: 3,
         }
-        # Installer priority: MSI > EXE > ZIP
+        # Installer priority: EXE_SETUP > MSI > ZIP > EXE_STANDALONE
         inst_priority = {
-            InstallerType.MSI: 0,
-            InstallerType.EXE: 1,
+            InstallerType.EXE_SETUP: 0,
+            InstallerType.MSI: 1,
             InstallerType.ZIP: 2,
-            InstallerType.UNKNOWN: 3,
+            InstallerType.EXE_STANDALONE: 3,
+            InstallerType.UNKNOWN: 4,
         }
         return (
             arch_priority.get(match.architecture, 3),
-            inst_priority.get(match.installer_type, 3),
+            inst_priority.get(match.installer_type, 4),
             -match.size,  # Larger files first (more likely to be full installer)
         )
 
