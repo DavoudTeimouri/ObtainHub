@@ -17,11 +17,12 @@ class Architecture(Enum):
 
 
 class InstallerType(Enum):
-    """Installer file types."""
+    """Supported installer types in priority order (highest first)."""
+    EXE_SETUP = "exe_setup"   # Inno Setup EXE installer (highest priority)
+    MSI = "msi"               # WiX MSI installer
+    ZIP = "zip"               # Portable ZIP archive
+    EXE_STANDALONE = "exe"    # Standalone EXE (lowest priority)
     UNKNOWN = "unknown"
-    MSI = "msi"
-    EXE = "exe"
-    ZIP = "zip"
 
 
 @dataclass
@@ -77,9 +78,10 @@ class AssetMatcher:
 
         # Installer type detection
         self.installer_regexes = {
+            InstallerType.EXE_SETUP: re.compile(r'-Setup\.exe$|-setup\.exe$', re.IGNORECASE),
             InstallerType.MSI: re.compile(r'\.msi$', re.IGNORECASE),
-            InstallerType.EXE: re.compile(r'-Setup\.exe$|\.exe$', re.IGNORECASE),
             InstallerType.ZIP: re.compile(r'\.zip$', re.IGNORECASE),
+            InstallerType.EXE_STANDALONE: re.compile(r'\.exe$', re.IGNORECASE),
         }
 
         # Exclusion patterns
@@ -229,9 +231,29 @@ class AssetMatcher:
         return matches
 
     def get_best_match(self, assets: List[dict]) -> Optional[AssetMatch]:
-        """Get the single best matching asset."""
+        """Get the single best matching asset.
+        
+        Priority order:
+        1. Inno Setup EXE installer (Setup.exe)
+        2. WiX MSI installer
+        3. Portable ZIP
+        4. Standalone EXE (only if no other installer found)
+        """
         matches = self.match_assets(assets)
-        return matches[0] if matches else None
+        
+        if not matches:
+            return None
+        
+        # Priority order: EXE_SETUP > MSI > ZIP > EXE_STANDALONE
+        priority = {
+            InstallerType.EXE_SETUP: 0,
+            InstallerType.MSI: 1,
+            InstallerType.ZIP: 2,
+            InstallerType.EXE_STANDALONE: 3,
+        }
+        
+        matches.sort(key=lambda m: priority.get(m.installer_type, 99))
+        return matches[0]
 
 
 def get_asset_matcher(**kwargs) -> AssetMatcher:

@@ -35,7 +35,6 @@ jobs:
 
       - name: Find WiX tools
         shell: powershell
-        continue-on-error: true
         run: |
           $wixPath = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Directory | Select-Object -First 1
           if ($wixPath) {
@@ -47,7 +46,6 @@ jobs:
 
       - name: Find Inno Setup
         shell: powershell
-        continue-on-error: true
         run: |
           $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
           if (-not $isccPath) {
@@ -62,7 +60,6 @@ jobs:
 
       - name: Build WiX MSI
         shell: powershell
-        continue-on-error: true
         run: |
           if ($env:WIX_BIN) {
             $candle = Join-Path $env:WIX_BIN "candle.exe"
@@ -73,7 +70,6 @@ jobs:
 
       - name: Build Inno Setup EXE
         shell: powershell
-        continue-on-error: true
         working-directory: installer
         run: |
           if ($env:ISCC_PATH) {
@@ -82,7 +78,6 @@ jobs:
 
       - name: Copy Inno Setup output to root dist
         shell: powershell
-        continue-on-error: true
         run: |
           if (Test-Path "installer\dist\ObtainHub-Setup.exe") {
             Copy-Item "installer\dist\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
@@ -117,14 +112,11 @@ jobs:
           $result = gh $releaseArgs 2>&1
           Write-Host "Release create result: $result"
           
-          # Upload assets
+          # Upload assets - ONLY MSI and Setup EXE (no standalone ohub.exe)
           $assets = @(
-            "dist/ohub.exe",
-            "dist/ObtainHub.msi"
+            "dist/ObtainHub.msi",
+            "dist/ObtainHub-Setup.exe"
           )
-          if (Test-Path "dist/ObtainHub-Setup.exe") {
-            $assets += "dist/ObtainHub-Setup.exe"
-          }
           
           foreach ($asset in $assets) {
             if (Test-Path $asset) {

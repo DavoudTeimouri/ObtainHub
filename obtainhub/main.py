@@ -115,6 +115,11 @@ def main(args: Optional[List[str]] = None) -> int:
     remove_parser = source_subparsers.add_parser("remove", help="Remove a source")
     remove_parser.add_argument("name", help="Source name")
 
+    # add (shorthand for adding a GitHub repo by owner/repo)
+    add_parser = subparsers.add_parser("add", help="Add a GitHub repository (owner/repo)")
+    add_parser.add_argument("repo", help="Repository in owner/repo format")
+    add_parser.add_argument("--name", help="Custom name (default: repo name)")
+
     # search
     search_parser = subparsers.add_parser("search", help="Search GitHub repositories")
     search_parser.add_argument("query", help="Search query")
@@ -208,6 +213,10 @@ def main(args: Optional[List[str]] = None) -> int:
         elif parsed.command == "source":
             return cmd_source(
                 parsed, config_manager
+            )
+        elif parsed.command == "add":
+            return cmd_add(
+                parsed, config_manager, state_manager, logger
             )
         elif parsed.command == "search":
             return cmd_search(parsed, config_manager, logger)
@@ -423,7 +432,10 @@ def cmd_check(
     state_manager: StateManager,
     logger,
 ) -> int:
-    """Handle check command - check for updates without installing."""
+    """Handle check command - check for updates without installing.
+    
+    Also checks unmanaged system apps and offers to add them to ohub management.
+    """
     token = config_manager.load().github_token
     client = GitHubClient(token=token)
     matcher = AssetMatcher(allow_arm64=False, allow_x86_fallback=False, require_installer=True)
@@ -435,11 +447,16 @@ def cmd_check(
         apps = state_manager.get_all_apps()
         apps_to_check = [app.id for app in apps]
 
-    if not apps_to_check:
+    # Also check unmanaged system apps
+    system_apps = get_installed_system_apps()
+    ohub_app_names = {app.name.lower() for app in state_manager.get_all_apps()}
+    unmanaged_apps = [sa for sa in system_apps if sa.name.lower() not in ohub_app_names]
+
+    if not apps_to_check and not unmanaged_apps:
         print("No apps to check.")
         return 0
 
-    print(f"Checking updates for {len(apps_to_check)} app(s)...\n")
+    print(f"Checking updates for {len(apps_to_check)} managed app(s)...\n")
 
     results = []
     for app_id in apps_to_check:
@@ -494,6 +511,67 @@ def cmd_check(
             if not parsed.json:
                 print(f"  {app_id}: Error - {e}\n")
 
+    # Check unmanaged apps
+    if unmanaged_apps:
+        print(f"\nFound {len(unmanaged_apps)} unmanaged application(s) in system registry:\n")
+        for sys_app in unmanaged_apps:
+            # Try to find GitHub repo for this app
+            print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
+            print("    Checking GitHub for matching repository...")
+            
+            # Search for the app on GitHub
+            search_results = client.search_repositories(
+                query=sys_app.name,
+                min_stars=0,
+                ignore_case=True,
+                active_only=True,
+            )
+            
+            if search_results:
+                # Try to find exact match
+                exact_match = None
+                for repo in search_results[:5]:
+                    if repo.get('name', '').lower() == sys_app.name.lower():
+                        exact_match = repo
+                        break
+                
+                if exact_match:
+                    owner = exact_match['owner']['login']
+                    repo_name = exact_match['name']
+                    print(f"    Found: {owner}/{repo_name}")
+                    if not parsed.yes:
+                        confirm = input(f"    Add {owner}/{repo_name} to ohub management? [y/N]: ").strip().lower()
+                        if confirm == "y":
+                            # Add as source
+                            from obtainhub.core.config import ManifestSource
+                            source = ManifestSource(
+                                name=repo_name,
+                                url=f"https://api.github.com/repos/{owner}/{repo_name}",
+                                enabled=True,
+                                headers={}
+                            )
+                            config = config_manager.load()
+                            config.sources.append(source)
+                            config_manager.save(config)
+                            print(f"    Added {owner}/{repo_name} to sources")
+                    else:
+                        # Auto-add with --yes
+                        from obtainhub.core.config import ManifestSource
+                        source = ManifestSource(
+                            name=repo_name,
+                            url=f"https://api.github.com/repos/{owner}/{repo_name}",
+                            enabled=True,
+                            headers={}
+                        )
+                        config = config_manager.load()
+                        config.sources.append(source)
+                        config_manager.save(config)
+                        print(f"    Added {owner}/{repo_name} to sources (auto)")
+                else:
+                    print(f"    No exact match found on GitHub")
+            else:
+                print(f"    Not found on GitHub")
+
     if parsed.json:
         import json
         print(json.dumps(results, indent=2))
@@ -508,17 +586,35 @@ def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
     # Include system apps by default
     system_apps = get_installed_system_apps()
     print(f"\nSystem-installed applications ({len(system_apps)} found):")
+    
+    # Find unmanaged apps (in registry but not in ohub state)
+    ohub_app_ids = {app.id for app in apps}
+    unmanaged_apps = []
+    for sys_app in system_apps:
+        # Check if this system app is already managed by ohub
+        is_managed = False
+        for app in apps:
+            if app.name.lower() == sys_app.name.lower():
+                is_managed = True
+                break
+        if not is_managed:
+            unmanaged_apps.append(sys_app)
+
     if parsed.json:
         import json
-        combined = [a.to_dict() for a in apps] + [a for a in system_apps]
+        combined = [a.to_dict() for a in apps] + [a for a in unmanaged_apps]
         print(json.dumps(combined, indent=2))
     else:
-        print(f"{'Name':<40} {'Version':<15} {'Source':<10}")
-        print("-" * 70)
+        print(f"{'Name':<40} {'Version':<15} {'Source':<15}")
+        print("-" * 75)
         for app in apps:
-            print(f"{app.name:<40} {app.version:<15} {'ohub':<10}")
-        for app in system_apps:
-            print(f"{app.name:<40} {app.version:<15} {'registry':<10}")
+            print(f"{app.name:<40} {app.version:<15} {'ohub':<15}")
+        for app in unmanaged_apps:
+            print(f"{app.name:<40} {app.version:<15} {'unmanaged':<15}")
+        
+        if unmanaged_apps:
+            print(f"\n{len(unmanaged_apps)} unmanaged application(s) found.")
+            print("Use 'ohub add <owner/repo>' to start managing them.")
     return 0
 
 
@@ -590,6 +686,34 @@ def cmd_source(
         print(f"Removed source: {parsed.name}")
         return 0
 
+    return 0
+
+
+def cmd_add(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle add command - add a GitHub repository by owner/repo."""
+    repo = parsed.repo
+    
+    if "/" not in repo:
+        print(f"Error: Repository must be in format 'owner/repo'", file=sys.stderr)
+        return 1
+    
+    owner, repo_name = repo.split("/", 1)
+    name = parsed.name or repo_name
+    
+    # Create a source entry for this repo
+    from obtainhub.core.config import ManifestSource
+    source = ManifestSource(name=name, url=f"https://api.github.com/repos/{owner}/{repo_name}", enabled=True, headers={})
+    
+    config = config_manager.load()
+    config.sources.append(source)
+    config_manager.save(config)
+    
+    print(f"Added source: {name} ({owner}/{repo_name})")
     return 0
 
 

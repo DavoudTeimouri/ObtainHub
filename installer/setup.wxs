@@ -1,23 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Language="1033" Manufacturer="ObtainHub" Name="ObtainHub" UpgradeCode="a1b2c3d4-e5f6-7890-abcd-ef1234567890" Version="0.1.0">
-    <Package Compressed="yes" InstallScope="perMachine" InstallerVersion="200"/>
-    <MediaTemplate EmbedCab="yes"/>
+  <Product Id="*" Name="ObtainHub" Language="1033" Version="0.1.0.2" Manufacturer="ObtainHub" UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
 
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLFOLDER" Name="ObtainHub"/>
-      </Directory>
-    </Directory>
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ObtainHub is already installed." />
+    <MediaTemplate EmbedCab="yes" />
 
-    <DirectoryRef Id="INSTALLFOLDER">
-      <Component Guid="b2c3d4e5-f6a7-8901-bcde-f23456789012" Id="MainExecutable">
-        <File Id="OhubEXE" KeyPath="yes" Source="dist/ohub.exe"/>
-      </Component>
-    </DirectoryRef>
-
-    <Feature Id="MainFeature" Level="1" Title="ObtainHub CLI">
-      <ComponentRef Id="MainExecutable"/>
+    <Feature Id="ProductFeature" Title="ObtainHub" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
     </Feature>
   </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="ObtainHub" />
+      </Directory>
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="*">
+        <File Id="ohub.exe" Source="..\dist\ohub.exe" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
 </Wix>
