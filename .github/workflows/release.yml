@@ -32,6 +32,9 @@ jobs:
         shell: powershell
         run: |
           python -m PyInstaller --onefile --name ohub --clean obtainhub/main.py
+          Write-Host "=== PyInstaller Output ==="
+          Get-ChildItem dist\
+          Get-ChildItem dist\ -Recurse -Filter "*.exe"
 
       - name: Find WiX tools
         shell: powershell
