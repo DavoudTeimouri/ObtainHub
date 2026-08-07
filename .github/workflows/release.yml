@@ -73,19 +73,25 @@ jobs:
 
       - name: Build Inno Setup EXE
         shell: powershell
-        continue-on-error: true
         working-directory: installer
         run: |
           if ($env:ISCC_PATH) {
             & $env:ISCC_PATH setup.iss
           }
+          else {
+            Write-Error "ISCC not found"
+            exit 1
+          }
 
       - name: Copy Inno Setup output to root dist
         shell: powershell
-        continue-on-error: true
         run: |
           if (Test-Path "installer\dist\ObtainHub-Setup.exe") {
             Copy-Item "installer\dist\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
+          }
+          else {
+            Write-Error "Installer output not found at installer\dist\ObtainHub-Setup.exe"
+            exit 1
           }
 
       - name: List dist directory
@@ -112,6 +118,6 @@ jobs:
             dist/ObtainHub.msi
             dist/ObtainHub-Setup.exe
           overwrite_files: true
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
