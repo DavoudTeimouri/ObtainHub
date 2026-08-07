@@ -77,6 +77,9 @@ class StructuredLogger:
     
     def log(self, level: LogLevel, message: str, **extra):
         self._logger.log(level.value, message, extra={"extra": extra} if extra else None)
+    
+    def exception(self, message: str, **extra):
+        self._logger.exception(message, extra={"extra": extra} if extra else None)
 
 
 _LOGGERS: dict[str, StructuredLogger] = {}

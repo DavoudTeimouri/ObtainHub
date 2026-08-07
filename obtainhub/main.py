@@ -35,7 +35,7 @@ def main(args: Optional[List[str]] = None) -> int:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0"
+        "--version", action="version", version="%(prog)s 0.1.0-beta.2"
     )
     parser.add_argument(
         "--skip-self-update", action="store_true", help="Skip self-update check on startup"
@@ -129,6 +129,9 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     search_parser.add_argument(
         "--include-inactive", action="store_false", dest="active_only", help="Include archived/inactive repos"
+    )
+    search_parser.add_argument(
+        "--json", action="store_true", help="Output as JSON"
     )
 
     # config
@@ -251,9 +254,13 @@ def cmd_install(
         release = client.get_release_by_tag(owner, repo, parsed.tag)
     else:
         release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
+    
+    if not release:
+        print(f"Error: No release found for {app_id}", file=sys.stderr)
+        return 1
 
     # Check prerelease
-    if release.prerelease and not parsed.prerelease:
+    if release.get('prerelease') and not parsed.prerelease:
         print(f"Warning: {release.tag_name} is a prerelease. Use --prerelease to install.")
         if not parsed.yes:
             confirm = input("Continue anyway? [y/N]: ").strip().lower()
@@ -267,7 +274,7 @@ def cmd_install(
         allow_x86_fallback=False,
         require_installer=not parsed.download_only,
     )
-    match = matcher.get_best_match(release.assets)
+    match = matcher.get_best_match(release.get('assets', []))
 
     if not match:
         print(f"Error: No suitable asset found for {app_id}", file=sys.stderr)
@@ -307,11 +314,11 @@ def cmd_install(
         state_manager.add_installed_app({
             "id": app_id,
             "name": repo,
-            "version": release.tag_name.lstrip("v"),
+            "version": release.get('tag_name', '').lstrip("v"),
             "installer_type": match.installer_type.name.lower(),
             "installer_path": str(downloaded_path),
-            "source_url": release.html_url,
-            "tag": release.tag_name,
+            "source_url": release.get('html_url', ''),
+            "tag": release.get('tag_name', ''),
         })
     else:
         print(f"Install failed: {message}")
@@ -356,15 +363,19 @@ def cmd_update(
             owner, repo = app_id.split("/", 1)
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
+            if not release:
+                print(f"Skipping {app_id}: no release found")
+                continue
+
             current_version = app.version
-            latest_version = release.tag_name.lstrip("v")
+            latest_version = release.get('tag_name', '').lstrip("v")
             has_update = latest_version > current_version
 
             if not has_update:
                 print(f"  {app.name} ({app_id}): Up to date ({current_version})")
                 continue
 
-            match = matcher.get_best_match(release.assets)
+            match = matcher.get_best_match(release.get('assets', []))
             if not match:
                 print(f"  {app.name} ({app_id}): No suitable asset")
                 continue
@@ -386,11 +397,11 @@ def cmd_update(
                 print(f"  Success: {message}")
                 installer.record_update(
                     app_id=app_id,
-                    version=release.tag_name.lstrip("v"),
+                    version=release.get('tag_name', '').lstrip("v"),
                     installer_type=match.installer_type,
                     installer_path=str(downloaded_path),
-                    source_url=release.html_url,
-                    tag=release.tag_name,
+                    source_url=release.get('html_url', ''),
+                    tag=release.get('tag_name', ''),
                 )
                 updated_count += 1
             elif result == InstallResult.MANUAL_UNINSTALL_REQUIRED:
@@ -441,11 +452,15 @@ def cmd_check(
             owner, repo = app_id.split("/", 1)
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
+            if not release:
+                print(f"Skipping {app_id}: no release found")
+                continue
+
             current_version = app.version
-            latest_version = release.tag_name.lstrip("v")
+            latest_version = release.get('tag_name', '').lstrip("v")
             has_update = latest_version > current_version
 
-            match = matcher.get_best_match(release.assets)
+            match = matcher.get_best_match(release.get('assets', []))
             asset_info = f"{match.name} ({match.installer_type.name})" if match else "No suitable asset"
 
             result = {
@@ -453,15 +468,15 @@ def cmd_check(
                 "current_version": current_version,
                 "latest_version": latest_version,
                 "has_update": has_update,
-                "prerelease": release.prerelease,
+                "prerelease": release.get('prerelease', False),
                 "asset": asset_info,
-                "release_url": release.html_url,
+                "release_url": release.get('html_url', ''),
             }
             results.append(result)
 
             if not parsed.json:
                 status = "UPDATE AVAILABLE" if has_update else "Up to date"
-                prerelease_str = " (prerelease)" if release.prerelease else ""
+                prerelease_str = " (prerelease)" if release.get('prerelease', False) else ""
                 print(f"  {app.name} ({app_id})")
                 print(f"    Current:  {current_version}")
                 print(f"    Latest:   {latest_version}{prerelease_str}")
@@ -490,35 +505,20 @@ def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
     """Handle list command."""
     apps = state_manager.get_all_apps()
 
-    # Include system apps if --all flag
-    if parsed.all:
-        system_apps = get_installed_system_apps()
-        print(f"\nSystem-installed applications ({len(system_apps)} found):")
-        if parsed.json:
-            import json
-            combined = [a.to_dict() for a in apps] + [a for a in system_apps]
-            print(json.dumps(combined, indent=2))
-        else:
-            print(f"{'Name':<40} {'Version':<15} {'Source':<10}")
-            print("-" * 70)
-            for app in apps:
-                print(f"{app.name:<40} {app.version:<15} {'ohub':<10}")
-            for app in system_apps:
-                print(f"{app['name']:<40} {app['version']:<15} {'registry':<10}")
+    # Include system apps by default
+    system_apps = get_installed_system_apps()
+    print(f"\nSystem-installed applications ({len(system_apps)} found):")
+    if parsed.json:
+        import json
+        combined = [a.to_dict() for a in apps] + [a for a in system_apps]
+        print(json.dumps(combined, indent=2))
     else:
-        if not apps:
-            print("No apps installed.")
-            return 0
-
-        if parsed.json:
-            import json
-            print(json.dumps([a.to_dict() for a in apps], indent=2))
-        else:
-            # Tabular format
-            print(f"{'Name':<25} {'Version':<15} {'ID':<30} {'Type':<10}")
-            print("-" * 80)
-            for app in apps:
-                print(f"{app.name:<25} {app.version:<15} {app.id:<30} {app.installer_type:<10}")
+        print(f"{'Name':<40} {'Version':<15} {'Source':<10}")
+        print("-" * 70)
+        for app in apps:
+            print(f"{app.name:<40} {app.version:<15} {'ohub':<10}")
+        for app in system_apps:
+            print(f"{app.name:<40} {app.version:<15} {'registry':<10}")
     return 0
 
 
