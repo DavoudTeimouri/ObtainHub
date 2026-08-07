@@ -111,10 +111,13 @@ jobs:
           }
           
           Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
-          $result = & $env:ISCC_PATH setup.iss 2>&1
-          $exitCode = $LASTEXITCODE
+          $process = Start-Process -FilePath $env:ISCC_PATH -ArgumentList "setup.iss" -Wait -PassThru -RedirectStandardOutput "stdout.txt" -RedirectStandardError "stderr.txt"
+          $exitCode = $process.ExitCode
+          $stdout = Get-Content "stdout.txt" -Raw -ErrorAction SilentlyContinue
+          $stderr = Get-Content "stderr.txt" -Raw -ErrorAction SilentlyContinue
           Write-Host "ISCC exit code: $exitCode"
-          Write-Host "ISCC output: $result"
+          Write-Host "ISCC stdout: $stdout"
+          Write-Host "ISCC stderr: $stderr"
           if ($exitCode -ne 0) {
             Write-Host "Inno Setup FAILED with exit code $exitCode"
             exit $exitCode
