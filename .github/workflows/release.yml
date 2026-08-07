@@ -72,6 +72,15 @@ jobs:
         shell: powershell
         working-directory: installer
         run: |
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "Looking for ohub.exe at: $(Resolve-Path ..\dist\ohub.exe -ErrorAction SilentlyContinue)"
+          if (Test-Path "..\dist\ohub.exe") {
+            Write-Host "ohub.exe FOUND at ..\dist\ohub.exe"
+            Get-ChildItem ..\dist\
+          } else {
+            Write-Host "ohub.exe NOT FOUND at ..\dist\ohub.exe"
+            Get-ChildItem ..\ -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
+          }
           if ($env:ISCC_PATH) {
             Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
             & $env:ISCC_PATH setup.iss
