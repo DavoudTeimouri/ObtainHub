@@ -110,6 +110,8 @@ jobs:
             }
           }
           
+          Write-Host "ISCC_PATH resolved to: $env:ISCC_PATH"
+          Write-Host "ISCC exists: $(Test-Path $env:ISCC_PATH)"
           Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
           $process = Start-Process -FilePath $env:ISCC_PATH -ArgumentList "setup.iss" -Wait -PassThru -RedirectStandardOutput "stdout.txt" -RedirectStandardError "stderr.txt"
           $exitCode = $process.ExitCode
