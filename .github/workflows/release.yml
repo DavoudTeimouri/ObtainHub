@@ -80,6 +80,14 @@ jobs:
             & $env:ISCC_PATH setup.iss
           }
 
+      - name: Copy Inno Setup output to root dist
+        shell: powershell
+        continue-on-error: true
+        run: |
+          if (Test-Path "installer\dist\ObtainHub-Setup.exe") {
+            Copy-Item "installer\dist\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
+          }
+
       - name: List dist directory
         shell: powershell
         run: |
@@ -95,7 +103,7 @@ jobs:
           files: |
             dist/ohub.exe
             dist/ObtainHub.msi
-            installer/dist/ObtainHub-Setup.exe
+            dist/ObtainHub-Setup.exe
           overwrite: true
           fail_on_unmatched_files: false
         env:
