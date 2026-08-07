@@ -73,16 +73,21 @@ jobs:
         working-directory: installer
         run: |
           if ($env:ISCC_PATH) {
+            Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
             & $env:ISCC_PATH setup.iss
+            $LASTEXITCODE
+          } else {
+            Write-Host "ISCC_PATH not set!"
           }
           # Verify output
           if (Test-Path "dist\ObtainHub-Setup.exe") {
             Write-Host "Inno Setup output found at: installer\dist\ObtainHub-Setup.exe"
             Get-ChildItem dist\
           } else {
-            Write-Host "Inno Setup output NOT found!"
+            Write-Host "Inno Setup output NOT found in installer\dist!"
             Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
             Get-ChildItem ..\dist -Filter "*.exe" -ErrorAction SilentlyContinue
+            Get-ChildItem . -Recurse -Filter "*.exe"
           }
 
       - name: Copy Inno Setup output to root dist
