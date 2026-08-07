@@ -74,9 +74,10 @@ jobs:
       - name: Build Inno Setup EXE
         shell: powershell
         continue-on-error: true
+        working-directory: installer
         run: |
           if ($env:ISCC_PATH) {
-            & $env:ISCC_PATH installer/setup.iss
+            & $env:ISCC_PATH setup.iss
           }
 
       - name: List dist directory
