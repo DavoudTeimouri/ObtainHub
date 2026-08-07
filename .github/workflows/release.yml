@@ -50,15 +50,31 @@ jobs:
       - name: Find Inno Setup
         shell: powershell
         run: |
+          Write-Host "=== Find Inno Setup Debug ==="
           $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
-          if (-not $isccPath) {
+          if ($isccPath) {
+            Write-Host "Found iscc in PATH: $isccPath"
+          } else {
+            Write-Host "iscc not in PATH, checking default locations..."
             $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-            if (-not (Test-Path $isccPath)) {
+            if (Test-Path $isccPath) {
+              Write-Host "Found at default x86 location: $isccPath"
+            } else {
               $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
+              if (Test-Path $isccPath) {
+                Write-Host "Found at default x64 location: $isccPath"
+              } else {
+                Write-Host "ISCC NOT FOUND in any default location!"
+                $isccPath = $null
+              }
             }
           }
-          if (Test-Path $isccPath) {
+          if ($isccPath) {
             echo "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
+            Write-Host "Set ISCC_PATH to: $isccPath"
+          } else {
+            Write-Host "ERROR: ISCC_PATH not set!"
+            exit 1
           }
 
       - name: Build WiX MSI
