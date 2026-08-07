@@ -93,25 +93,33 @@ jobs:
         run: |
           Get-ChildItem dist\
 
-      - name: Delete existing release
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      - name: Create/Update Release and Upload Assets
+        shell: powershell
         run: |
-          gh release delete ${{ github.ref_name }} --yes --cleanup-tag 2>$null || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
-          files: |
-            dist/ohub.exe
-            dist/ObtainHub.msi
-            dist/ObtainHub-Setup.exe
-          overwrite_files: true
-          fail_on_unmatched_files: false
+          $tag = "${{ github.ref_name }}"
+          $prerelease = $tag -match 'beta|alpha'
+          
+          # Delete existing release if any
+          gh release delete $tag --yes --cleanup-tag 2>$null || true
+          
+          # Create new release
+          $releaseArgs = @("release", "create", $tag, "--title", "Release $tag", "--generate-notes")
+          if ($prerelease) { $releaseArgs += "--prerelease" }
+          gh $releaseArgs
+          
+          # Upload assets
+          $assets = @(
+            "dist/ohub.exe",
+            "dist/ObtainHub.msi"
+          )
+          if (Test-Path "dist/ObtainHub-Setup.exe") {
+            $assets += "dist/ObtainHub-Setup.exe"
+          }
+          
+          foreach ($asset in $assets) {
+            if (Test-Path $asset) {
+              gh release upload $tag $asset --clobber
+            }
+          }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
