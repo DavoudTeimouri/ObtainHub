@@ -78,10 +78,6 @@ jobs:
         run: |
           if ($env:ISCC_PATH) {
             & $env:ISCC_PATH setup.iss
-            # Copy generated installer to root dist/
-            if (Test-Path "dist\ObtainHub-Setup.exe") {
-              Copy-Item "dist\ObtainHub-Setup.exe" "..\dist\ObtainHub-Setup.exe" -Force
-            }
           }
 
       - name: List dist directory
@@ -99,7 +95,8 @@ jobs:
           files: |
             dist/ohub.exe
             dist/ObtainHub.msi
-            dist/ObtainHub-Setup.exe
+            installer/dist/ObtainHub-Setup.exe
           overwrite: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
