@@ -72,34 +72,56 @@ jobs:
         shell: powershell
         working-directory: installer
         run: |
+          Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
-          Write-Host "Looking for ohub.exe at: $(Resolve-Path ..\dist\ohub.exe -ErrorAction SilentlyContinue)"
-          if (Test-Path "..\dist\ohub.exe") {
-            Write-Host "ohub.exe FOUND at ..\dist\ohub.exe"
+          Write-Host "ISCC_PATH: $env:ISCC_PATH"
+          
+          # Check if ohub.exe exists
+          $ohubPath = "..\dist\ohub.exe"
+          Write-Host "Looking for ohub.exe at: $ohubPath"
+          if (Test-Path $ohubPath) {
+            Write-Host "ohub.exe FOUND"
             Get-ChildItem ..\dist\
           } else {
-            Write-Host "ohub.exe NOT FOUND at ..\dist\ohub.exe"
+            Write-Host "ohub.exe NOT FOUND"
             Get-ChildItem ..\ -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
-          }
-          if ($env:ISCC_PATH) {
-            Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
-            & $env:ISCC_PATH setup.iss
-            $exitCode = $LASTEXITCODE
-            Write-Host "ISCC exit code: $exitCode"
-            if ($exitCode -ne 0) {
-              Write-Host "Inno Setup FAILED with exit code $exitCode"
-              exit $exitCode
-            }
-          } else {
-            Write-Host "ISCC_PATH not set!"
             exit 1
           }
+          
+          # Check ISCC
+          if (-not $env:ISCC_PATH) {
+            Write-Host "ISCC_PATH not set, searching..."
+            $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
+            if (-not $isccPath) {
+              $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+              if (-not (Test-Path $isccPath)) {
+                $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
+              }
+            }
+            if (Test-Path $isccPath) {
+              Write-Host "Found ISCC at: $isccPath"
+              $env:ISCC_PATH = $isccPath
+            } else {
+              Write-Host "ISCC NOT FOUND!"
+              exit 1
+            }
+          }
+          
+          Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
+          & $env:ISCC_PATH setup.iss
+          $exitCode = $LASTEXITCODE
+          Write-Host "ISCC exit code: $exitCode"
+          if ($exitCode -ne 0) {
+            Write-Host "Inno Setup FAILED with exit code $exitCode"
+            exit $exitCode
+          }
+          
           # Verify output
           if (Test-Path "dist\ObtainHub-Setup.exe") {
-            Write-Host "Inno Setup output found at: installer\dist\ObtainHub-Setup.exe"
+            Write-Host "Inno Setup output FOUND at: installer\dist\ObtainHub-Setup.exe"
             Get-ChildItem dist\
           } else {
-            Write-Host "Inno Setup output NOT found in installer\dist!"
+            Write-Host "Inno Setup output NOT FOUND in installer\dist!"
             Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
             Get-ChildItem ..\dist -Filter "*.exe" -ErrorAction SilentlyContinue
             Get-ChildItem . -Recurse -Filter "*.exe"
