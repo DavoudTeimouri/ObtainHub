@@ -93,6 +93,13 @@ jobs:
         run: |
           Get-ChildItem dist\
 
+      - name: Delete existing release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          gh release delete ${{ github.ref_name }} --yes || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
@@ -104,7 +111,7 @@ jobs:
             dist/ohub.exe
             dist/ObtainHub.msi
             dist/ObtainHub-Setup.exe
-          overwrite: true
+          overwrite_files: true
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
