@@ -96,16 +96,26 @@ jobs:
       - name: Create/Update Release and Upload Assets
         shell: powershell
         run: |
+          $ErrorActionPreference = "Continue"
           $tag = "${{ github.ref_name }}"
           $prerelease = $tag -match 'beta|alpha'
           
-          # Delete existing release if any
-          gh release delete $tag --yes --cleanup-tag 2>$null || true
+          Write-Host "Tag: $tag"
+          Write-Host "Prerelease: $prerelease"
+          
+          # Check if release exists
+          $existingRelease = gh release view $tag --json id --jq .id 2>$null
+          if ($existingRelease) {
+            Write-Host "Deleting existing release: $existingRelease"
+            gh release delete $tag --yes --cleanup-tag
+          }
           
           # Create new release
+          Write-Host "Creating release..."
           $releaseArgs = @("release", "create", $tag, "--title", "Release $tag", "--generate-notes")
           if ($prerelease) { $releaseArgs += "--prerelease" }
-          gh $releaseArgs
+          $result = gh $releaseArgs 2>&1
+          Write-Host "Release create result: $result"
           
           # Upload assets
           $assets = @(
@@ -118,7 +128,11 @@ jobs:
           
           foreach ($asset in $assets) {
             if (Test-Path $asset) {
+              Write-Host "Uploading $asset..."
               gh release upload $tag $asset --clobber
+            }
+            else {
+              Write-Host "Asset not found: $asset"
             }
           }
         env:
