@@ -75,12 +75,26 @@ jobs:
           if ($env:ISCC_PATH) {
             & $env:ISCC_PATH setup.iss
           }
+          # Verify output
+          if (Test-Path "dist\ObtainHub-Setup.exe") {
+            Write-Host "Inno Setup output found at: installer\dist\ObtainHub-Setup.exe"
+            Get-ChildItem dist\
+          } else {
+            Write-Host "Inno Setup output NOT found!"
+            Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
+          }
 
       - name: Copy Inno Setup output to root dist
         shell: powershell
         run: |
           if (Test-Path "installer\dist\ObtainHub-Setup.exe") {
             Copy-Item "installer\dist\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
+            Write-Host "Copied to dist\ObtainHub-Setup.exe"
+          } else {
+            Write-Host "Source not found: installer\dist\ObtainHub-Setup.exe"
+            if (Test-Path "dist\ObtainHub-Setup.exe") {
+              Write-Host "But found at dist\ObtainHub-Setup.exe (already in root)"
+            }
           }
 
       - name: List dist directory
