@@ -6,10 +6,10 @@ import shutil
 import subprocess
 import sys
 
-def run(cmd, cwd=None):
+def run(cmd, cwd=None, shell=False):
     """Run command and check result."""
-    print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, shell=shell)
     if result.returncode != 0:
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
@@ -34,23 +34,27 @@ def main():
         print("ERROR: ohub.exe not found in dist/")
         sys.exit(1)
     
-    # Build WiX MSI
+    # Build WiX MSI - use full paths
     print("Building WiX MSI...")
+    candle_path = r"C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe"
+    light_path = r"C:\Program Files (x86)\WiX Toolset v3.11\bin\light.exe"
+    
     run([
-        "candle",
+        candle_path,
         "-out", "dist/ObtainHub.wixobj",
         "installer/setup.wxs"
     ])
     run([
-        "light",
+        light_path,
         "-out", "dist/ObtainHub.msi",
         "dist/ObtainHub.wixobj"
     ])
     
     # Build Inno Setup EXE installer
     print("Building Inno Setup EXE...")
+    iscc_path = r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
     run([
-        "iscc",
+        iscc_path,
         "installer/setup.iss"
     ])
     
