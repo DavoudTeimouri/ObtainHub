@@ -47,6 +47,23 @@ jobs:
             exit 1
           }
 
+      - name: Find Inno Setup
+        shell: powershell
+        run: |
+          $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
+          if (-not $isccPath) {
+            $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $isccPath)) {
+              $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
+            }
+          }
+          if (Test-Path $isccPath) {
+            echo "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
+          } else {
+            Write-Error "Inno Setup compiler (iscc) not found"
+            exit 1
+          }
+
       - name: Build WiX MSI
         shell: powershell
         continue-on-error: true
@@ -58,12 +75,9 @@ jobs:
 
       - name: Build Inno Setup EXE
         shell: powershell
+        continue-on-error: true
         run: |
-          $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
-          if (-not $isccPath) {
-            $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          }
-          & $isccPath installer/setup.iss
+          & $env:ISCC_PATH installer/setup.iss
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
