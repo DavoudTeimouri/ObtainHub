@@ -111,7 +111,7 @@ jobs:
           }
           
           Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
-          & $env:ISCC_PATH setup.iss
+          & $env:ISCC_PATH setup.iss 2>&1
           $exitCode = $LASTEXITCODE
           Write-Host "ISCC exit code: $exitCode"
           if ($exitCode -ne 0) {
