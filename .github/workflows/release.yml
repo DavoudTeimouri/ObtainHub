@@ -79,6 +79,11 @@ jobs:
             & $env:ISCC_PATH installer/setup.iss
           }
 
+      - name: List dist directory
+        shell: powershell
+        run: |
+          Get-ChildItem dist\
+
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
@@ -90,5 +95,6 @@ jobs:
             dist/ohub.exe
             dist/ObtainHub.msi
             dist/ObtainHub-Setup.exe
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
