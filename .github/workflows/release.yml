@@ -116,8 +116,8 @@ jobs:
           $stdout = Get-Content "stdout.txt" -Raw -ErrorAction SilentlyContinue
           $stderr = Get-Content "stderr.txt" -Raw -ErrorAction SilentlyContinue
           Write-Host "ISCC exit code: $exitCode"
-          Write-Host "ISCC stdout: $stdout"
-          Write-Host "ISCC stderr: $stderr"
+          if ($stdout) { Write-Host "ISCC stdout: $stdout" }
+          if ($stderr) { Write-Host "ISCC stderr: $stderr" }
           if ($exitCode -ne 0) {
             Write-Host "Inno Setup FAILED with exit code $exitCode"
             exit $exitCode
