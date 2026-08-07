@@ -16,77 +16,88 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
-DisableDirPage=yes
-DisableProgramGroupPage=yes
-OutputDir=dist
+DefaultGroupName={#MyAppName}
+AllowNoIcons=yes
+OutputDir=.
 OutputBaseFilename=ObtainHub-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 
-[Types]
-Name: "currentuser"; Description: "Install for current user only"
-Name: "allusers"; Description: "Install for all users (requires administrator)"
-
-[Components]
-Name: "main"; Description: "Main program"; Types: currentuser allusers
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "addpath"; Description: "Add ObtainHub to PATH"; GroupDescription: "Additional tasks:"
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "path"; Description: "Add Ohub to PATH"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
 Source: "..\dist\ohub.exe"; DestDir: "{app}"; Flags: ignoreversion
+; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
-Name: "{commonprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: addpath
-Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: addpath
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
-[Registry]
-; Add to PATH for current user (always)
-Root: HKCU; Subkey: "Environment"; ValueType: string; ValueName: "PATH"; ValueData: "{app};"; Flags: preservestringtype uninsdeletevalue; Tasks: addpath
-
-; Add to PATH for all users (only if allusers type selected)
-Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "PATH"; ValueData: "{app};"; Flags: preservestringtype uninsdeletevalue; Tasks: addpath; Permissions: admins-full; Check: IsAdminInstallMode
+[Run]
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{app}"
-; Data directory cleanup (conditional)
 Type: filesandordirs; Name: "{localappdata}\ObtainHub"
 Type: filesandordirs; Name: "{commonappdata}\ObtainHub"
 
 [Code]
 var
-  RemoveData: Boolean;
+  RemoveDataPage: TWizardPage;
+  RemoveDataCheck: TNewCheckBox;
 
-function IsAdminInstallMode(): Boolean;
+procedure InitializeWizard();
 begin
-  Result := (WizardSetupType(False) = 'allusers');
+  RemoveDataPage := CreateCustomPage(wpWelcome, 'Remove Data', 'Choose whether to remove application data');
+  RemoveDataCheck := TNewCheckBox.Create(RemoveDataPage);
+  RemoveDataCheck.Parent := RemoveDataPage.Surface;
+  RemoveDataCheck.Top := 0;
+  RemoveDataCheck.Left := 0;
+  RemoveDataCheck.Width := RemoveDataPage.Surface.Width;
+  RemoveDataCheck.Height := 30;
+  RemoveDataCheck.Caption := 'Remove all application data (settings, cache, logs) from %LOCALAPPDATA%\ObtainHub and %ALLUSERSPROFILE%\ObtainHub';
+  RemoveDataCheck.Checked := False;
 end;
 
-function InitializeSetup(): Boolean;
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataPath: String;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    if RemoveDataCheck.Checked then
+    begin
+      DataPath := ExpandConstant('{localappdata}\ObtainHub');
+      if DirExists(DataPath) then
+        DelTree(DataPath, True, True, True);
+      
+      DataPath := ExpandConstant('{commonappdata}\ObtainHub');
+      if DirExists(DataPath) then
+        DelTree(DataPath, True, True, True);
+    end;
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
+  if CurPageID = wpReady then
+  begin
+    if IsTaskSelected('path') then
+    begin
+      // Add to PATH will be handled by the installer
+    end;
+  end;
 end;
 
-function NeedRestart(): Boolean;
+procedure RegisterPreviousData(PreviousDataKey: Integer);
 begin
-  Result := False;
+  // Store the remove data choice for uninstall
+  SetPreviousData(PreviousDataKey, 'RemoveData', RemoveDataCheck.Checked);
 end;
-
-procedure InitializeUninstall();
-begin
-  // Ask user about data removal
-  RemoveData := False;
-  if MsgBox('Do you want to remove all ObtainHub data (settings, cache, logs)?'#13#10#13#10'This includes:'#13#10'  - %LOCALAPPDATA%\ObtainHub'#13#10'  - %PROGRAMDATA%\ObtainHub'#13#10#13#10'Click "Yes" to remove all data, "No" to keep data.', mbConfirmation, MB_YESNO) = IDYES then
-    RemoveData := True;
-end;
-
-function ShouldRemoveData(Param: String): Boolean;
-begin
-  Result := RemoveData;
-end;
-
-[UninstallRun]
-; Only run data cleanup if user chose to remove data
-Filename: "{app}\{#MyAppExeName}"; Parameters: "--uninstall-cleanup"; Flags: runascurrentuser; Check: ShouldRemoveData('')
