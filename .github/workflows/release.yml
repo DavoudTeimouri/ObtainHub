@@ -33,19 +33,38 @@ jobs:
         run: |
           python -m PyInstaller --onefile --name ohub --clean obtainhub/main.py
 
+      - name: Find WiX tools
+        shell: powershell
+        run: |
+          $wixPath = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Directory | Select-Object -First 1
+          if ($wixPath) {
+            $binPath = Join-Path $wixPath.FullName "bin"
+            if (Test-Path $binPath) {
+              "CANDLE=$binPath\candle.exe"
+              "LIGHT=$binPath\light.exe"
+              echo "WIX_BIN=$binPath" >> $env:GITHUB_ENV
+            }
+          } else {
+            Write-Error "WiX Toolset not found"
+            exit 1
+          }
+
       - name: Build WiX MSI
         shell: powershell
         run: |
-          $candle = "C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe"
-          $light = "C:\Program Files (x86)\WiX Toolset v3.11\bin\light.exe"
+          $candle = Join-Path $env:WIX_BIN "candle.exe"
+          $light = Join-Path $env:WIX_BIN "light.exe"
           & $candle -out dist/ObtainHub.wixobj installer/setup.wxs
           & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj
 
       - name: Build Inno Setup EXE
         shell: powershell
         run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          & $iscc installer/setup.iss
+          $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
+          if (-not $isccPath) {
+            $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          & $isccPath installer/setup.iss
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
