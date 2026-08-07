@@ -357,14 +357,17 @@ class SilentInstaller:
         Returns:
             InstalledApp object
         """
+        import time
         app = InstalledApp(
-            name=app_id,
+            id=app_id,
+            name=name,
             version=version,
-            install_path=installer_path,
             installer_type=installer_type.value,
+            installer_path=installer_path,
             source_url=source_url,
             tag=tag,
-            install_date=datetime.now().isoformat(),
+            installed_at=int(time.time()),
+            updated_at=int(time.time()),
         )
 
         self.state_manager.add_installed_app(app)
@@ -394,16 +397,17 @@ class SilentInstaller:
         Returns:
             Updated InstalledApp object
         """
+        import time
         app = self.state_manager.get_installed_app(app_id)
         if not app:
             raise InstallerError(f"App not found for update: {app_id}")
 
         app.version = version
         app.installer_type = installer_type.value
-        app.install_path = installer_path
+        app.installer_path = installer_path
         app.source_url = source_url
         app.tag = tag
-        app.install_date = datetime.now().isoformat()
+        app.updated_at = int(time.time())
 
         self.state_manager.add_installed_app(app)
         logger.info(f"Recorded update: {app_id} v{version}")

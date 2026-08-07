@@ -1,17 +1,9 @@
 """GitHub API client for ObtainHub."""
 
-import json
 import os
-import time
+import requests
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from urllib import request, error
-
-from obtainhub.core.logger import get_logger
-
-logger = get_logger(__name__)
-
-GITHUB_API_URL = "https://api.github.com"
 
 
 @dataclass
@@ -28,109 +20,91 @@ class ReleaseInfo:
 
 
 class GitHubClient:
-    """Client for interacting with GitHub REST API."""
-
-    def __init__(self, token: Optional[str] = None):
-        # Check environment variables for token
+    def __init__(self, token: str = None):
         self.token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("OBTAINHUB_TOKEN")
-        self.session = request.build_opener()
-        self._rate_limit_remaining = 60
-        self._rate_limit_reset = 0
-
+        self.headers = {"Accept": "application/vnd.github.v3+json"}
         if self.token:
-            self.session.addheaders = [('Authorization', f'Bearer {self.token}')]
-        self.session.addheaders = [
-            ('Accept', 'application/vnd.github.v3+json'),
-            ('User-Agent', 'ObtainHub/0.1.0')
-        ]
-        if self.token:
-            self.session.addheaders.append(('Authorization', f'Bearer {self.token}'))
+            self.headers["Authorization"] = f"Bearer {self.token}"
 
-    def _make_request(self, url: str, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Make HTTP request to GitHub API with rate limit handling."""
-        if params:
-            query = "&".join(f"{k}={v}" for k, v in params.items())
-            url = f"{url}?{query}"
-
-        req = request.Request(url)
-
-        # Check rate limit before making request
-        if self._rate_limit_remaining <= 1 and time.time() < self._rate_limit_reset:
-            wait_time = self._rate_limit_reset - time.time() + 1
-            logger.warning(f"Rate limit near exhaustion, waiting {wait_time:.0f}s")
-            time.sleep(wait_time)
-
-        try:
-            with self.session.open(req, timeout=30) as response:
-                # Update rate limit info from headers
-                self._rate_limit_remaining = int(response.headers.get('x-ratelimit-remaining', 60))
-                self._rate_limit_reset = int(response.headers.get('x-ratelimit-reset', time.time() + 3600))
-
-                if response.status == 403 and self._rate_limit_remaining == 0:
-                    raise error.HTTPError(url, 403, "Rate limit exceeded", response.headers, None)
-
-                data = json.load(response)
-                return data
-        except error.HTTPError as e:
-            # Update rate limit from error response headers
-            if hasattr(e, 'headers') and e.headers:
-                self._rate_limit_remaining = int(e.headers.get('x-ratelimit-remaining', self._rate_limit_remaining))
-                self._rate_limit_reset = int(e.headers.get('x-ratelimit-reset', self._rate_limit_reset))
+    def search_repositories(self, query: str, min_stars: int = 0, ignore_case: bool = True, active_only: bool = True):
+        url = "https://api.github.com/search/repositories"
+        search_q = f"{query} stars:>={min_stars}" if min_stars > 0 else query
+        if active_only:
+            search_q += " archived:false"
             
-            if e.code == 403 and self._rate_limit_remaining == 0:
-                reset_time = int(e.headers.get('x-ratelimit-reset', time.time() + 3600))
-                wait_time = max(0, reset_time - time.time() + 1)
-                logger.warning(f"GitHub API rate limit exceeded. Waiting {wait_time:.0f}s for reset.")
-                time.sleep(wait_time)
-                # Retry once
-                return self._make_request(url, params)
-            elif e.code == 403:
-                logger.error("GitHub API rate limit exceeded. Set a GITHUB_TOKEN environment variable to increase limit from 60 to 5000 requests/hour.")
-                return None
-            elif e.code == 404:
-                return None
-            else:
-                logger.error(f"GitHub API error: {e.code} {e.reason}")
-                return None
-        except error.URLError as e:
-            logger.error(f"Network error: {e.reason}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return None
+        params = {"q": search_q, "sort": "stars", "order": "desc"}
+        
+        try:
+            response = requests.get(url, headers=self.headers, params=params)
+            if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
+                print("\n[!] Error: GitHub API rate limit exceeded.")
+                print("[!] Set the GITHUB_TOKEN environment variable (e.g. `$env:GITHUB_TOKEN='your_token'`) to increase limit from 60 to 5000 req/hr.\n")
+                return []
+            response.raise_for_status()
+            data = response.json()
+            items = data.get("items", [])
+            
+            if ignore_case:
+                query_lower = query.lower()
+                items = [item for item in items if query_lower in item["full_name"].lower() or (item.get("description") and query_lower in item["description"].lower())]
+                
+            return items
+        except requests.RequestException as e:
+            print(f"[!] Network error while querying GitHub API: {e}")
+            return []
 
     def get_repo(self, owner: str, repo: str) -> Optional[Dict]:
         """Get repository information."""
-        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}"
-        return self._make_request(url)
+        url = f"https://api.github.com/repos/{owner}/{repo}"
+        try:
+            response = requests.get(url, headers=self.headers)
+            if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
+                print("\n[!] Error: GitHub API rate limit exceeded.")
+                return None
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException:
+            return None
 
     def get_releases(self, owner: str, repo: str, per_page: int = 10) -> List[Dict]:
         """Get all releases for a repository."""
-        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases"
+        url = f"https://api.github.com/repos/{owner}/{repo}/releases"
         params = {"per_page": per_page}
-        data = self._make_request(url, params)
-        return data if isinstance(data, list) else []
+        try:
+            response = requests.get(url, headers=self.headers, params=params)
+            if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
+                print("\n[!] Error: GitHub API rate limit exceeded.")
+                return []
+            response.raise_for_status()
+            return response.json() if isinstance(response.json(), list) else []
+        except requests.RequestException:
+            return []
 
-    def get_latest_release(self, owner: str, repo: str, include_prerelease: bool = False) -> Optional[ReleaseInfo]:
-        """Get the latest release for a repository as ReleaseInfo."""
-        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases"
-        params = {"per_page": 10}
-        data = self._make_request(url, params)
-        if not data or not isinstance(data, list):
-            return None
-
-        for release in data:
+    def get_latest_release(self, owner: str, repo: str, include_prerelease: bool = False) -> Optional[Dict]:
+        """Get the latest release for a repository."""
+        releases = self.get_releases(owner, repo, per_page=10)
+        for release in releases:
             if release.get('draft'):
                 continue
             if not include_prerelease and release.get('prerelease'):
                 continue
-            return self._parse_release(release)
+            return release
         return None
 
     def get_release_by_tag(self, owner: str, repo: str, tag: str) -> Optional[Dict]:
         """Get a specific release by tag name."""
-        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/tags/{tag}"
-        return self._make_request(url)
+        url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+        try:
+            response = requests.get(url, headers=self.headers)
+            if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
+                print("\n[!] Error: GitHub API rate limit exceeded.")
+                return None
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException:
+            return None
 
     def _parse_release(self, release_data: Dict) -> ReleaseInfo:
         """Parse raw release data into ReleaseInfo dataclass."""
@@ -152,44 +126,6 @@ class GitHubClient:
             assets=assets,
             html_url=release_data.get('html_url', ''),
         )
-
-    def search_repositories(
-        self,
-        query: str,
-        limit: int = 10,
-        min_stars: int = 0,
-        ignore_case: bool = True,
-        active_only: bool = True
-    ) -> List[Dict]:
-        """Search GitHub repositories."""
-        # Build search query
-        search_query = query
-        if min_stars > 0:
-            search_query += f" stars:>={min_stars}"
-        if active_only:
-            search_query += " archived:false"
-
-        url = f"{GITHUB_API_URL}/search/repositories"
-        params = {
-            "q": search_query,
-            "sort": "stars",
-            "order": "desc",
-            "per_page": min(limit, 100)
-        }
-
-        data = self._make_request(url, params)
-        if not data or "items" not in data:
-            return []
-
-        repos = data["items"]
-
-        # Apply case-insensitive filtering if needed
-        if ignore_case:
-            query_lower = query.lower()
-            repos = [r for r in repos if query_lower in r.get("name", "").lower() or
-                     query_lower in r.get("description", "").lower()]
-
-        return repos[:limit]
 
     def get_latest_release_parsed(self, owner: str, repo: str, include_prerelease: bool = False) -> Optional[ReleaseInfo]:
         """Get the latest release as ReleaseInfo object."""
@@ -213,7 +149,7 @@ class GitHubClient:
     def get_rate_limit_info(self) -> Dict[str, Any]:
         """Get current rate limit status."""
         return {
-            "remaining": self._rate_limit_remaining,
-            "reset": self._rate_limit_reset,
+            "remaining": 5000 if self.token else 60,
+            "reset": 0,
             "has_token": bool(self.token)
         }

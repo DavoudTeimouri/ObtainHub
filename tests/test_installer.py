@@ -28,7 +28,8 @@ class TestSilentInstaller:
     @pytest.fixture
     def state_manager(self, temp_dir):
         """Create StateManager instance."""
-        return StateManager(state_dir=temp_dir)
+        state_file = temp_dir / "state.json"
+        return StateManager(state_file=state_file)
 
     @pytest.fixture
     def installer(self, temp_dir, state_manager):
@@ -87,13 +88,14 @@ class TestSilentInstaller:
         """Test manual uninstall required detection."""
         # Add app with manual uninstall required
         app = InstalledApp(
-            name="owner/repo",
+            id="owner/repo",
+            name="repo",
             version="1.0.0",
             installer_type="msi",
-            install_path=str(temp_dir / "old.msi"),
+            installer_path=str(temp_dir / "old.msi"),
             source_url="https://github.com/owner/repo/releases/tag/v1.0.0",
             tag="v1.0.0",
-            install_date="2024-01-01T00:00:00",
+            installed_at=1704067200,
             requires_manual_uninstall=True,
         )
         state_manager.add_installed_app(app)
@@ -112,13 +114,14 @@ class TestSilentInstaller:
         """Test force flag overrides manual uninstall."""
         # Add app with manual uninstall required
         app = InstalledApp(
-            name="owner/repo",
+            id="owner/repo",
+            name="repo",
             version="1.0.0",
             installer_type="msi",
-            install_path=str(temp_dir / "old.msi"),
+            installer_path=str(temp_dir / "old.msi"),
             source_url="https://github.com/owner/repo/releases/tag/v1.0.0",
             tag="v1.0.0",
-            install_date="2024-01-01T00:00:00",
+            installed_at=1704067200,
             requires_manual_uninstall=True,
         )
         state_manager.add_installed_app(app)
@@ -154,7 +157,8 @@ class TestSilentInstaller:
             tag="v1.0.0",
         )
 
-        assert app.name == "owner/repo"
+        assert app.id == "owner/repo"
+        assert app.name == "repo"
         assert app.version == "1.0.0"
         assert app.installer_type == "msi"
 
@@ -164,35 +168,37 @@ class TestSilentInstaller:
         assert stored.version == "1.0.0"
 
     def test_record_update(self, installer, temp_dir, state_manager):
-        """Test recording update in state."""
-        # Add initial app
-        initial = InstalledApp(
-            name="owner/repo",
-            version="1.0.0",
-            installer_type="msi",
-            install_path=str(temp_dir / "old.msi"),
-            source_url="https://github.com/owner/repo/releases/tag/v1.0.0",
-            tag="v1.0.0",
-            install_date="2024-01-01T00:00:00",
-        )
-        state_manager.add_installed_app(initial)
+            """Test recording update in state."""
+            # Add initial app
+            initial = InstalledApp(
+                id="owner/repo",
+                name="repo",
+                version="1.0.0",
+                installer_type="msi",
+                installer_path=str(temp_dir / "old.msi"),
+                source_url="https://github.com/owner/repo/releases/tag/v1.0.0",
+                tag="v1.0.0",
+                installed_at=1704067200,
+                updated_at=1704067200,
+            )
+            state_manager.add_installed_app(initial)
 
-        # Record update
-        app = installer.record_update(
-            app_id="owner/repo",
-            version="2.0.0",
-            installer_type=InstallerType.MSI,
-            installer_path=str(temp_dir / "new.msi"),
-            source_url="https://github.com/owner/repo/releases/tag/v2.0.0",
-            tag="v2.0.0",
-        )
+            # Record update
+            updated = installer.record_update(
+                app_id="owner/repo",
+                version="2.0.0",
+                installer_type=InstallerType.MSI,
+                installer_path=str(temp_dir / "new.msi"),
+                source_url="https://github.com/owner/repo/releases/tag/v2.0.0",
+                tag="v2.0.0",
+            )
 
-        assert app.version == "2.0.0"
-        assert app.install_path == str(temp_dir / "new.msi")
+            assert updated.version == "2.0.0"
+            assert updated.updated_at > initial.installed_at
 
-        # Verify in state
-        stored = state_manager.get_installed_app("owner/repo")
-        assert stored.version == "2.0.0"
+            # Verify in state
+            stored = state_manager.get_installed_app("owner/repo")
+            assert stored.version == "2.0.0"
 
 
 class TestInstallApp:

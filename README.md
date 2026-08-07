@@ -217,7 +217,8 @@ set GITHUB_TOKEN=ghp_xxx
 
 When rate limited without a token, you'll see:
 ```
-GitHub API rate limit exceeded. Set a GITHUB_TOKEN environment variable to increase limit from 60 to 5000 requests/hour.
+[!] Error: GitHub API rate limit exceeded.
+[!] Set the GITHUB_TOKEN environment variable (e.g. `$env:GITHUB_TOKEN='your_token'`) to increase limit from 60 to 5000 req/hr.
 ```
 
 ## State Tracking
@@ -226,7 +227,7 @@ Installed apps are tracked in `%APPDATA%\ObtainHub\state.json` (Windows) or `~/.
 
 ```json
 {
-  "apps": {
+  "installed": {
     "owner/repo": {
       "id": "owner/repo",
       "name": "repo",
@@ -322,7 +323,7 @@ Automated builds on tag push (e.g., `git tag v0.1.0 && git push origin v0.1.0`):
 
 Workflow: `.github/workflows/release.yml`
 
-**Note:** Release tag `v0.1.0-beta.2` is used for pre-releases. Assets are updated on this tag directly.
+**Note:** Release tags with `beta` or `alpha` are published as pre-releases. Assets are generated for each tag pushed.
 
 ## Requirements
 

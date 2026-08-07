@@ -12,7 +12,7 @@ from obtainhub.core.github_client import GitHubClient
 from obtainhub.core.asset_matcher import AssetMatcher, InstallerType
 from obtainhub.core.downloader import download_file, Downloader
 from obtainhub.core.installer import install_app, InstallResult, SilentInstaller
-from obtainhub.core.system_scanner import get_system_scanner, SystemApp
+from obtainhub.core.system_scanner import get_installed_system_apps
 from obtainhub.core.exceptions import (
     ObtainHubError,
     InstallerError,
@@ -298,36 +298,26 @@ def cmd_install(
         downloaded_path,
         match.installer_type,
         app_id,
-        download_only=parsed.download_only,
         force=parsed.force,
     )
 
     if result == InstallResult.SUCCESS:
         print(f"Success: {message}")
         # Record in state
-        installer = SilentInstaller()
-        installer.record_installation(
-            app_id=app_id,
-            name=repo,
-            version=release.tag_name.lstrip("v"),
-            installer_type=match.installer_type,
-            installer_path=str(downloaded_path),
-            source_url=release.html_url,
-            tag=release.tag_name,
-        )
-        return 0
-    elif result == InstallResult.DOWNLOAD_ONLY:
-        print(f"Download only: {message}")
-        return 0
-    elif result == InstallResult.MANUAL_UNINSTALL_REQUIRED:
-        print(message)
-        if parsed.yes:
-            print("Auto-uninstall not implemented yet. Please uninstall manually.")
-            return 1
-        return 1
+        state_manager.add_installed_app({
+            "id": app_id,
+            "name": repo,
+            "version": release.tag_name.lstrip("v"),
+            "installer_type": match.installer_type.name.lower(),
+            "installer_path": str(downloaded_path),
+            "source_url": release.html_url,
+            "tag": release.tag_name,
+        })
     else:
-        print(f"Install failed: {message}", file=sys.stderr)
+        print(f"Install failed: {message}")
         return 1
+
+    return 0
 
 
 def cmd_update(
@@ -353,7 +343,7 @@ def cmd_update(
         print("No apps to update.")
         return 0
 
-    print(f"Checking updates for {len(apps_to_update)} app(s)...")
+    print(f"Checking updates for {len(apps_to_update)} app(s)...\n")
 
     updated_count = 0
     for app_id in apps_to_update:
@@ -364,38 +354,24 @@ def cmd_update(
                 continue
 
             owner, repo = app_id.split("/", 1)
-            print(f"\nChecking {app_id} (current: {app.version})...")
-
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
-            # Version comparison (simple string comparison for now)
-            if release.tag_name.lstrip("v") <= app.version:
-                print(f"  Already up to date ({app.version})")
-                continue
+            current_version = app.version
+            latest_version = release.tag_name.lstrip("v")
+            has_update = latest_version > current_version
 
-            if release.prerelease and not parsed.prerelease:
-                print(f"  New version {release.tag_name} is prerelease. Use --prerelease to update.")
+            if not has_update:
+                print(f"  {app.name} ({app_id}): Up to date ({current_version})")
                 continue
 
             match = matcher.get_best_match(release.assets)
             if not match:
-                print(f"  No suitable asset found")
+                print(f"  {app.name} ({app_id}): No suitable asset")
                 continue
 
-            print(f"  Found update: {release.tag_name} ({match.name})")
+            print(f"  {app.name} ({app_id}): {current_version} -> {latest_version}")
+            print(f"    Downloading {match.name}...")
 
-            if parsed.dry_run:
-                print(f"  [DRY RUN] Would download and install {match.name}")
-                continue
-
-            if not parsed.yes:
-                confirm = input(f"  Update to {release.tag_name}? [y/N]: ").strip().lower()
-                if confirm != "y":
-                    print(f"  Skipped")
-                    continue
-
-            # Download
-            print(f"  Downloading...")
             downloaded_path = download_file(match.url, filename=match.name)
 
             # Install
@@ -516,12 +492,11 @@ def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
 
     # Include system apps if --all flag
     if parsed.all:
-        scanner = get_system_scanner()
-        system_apps = scanner.scan()
+        system_apps = get_installed_system_apps()
         print(f"\nSystem-installed applications ({len(system_apps)} found):")
         if parsed.json:
             import json
-            combined = [a.to_dict() for a in apps] + [a.__dict__ for a in system_apps]
+            combined = [a.to_dict() for a in apps] + [a for a in system_apps]
             print(json.dumps(combined, indent=2))
         else:
             print(f"{'Name':<40} {'Version':<15} {'Source':<10}")
@@ -529,7 +504,7 @@ def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
             for app in apps:
                 print(f"{app.name:<40} {app.version:<15} {'ohub':<10}")
             for app in system_apps:
-                print(f"{app.name:<40} {app.version:<15} {'registry':<10}")
+                print(f"{app['name']:<40} {app['version']:<15} {'registry':<10}")
     else:
         if not apps:
             print("No apps installed.")
@@ -597,26 +572,16 @@ def cmd_source(
     if parsed.source_action == "list":
         if not config.sources:
             print("No custom sources configured.")
-            return 0
-        for src in config.sources:
-            print(f"  {src.name}: {src.url} ({src.type})")
+        else:
+            for src in config.sources:
+                print(f"{src.name}: {src.url} ({src.type})")
         return 0
 
     elif parsed.source_action == "add":
-        # Check if source already exists
-        for src in config.sources:
-            if src.name == parsed.name:
-                print(f"Source '{parsed.name}' already exists.", file=sys.stderr)
-                return 1
-
-        new_source = ManifestSource(
-            name=parsed.name,
-            url=parsed.url,
-            type=parsed.type,
-        )
-        config.sources.append(new_source)
+        source = ManifestSource(name=parsed.name, url=parsed.url, type=parsed.type)
+        config.sources.append(source)
         config_manager.save(config)
-        print(f"Added source: {parsed.name} -> {parsed.url}")
+        print(f"Added source: {parsed.name}")
         return 0
 
     elif parsed.source_action == "remove":
@@ -625,9 +590,7 @@ def cmd_source(
         print(f"Removed source: {parsed.name}")
         return 0
 
-    else:
-        print("Usage: ohub source [list|add|remove]")
-        return 1
+    return 0
 
 
 def cmd_search(
@@ -635,42 +598,36 @@ def cmd_search(
     config_manager: ConfigManager,
     logger,
 ) -> int:
-    """Handle search command - search GitHub repositories."""
+    """Handle search command."""
     token = config_manager.load().github_token
     client = GitHubClient(token=token)
-
-    print(f"Searching for: {parsed.query}")
+    
     repos = client.search_repositories(
-        parsed.query,
-        limit=parsed.limit,
+        query=parsed.query,
         min_stars=parsed.min_stars,
-        active_only=parsed.active_only
+        ignore_case=True,
+        active_only=parsed.active_only,
     )
-
+    
     if not repos:
         print("No repositories found.")
         return 0
-
-    print(f"\nFound {len(repos)} repositories:\n")
-
-    # Table header
-    print(f"{'Name':<40} {'Stars':>8} {'Latest Release':<18} {'Updated':<12} Description")
-    print("-" * 120)
-
-    for repo in repos:
-        name = repo.get("full_name", "")
-        desc = (repo.get("description") or "No description")[:60]
-        stars = repo.get("stargazers_count", 0)
-        updated = repo.get("updated_at", "")[:10]  # YYYY-MM-DD
-
-        # Get latest release tag if available
-        latest_release = ""
-        if repo.get("has_releases"):
-            # We could fetch releases, but for now show a marker
-            latest_release = "Has releases"
-
-        print(f"{name:<40} {stars:>8,} {latest_release:<18} {updated:<12} {desc}")
-
+    
+    repos = repos[:parsed.limit]
+    
+    if parsed.json:
+        import json
+        print(json.dumps(repos, indent=2))
+    else:
+        print(f"{'Repository':<40} {'Stars':<8} {'Latest Release':<15} {'Updated':<12} Description")
+        print("-" * 100)
+        for repo in repos:
+            stars = repo.get("stargazers_count", 0)
+            latest = "Yes" if repo.get("has_releases") else "No"
+            updated = repo.get("updated_at", "")[:10] if repo.get("updated_at") else "N/A"
+            desc = (repo.get("description") or "")[:50]
+            print(f"{repo['full_name']:<40} {stars:<8} {latest:<15} {updated:<12} {desc}")
+    
     return 0
 
 
@@ -679,21 +636,19 @@ def cmd_config(
     config_manager: ConfigManager,
 ) -> int:
     """Handle config command."""
+    config = config_manager.load()
+
     if parsed.config_action == "show":
-        config = config_manager.load()
         import json
         print(json.dumps(config.to_dict(), indent=2))
-    elif parsed.config_action == "set":
-        config_manager.set(parsed.key, parsed.value)
-        print(f"Set {parsed.key} = {parsed.value}")
     elif parsed.config_action == "get":
-        config = config_manager.load()
-        value = config.get(parsed.key)
-        print(value if value is not None else "(not set)")
+        print(getattr(config, parsed.key, "Not found"))
+    elif parsed.config_action == "set":
+        setattr(config, parsed.key, parsed.value)
+        config_manager.save(config)
+        print(f"Set {parsed.key} = {parsed.value}")
     elif parsed.config_action == "edit":
-        print("Edit config - not yet implemented")
-    else:
-        print("Usage: ohub config [show|set|get|edit]")
+        print("Editor not yet implemented. Use 'ohub config set' for now.")
     return 0
 
 
@@ -710,7 +665,7 @@ def cmd_self_update(
     if result:
         print(f"Updated to {result}")
     else:
-        print("Already up to date")
+        print("Already at latest version")
     return 0
 
 

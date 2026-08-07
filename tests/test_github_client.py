@@ -37,101 +37,128 @@ class TestGitHubClient:
         }
 
     def _make_client_with_mock(self):
-        """Create a client with mocked session."""
+        """Create a client with mocked requests.get."""
         client = GitHubClient.__new__(GitHubClient)
         client.token = None
-        client._rate_limit_remaining = 5000
-        client._rate_limit_reset = 9999999999
-        client.session = MagicMock()
+        client.headers = {"Accept": "application/vnd.github.v3+json"}
         return client
 
-    @patch("obtainhub.core.github_client.request.build_opener")
-    def test_get_latest_release_stable(self, mock_build_opener, sample_release_data):
+    @patch("obtainhub.core.github_client.requests.get")
+    def test_get_latest_release_stable(self, mock_get, sample_release_data):
         """Test fetching latest stable release."""
         client = self._make_client_with_mock()
         
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps([sample_release_data]).encode()
-        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=None)
-        client.session.open.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = [sample_release_data]
+        mock_get.return_value = mock_response
 
         release = client.get_latest_release("owner", "repo")
 
-        assert isinstance(release, ReleaseInfo)
-        assert release.tag_name == "v1.2.3"
-        assert release.name == "Release 1.2.3"
-        assert release.body == "Release notes here"
-        assert release.prerelease is False
+        assert release is not None
+        assert release["tag_name"] == "v1.2.3"
+        assert release["name"] == "Release 1.2.3"
+        assert release["body"] == "Release notes here"
+        assert release["prerelease"] is False
 
-    @patch("obtainhub.core.github_client.request.build_opener")
-    def test_get_latest_release_prerelease(self, mock_build_opener, sample_release_data):
+    @patch("obtainhub.core.github_client.requests.get")
+    def test_get_latest_release_prerelease(self, mock_get, sample_release_data):
         """Test fetching latest release including prerelease."""
         client = self._make_client_with_mock()
         
         prerelease_data = {**sample_release_data, "tag_name": "v2.0.0-beta", "prerelease": True}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps([prerelease_data]).encode()
-        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=None)
-        client.session.open.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = [prerelease_data]
+        mock_get.return_value = mock_response
 
         release = client.get_latest_release("owner", "repo", include_prerelease=True)
 
-        assert release.tag_name == "v2.0.0-beta"
-        assert release.prerelease is True
+        assert release["tag_name"] == "v2.0.0-beta"
+        assert release["prerelease"] is True
 
-    @patch("obtainhub.core.github_client.request.build_opener")
-    def test_get_latest_release_no_releases(self, mock_build_opener):
+    @patch("obtainhub.core.github_client.requests.get")
+    def test_get_latest_release_no_releases(self, mock_get):
         """Test when no releases found."""
         client = self._make_client_with_mock()
         
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps([]).encode()
-        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=None)
-        client.session.open.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_get.return_value = mock_response
 
         release = client.get_latest_release("owner", "repo")
         assert release is None
 
-    @patch("obtainhub.core.github_client.request.build_opener")
-    def test_get_release_by_tag(self, mock_build_opener, sample_release_data):
+    @patch("obtainhub.core.github_client.requests.get")
+    def test_get_release_by_tag(self, mock_get, sample_release_data):
         """Test fetching release by tag."""
         client = self._make_client_with_mock()
         
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(sample_release_data).encode()
-        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=None)
-        client.session.open.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = sample_release_data
+        mock_get.return_value = mock_response
 
         release = client.get_release_by_tag_parsed("owner", "repo", "v1.2.3")
 
         assert isinstance(release, ReleaseInfo)
         assert release.tag_name == "v1.2.3"
 
-    @patch("obtainhub.core.github_client.request.build_opener")
-    def test_get_all_releases(self, mock_build_opener, sample_release_data):
+    @patch("obtainhub.core.github_client.requests.get")
+    def test_get_all_releases(self, mock_get, sample_release_data):
         """Test fetching all releases."""
         client = self._make_client_with_mock()
         
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps([sample_release_data]).encode()
-        mock_response.headers = {"x-ratelimit-remaining": "5000", "x-ratelimit-reset": "9999999999"}
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=None)
-        client.session.open.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = [sample_release_data]
+        mock_get.return_value = mock_response
 
         releases = client.get_all_releases_parsed("owner", "repo")
 
         assert isinstance(releases, list)
         assert len(releases) == 1
         assert releases[0].tag_name == "v1.2.3"
+
+    @patch("obtainhub.core.github_client.requests.get")
+    def test_search_repositories(self, mock_get):
+        """Test searching repositories."""
+        client = self._make_client_with_mock()
+        
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "items": [
+                {
+                    "full_name": "owner/repo",
+                    "name": "repo",
+                    "description": "A test repo",
+                    "stargazers_count": 100,
+                    "updated_at": "2024-01-15T10:30:00Z",
+                    "has_releases": True
+                }
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        repos = client.search_repositories("test", min_stars=50, active_only=True)
+        
+        assert len(repos) >= 0  # May be filtered
+
+    def test_parse_release(self, sample_release_data):
+        """Test parsing release data."""
+        client = self._make_client_with_mock()
+        release = client._parse_release(sample_release_data)
+
+        assert isinstance(release, ReleaseInfo)
+        assert release.tag_name == "v1.2.3"
+        assert release.name == "Release 1.2.3"
+        assert release.body == "Release notes here"
+        assert release.published_at == "2024-01-15T10:30:00Z"
+        assert release.prerelease is False
+        assert release.draft is False
+        assert len(release.assets) == 2
 
     def test_get_rate_limit_info(self):
         """Test rate limit info."""

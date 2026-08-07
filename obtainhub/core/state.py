@@ -1,79 +1,27 @@
 """State management for ObtainHub."""
 
-import json
-import datetime
 import os
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
+import json
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-
-from obtainhub.core.config import get_config
-from obtainhub.core.logger import get_logger
-
-
-logger = get_logger(__name__)
-
-
-@dataclass
-class ManifestEntry:
-    """Entry in application manifest."""
-    name: str
-    owner: str
-    repo: str
-    description: str = ""
-    homepage: str = ""
-    license: str = ""
-    tags: List[str] = field(default_factory=list)
-    # Install hints
-    installer_name_pattern: str = ""
-    installer_args: str = ""
-    # Architecture
-    architecture: str = "x64"
-    # Manual uninstall required
-    requires_manual_uninstall: bool = False
-    # Post-install actions
-    post_install_commands: List[str] = field(default_factory=list)
-    # Uninstall
-    uninstall_method: str = "auto"
-    uninstall_args: str = "/quiet /norestart"
-    # Preferences
-    prefer_x64: bool = True
-    allow_prerelease: bool = False
-    # Known checksums
-    known_checksums: Dict[str, str] = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "ManifestEntry":
-        return cls(**data)
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from typing import Optional, Dict, Any
 
 
 @dataclass
 class InstalledApp:
     """Information about an installed application."""
+    id: str
     name: str
     version: str
-    install_path: str
-    executable_path: str = ""
-    install_date: str = field(default_factory=lambda: datetime.now().isoformat())
-    source_url: str = ""
-    source_type: str = "github"  # github, manifest, manual
-    manifest_name: str = ""
-    # Architecture of installed app
-    architecture: str = "x64"
-    # Whether this app requires manual uninstall
+    installer_type: str
+    installer_path: str
+    source_url: str
+    tag: str
+    installed_at: int = 0
+    updated_at: int = 0
     requires_manual_uninstall: bool = False
-    # Uninstall string for MSI apps
-    uninstall_string: str = ""
-    # Installer type (msi, exe, zip)
-    installer_type: str = ""
-    # For tracking if app was installed by ohub
-    installed_by_ohub: bool = True
-    # Release tag
-    tag: str = ""
+    architecture: str = "x64"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -83,237 +31,104 @@ class InstalledApp:
         return cls(**data)
 
 
-def _get_state_dir() -> Path:
-    """Get the state directory path (%APPDATA% on Windows, ~/.obtainhub on others)."""
-    if os.name == "nt":  # Windows
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            return Path(appdata) / "ObtainHub"
-    # Fallback for Linux/macOS or if APPDATA not set
-    return Path.home() / ".obtainhub"
+@dataclass
+class ManifestEntry:
+    """Manifest entry for custom sources."""
+    name: str
+    version: str
+    url: str
+    installer_type: str
+    sha256: str = ""
+    architecture: str = "x64"
+    size: int = 0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ManifestEntry":
+        return cls(**data)
 
 
 class StateManager:
-    """Manages persistent state for ObtainHub."""
-
-    def __init__(self, state_dir: Optional[Path] = None):
-        self.state_dir = state_dir or _get_state_dir()
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        self.state_file = self.state_dir / "state.json"
-
-        self._state = {
-            "schema_version": 1,
-            "installed_apps": {},
-            "last_update_check": {},
-            "download_history": [],
-            "manifest_cache": {},
-        }
-        self._load()
-
-    def _load(self):
-        """Load state from file."""
-        if self.state_file.exists():
-            try:
-                with open(self.state_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self._state = data
-                logger.debug(f"Loaded state from {self.state_file}")
-            except (json.JSONDecodeError, OSError) as e:
-                logger.warning(f"Failed to load state: {e}, starting fresh")
+    def __init__(self, state_file=None):
+        if not state_file:
+            appdata = os.environ.get("APPDATA") or str(Path.home() / ".config")
+            base_dir = Path(appdata) / "ObtainHub"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            self.state_file = base_dir / "state.json"
         else:
-            logger.debug(f"No state file found at {self.state_file}, starting fresh")
+            self.state_file = Path(state_file)
+            
+        self.data = self._load_state()
 
-    def _save(self):
-        """Save state to file."""
+    def _load_state(self):
+        if not self.state_file.exists():
+            return {"installed": {}, "manifest_cache": {}}
         try:
-            with open(self.state_file, 'w', encoding='utf-8') as f:
-                json.dump(self._state, f, indent=2, ensure_ascii=False)
-            logger.debug(f"Saved state to {self.state_file}")
-        except OSError as e:
-            logger.error(f"Failed to save state: {e}")
+            with open(self.state_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {"installed": {}, "manifest_cache": {}}
 
-    # Installed apps management
+    def save(self):
+        with open(self.state_file, "w", encoding="utf-8") as f:
+            json.dump(self.data, f, indent=2)
+
+    def get_all_apps(self):
+        """Get all installed apps as InstalledApp objects."""
+        apps = []
+        for app_data in self.data.get("installed", {}).values():
+            apps.append(InstalledApp.from_dict(app_data))
+        return apps
+
+    def get_app(self, app_id: str) -> Optional[InstalledApp]:
+        """Get a specific installed app by ID."""
+        app_data = self.data.get("installed", {}).get(app_id)
+        if app_data:
+            return InstalledApp.from_dict(app_data)
+        return None
 
     def add_installed_app(self, app: InstalledApp):
         """Add or update an installed app."""
-        self._state["installed_apps"][app.name] = app.to_dict()
-        self._save()
-        logger.info(f"Registered installed app: {app.name} {app.version}")
+        if isinstance(app, InstalledApp):
+            self.data.setdefault("installed", {})[app.id] = app.to_dict()
+        else:
+            self.data.setdefault("installed", {})[app["id"]] = app
+        self.save()
 
-    def remove_installed_app(self, name: str) -> bool:
-        """Remove an installed app from state."""
-        if name in self._state["installed_apps"]:
-            del self._state["installed_apps"][name]
-            self._save()
-            logger.info(f"Removed installed app from state: {name}")
+    def remove_app(self, app_id: str) -> bool:
+        """Remove an app from state."""
+        if app_id in self.data.get("installed", {}):
+            del self.data["installed"][app_id]
+            self.save()
             return True
         return False
 
-    def get_installed_app(self, name: str) -> Optional[InstalledApp]:
-        """Get installed app info (case-insensitive)."""
-        for stored_name, data in self._state["installed_apps"].items():
-            if stored_name.lower() == name.lower():
-                return InstalledApp.from_dict(data)
-        return None
-
-    # Alias for compatibility
-    def get_app(self, name: str) -> Optional[InstalledApp]:
-        """Alias for get_installed_app()."""
-        return self.get_installed_app(name)
-
-    def list_installed_apps(self) -> List[InstalledApp]:
-        """List all installed apps."""
-        return [
-            InstalledApp.from_dict(data)
-            for data in self._state["installed_apps"].values()
-        ]
-
-    # Alias for compatibility
-    def get_all_apps(self) -> List[InstalledApp]:
-        """Alias for list_installed_apps()."""
-        return self.list_installed_apps()
-
-    def is_app_installed(self, name: str) -> bool:
-        """Check if app is installed (case-insensitive)."""
-        for stored_name in self._state["installed_apps"]:
-            if stored_name.lower() == name.lower():
-                return True
-        return False
-
-    def get_installed_version(self, name: str) -> Optional[str]:
-        """Get installed version of app."""
-        app = self.get_installed_app(name)
-        return app.version if app else None
-
-    # Update check tracking
-
-    def record_update_check(self, app_name: str, version: str, has_update: bool):
-        """Record an update check result."""
-        self._state["last_update_check"][app_name] = {
-            "checked_at": datetime.now().isoformat(),
-            "version": version,
-            "has_update": has_update,
-        }
-        self._save()
-
-    def get_last_update_check(self, app_name: str) -> Optional[dict]:
-        """Get last update check result."""
-        return self._state["last_update_check"].get(app_name)
-
-    # Download history
-
-    def record_download(self, app_name: str, version: str, url: str,
-                       installer_type: str, success: bool, path: str = ""):
-        """Record a download attempt."""
-        entry = {
-            "app_name": app_name,
-            "version": version,
-            "url": url,
-            "installer_type": installer_type,
-            "success": success,
-            "path": path,
-            "timestamp": datetime.now().isoformat(),
-        }
-        self._state["download_history"].append(entry)
-        # Keep only last 100 entries
-        if len(self._state["download_history"]) > 100:
-            self._state["download_history"] = self._state["download_history"][-100:]
-        self._save()
-
-    def get_download_history(self, app_name: Optional[str] = None,
-                            limit: int = 10) -> List[dict]:
-        """Get download history."""
-        history = self._state["download_history"]
-        if app_name:
-            history = [h for h in history if h["app_name"] == app_name]
-        return history[-limit:]
-
-    # Manifest cache
-
-    def cache_manifest(self, source_name: str, manifest: dict):
-        """Cache manifest data."""
-        self._state["manifest_cache"][source_name] = {
-            "data": manifest,
-            "cached_at": datetime.now().isoformat(),
-        }
-        self._save()
-
-    def get_cached_manifest(self, source_name: str, max_age_hours: int = 24) -> Optional[dict]:
-        """Get cached manifest if not expired."""
-        cache = self._state["manifest_cache"].get(source_name)
-        if not cache:
-            return None
-
-        cached_at = datetime.fromisoformat(cache["cached_at"])
-        age = datetime.now() - cached_at
-        if age.total_seconds() > max_age_hours * 3600:
-            return None
-
-        return cache["data"]
-
-    # Version comparison
-
-    def _normalize_version(self, version: str) -> tuple:
-        """Normalize version string for comparison."""
-        # Remove 'v' prefix
-        version = version.lstrip('vV')
-
-        # Split into numeric and prerelease parts
-        parts = version.split('-', 1)
-        main_version = parts[0]
-        prerelease = parts[1] if len(parts) > 1 else None
-
-        # Parse main version numbers
-        version_parts = []
-        for part in main_version.split('.'):
-            try:
-                version_parts.append(int(part))
-            except ValueError:
-                version_parts.append(0)
-
-        # Pad to 3 parts for comparison
-        while len(version_parts) < 3:
-            version_parts.append(0)
-
-        # Prerelease gets a negative modifier
-        if prerelease:
-            prerelease_parts = [prerelease]
-            return tuple(version_parts) + (-1, prerelease)
-
-        return tuple(version_parts) + (0, "")
-
-    def _version_greater(self, v1: str, v2: str) -> bool:
-        """Check if v1 > v2."""
-        return self._normalize_version(v1) > self._normalize_version(v2)
-
-    def needs_update(self, app_name: str, latest_version: str) -> bool:
-        """Check if app needs update."""
-        current = self.get_installed_version(app_name)
-        if not current:
-            return True
-        return self._version_greater(latest_version, current)
-
-    # Reset
-
-    def reset(self):
-        """Reset state to empty."""
-        self._state = {
-            "schema_version": 1,
-            "installed_apps": {},
-            "last_update_check": {},
-            "download_history": [],
-            "manifest_cache": {},
-        }
-        self._save()
+    # Alias for backward compatibility
+    get_installed_app = get_app
+    list_installed_apps = get_all_apps
+    
+    def get_manifest_cache(self) -> Dict[str, ManifestEntry]:
+        """Get cached manifest entries."""
+        cache = {}
+        for key, data in self.data.get("manifest_cache", {}).items():
+            cache[key] = ManifestEntry.from_dict(data)
+        return cache
+    
+    def set_manifest_cache(self, cache: Dict[str, ManifestEntry]):
+        """Update manifest cache."""
+        self.data["manifest_cache"] = {k: v.to_dict() for k, v in cache.items()}
+        self.save()
 
 
-# Global state manager instance
+# Module-level singleton instance
 _state_manager: Optional[StateManager] = None
 
 
-def get_state_manager(state_dir: Optional[str] = None) -> StateManager:
-    """Get or create global state manager."""
+def get_state_manager() -> StateManager:
+    """Get the global StateManager instance."""
     global _state_manager
     if _state_manager is None:
-        _state_manager = StateManager(state_dir)
+        _state_manager = StateManager()
     return _state_manager

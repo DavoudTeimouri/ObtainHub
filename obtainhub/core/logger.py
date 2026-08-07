@@ -8,15 +8,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 
 class LogLevel(Enum):
-    """Log levels."""
+    """Log levels matching standard logging levels."""
     DEBUG = logging.DEBUG
     INFO = logging.INFO
     WARNING = logging.WARNING
     ERROR = logging.ERROR
+    CRITICAL = logging.CRITICAL
 
 
 @dataclass
@@ -26,110 +27,60 @@ class LogRecord:
     level: str
     logger: str
     message: str
-    context: Optional[dict[str, Any]] = None
-    exception: Optional[str] = None
-    
-    def to_json(self) -> str:
-        """Convert to JSON string."""
-        data: dict[str, Any] = {
-            "timestamp": self.timestamp,
-            "level": self.level,
-            "logger": self.logger,
-            "message": self.message,
-        }
-        if self.context:
-            data["context"] = self.context
-        if self.exception:
-            data["exception"] = self.exception
-        return json.dumps(data, ensure_ascii=False)
+    extra: Optional[dict] = None
 
 
 class JSONFormatter(logging.Formatter):
-    """JSON log formatter."""
+    """JSON formatter for structured logging."""
     
     def format(self, record: logging.LogRecord) -> str:
         log_record = LogRecord(
-            timestamp=datetime.utcnow().isoformat() + 'Z',
+            timestamp=datetime.utcnow().isoformat() + "Z",
             level=record.levelname,
             logger=record.name,
             message=record.getMessage(),
-            context=getattr(record, 'context', None),
-            exception=self.formatException(record.exc_info) if record.exc_info else None,
+            extra=getattr(record, "extra", None),
         )
-        return log_record.to_json()
+        return json.dumps(log_record.__dict__, ensure_ascii=False)
 
 
 class ConsoleFormatter(logging.Formatter):
-    """Console log formatter with colors."""
-    
-    COLORS = {
-        'DEBUG': '\033[36m',    # Cyan
-        'INFO': '\033[32m',     # Green
-        'WARNING': '\033[33m',  # Yellow
-        'ERROR': '\033[31m',    # Red
-        'RESET': '\033[0m',
-    }
-    
-    def __init__(self, use_colors: bool = True):
-        super().__init__()
-        self.use_colors = use_colors and sys.stderr.isatty()
+    """Human-readable console formatter."""
     
     def format(self, record: logging.LogRecord) -> str:
-        color = self.COLORS.get(record.levelname, '') if self.use_colors else ''
-        reset = self.COLORS['RESET'] if self.use_colors else ''
-        
-        timestamp = datetime.fromtimestamp(record.created).strftime('%H:%M:%S')
-        level = f"{color}{record.levelname:8}{reset}"
-        logger_name = f"{record.name}:"
-        
-        msg = record.getMessage()
-        
-        # Add context if present
-        context = getattr(record, 'context', None)
-        if context:
-            ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
-            msg = f"{msg} [{ctx_str}]"
-        
-        return f"{timestamp} {level} {logger_name:<20} {msg}"
+        timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S")
+        level = record.levelname.ljust(8)
+        logger_name = record.name.split(".")[-1]
+        return f"{timestamp} {level} [{logger_name}] {record.getMessage()}"
 
 
 class StructuredLogger:
-    """Structured logger with context support."""
+    """Wrapper around stdlib logger with structured logging support."""
     
-    def __init__(self, name: str, logger: logging.Logger):
-        self.name = name
-        self.logger = logger
-        self._context: dict[str, Any] = {}
+    def __init__(self, logger: logging.Logger):
+        self._logger = logger
     
-    def bind(self, **kwargs) -> 'StructuredLogger':
-        """Create a new logger with additional context."""
-        new_logger = StructuredLogger(self.name, self.logger)
-        new_logger._context = {**self._context, **kwargs}
-        return new_logger
+    def debug(self, message: str, **extra):
+        self._logger.debug(message, extra={"extra": extra} if extra else None)
     
-    def _log(self, level: int, message: str, **kwargs):
-        """Internal log method."""
-        context = {**self._context, **kwargs}
-        extra = {'context': context} if context else {}
-        self.logger.log(level, message, extra=extra)
+    def info(self, message: str, **extra):
+        self._logger.info(message, extra={"extra": extra} if extra else None)
     
-    def debug(self, message: str, **kwargs):
-        self._log(logging.DEBUG, message, **kwargs)
+    def warning(self, message: str, **extra):
+        self._logger.warning(message, extra={"extra": extra} if extra else None)
     
-    def info(self, message: str, **kwargs):
-        self._log(logging.INFO, message, **kwargs)
+    def error(self, message: str, **extra):
+        self._logger.error(message, extra={"extra": extra} if extra else None)
     
-    def warning(self, message: str, **kwargs):
-        self._log(logging.WARNING, message, **kwargs)
+    def critical(self, message: str, **extra):
+        self._logger.critical(message, extra={"extra": extra} if extra else None)
     
-    def error(self, message: str, **kwargs):
-        self._log(logging.ERROR, message, **kwargs)
-    
-    def exception(self, message: str, **kwargs):
-        """Log exception with traceback."""
-        context = {**self._context, **kwargs}
-        extra = {'context': context} if context else {}
-        self.logger.exception(message, extra=extra)
+    def log(self, level: LogLevel, message: str, **extra):
+        self._logger.log(level.value, message, extra={"extra": extra} if extra else None)
+
+
+_LOGGERS: dict[str, StructuredLogger] = {}
+_DEFAULT_LOGGER: Optional[StructuredLogger] = None
 
 
 def setup_logging(
@@ -138,85 +89,55 @@ def setup_logging(
     console: bool = True,
     json_file: bool = True,
 ) -> None:
-    """Set up global logging configuration."""
-
-    # Get log directory
-    if log_dir is None:
-        log_dir = Path.home() / ".local" / "share" / "obtainhub" / "logs"
-
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Root logger - handle LogLevel enum, int, or string
+    """Set up global logging configuration.
+    
+    Args:
+        level: Log level (default: INFO)
+        log_dir: Directory for log files
+        console: Enable console output
+        json_file: Enable JSON file logging
+    """
     root_logger = logging.getLogger()
-    if hasattr(level, 'value'):
-        level_val = level.value
-    elif isinstance(level, str):
-        level_val = getattr(logging, level.upper(), logging.INFO)
-    else:
-        level_val = level
-    root_logger.setLevel(level_val)
-
+    root_logger.setLevel(level.value)
+    
     # Clear existing handlers
     root_logger.handlers.clear()
-
-    # Console handler - only show INFO and above unless verbose
+    
+    # Console handler
     if console:
         console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setLevel(level_val)
+        console_handler.setLevel(level.value)
         console_handler.setFormatter(ConsoleFormatter())
         root_logger.addHandler(console_handler)
-
-    # JSON file handler (rotating)
-    if json_file:
-        log_file = log_dir / "obtainhub.json"
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file,
-            maxBytes=5 * 1024 * 1024,  # 5 MB
-            backupCount=3,
-            encoding='utf-8',
+    
+    # JSON file handler
+    if json_file and log_dir:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        json_handler = logging.handlers.RotatingFileHandler(
+            log_dir / "obtainhub.json",
+            maxBytes=10_485_760,  # 10 MB
+            backupCount=5,
+            encoding="utf-8",
         )
-        file_handler.setLevel(logging.DEBUG)  # File gets all levels
-        file_handler.setFormatter(JSONFormatter())
-        root_logger.addHandler(file_handler)
-
-    # Human-readable file handler
-    log_file_txt = log_dir / "obtainhub.log"
-    txt_handler = logging.handlers.RotatingFileHandler(
-        log_file_txt,
-        maxBytes=5 * 1024 * 1024,
-        backupCount=3,
-        encoding='utf-8',
-    )
-    txt_handler.setLevel(logging.DEBUG)  # File gets all levels
-    txt_handler.setFormatter(ConsoleFormatter(use_colors=False))
-    root_logger.addHandler(txt_handler)
+        json_handler.setLevel(level.value)
+        json_handler.setFormatter(JSONFormatter())
+        root_logger.addHandler(json_handler)
+    
+    # Suppress noisy third-party loggers
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
 
 
-def get_logger(name: str = "obtainhub") -> StructuredLogger:
+def get_logger(name: str) -> StructuredLogger:
     """Get a structured logger instance."""
-    logger = logging.getLogger(name)
-    return StructuredLogger(name, logger)
-
-
-# Default logger
-_default_logger: Optional[StructuredLogger] = None
+    if name not in _LOGGERS:
+        _LOGGERS[name] = StructuredLogger(logging.getLogger(name))
+    return _LOGGERS[name]
 
 
 def get_default_logger() -> StructuredLogger:
-    """Get the default logger."""
-    global _default_logger
-    if _default_logger is None:
-        _default_logger = get_logger("obtainhub")
-    return _default_logger
-
-
-__all__ = [
-    'LogLevel',
-    'LogRecord',
-    'JSONFormatter',
-    'ConsoleFormatter',
-    'StructuredLogger',
-    'setup_logging',
-    'get_logger',
-    'get_default_logger',
-]
+    """Get the default logger for the application."""
+    global _DEFAULT_LOGGER
+    if _DEFAULT_LOGGER is None:
+        _DEFAULT_LOGGER = get_logger("obtainhub")
+    return _DEFAULT_LOGGER
