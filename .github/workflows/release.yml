@@ -28,15 +28,24 @@ jobs:
           pip install pyinstaller
           choco install innosetup wixtoolset -y
 
-      - name: Add WiX and Inno Setup to PATH
+      - name: Build with PyInstaller
         shell: powershell
         run: |
-          "C:\Program Files (x86)\WiX Toolset v3.11\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          python -m PyInstaller --onefile --name ohub --clean obtainhub/main.py
 
-      - name: Run Build Script
+      - name: Build WiX MSI
         shell: powershell
-        run: python build_dist.py
+        run: |
+          $candle = "C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe"
+          $light = "C:\Program Files (x86)\WiX Toolset v3.11\bin\light.exe"
+          & $candle -out dist/ObtainHub.wixobj installer/setup.wxs
+          & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj
+
+      - name: Build Inno Setup EXE
+        shell: powershell
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc installer/setup.iss
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
