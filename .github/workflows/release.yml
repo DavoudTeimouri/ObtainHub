@@ -82,6 +82,7 @@ jobs:
           } else {
             Write-Host "Inno Setup output NOT found!"
             Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
+            Get-ChildItem ..\dist -Filter "*.exe" -ErrorAction SilentlyContinue
           }
 
       - name: Copy Inno Setup output to root dist
@@ -90,11 +91,11 @@ jobs:
           if (Test-Path "installer\dist\ObtainHub-Setup.exe") {
             Copy-Item "installer\dist\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
             Write-Host "Copied to dist\ObtainHub-Setup.exe"
+          } elseif (Test-Path "dist\ObtainHub-Setup.exe") {
+            Write-Host "Found at dist\ObtainHub-Setup.exe (already in root)"
           } else {
             Write-Host "Source not found: installer\dist\ObtainHub-Setup.exe"
-            if (Test-Path "dist\ObtainHub-Setup.exe") {
-              Write-Host "But found at dist\ObtainHub-Setup.exe (already in root)"
-            }
+            Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
           }
 
       - name: List dist directory
