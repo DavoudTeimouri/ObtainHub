@@ -20,7 +20,6 @@ DisableDirPage=yes
 DisableProgramGroupPage=yes
 OutputDir=dist
 OutputBaseFilename=ObtainHub-Setup
-SetupIconFile=..\dist\ohub.exe
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
