@@ -45,7 +45,7 @@ jobs:
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
           files: |
             dist/ohub.exe
-            dist/ObtainHub-Setup.exe
             dist/ObtainHub.msi
+            dist/ObtainHub-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
