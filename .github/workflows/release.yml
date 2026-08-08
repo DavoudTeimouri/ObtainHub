@@ -174,6 +174,14 @@ jobs:
             $_ | Out-File -FilePath "iscc_output.txt" -Encoding utf8
           }
           
+          # Check if Output directory exists and what's in it
+          Write-Host "=== Checking Output directory ==="
+          if (Test-Path "Output") {
+            Get-ChildItem Output\
+          } else {
+            Write-Host "Output directory does NOT exist"
+          }
+          
           # Check multiple possible output locations
           $outputPaths = @(
             "Output\ObtainHub-Setup.exe",
