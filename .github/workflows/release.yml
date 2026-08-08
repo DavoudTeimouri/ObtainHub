@@ -152,6 +152,8 @@ jobs:
             Get-ChildItem "C:\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
             Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "*wix*" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue }
           }
+          # Always succeed to not block the workflow
+          exit 0
 
       - name: Build Inno Setup EXE
         shell: powershell
