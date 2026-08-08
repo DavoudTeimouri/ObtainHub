@@ -243,7 +243,25 @@ jobs:
 
       - name: List dist directory
         shell: powershell
-        run: Get-ChildItem dist\
+        run: |
+          Write-Host "=== Final dist directory listing ==="
+          Get-ChildItem dist\
+
+      - name: Verify asset exists
+        shell: powershell
+        run: |
+          if (Test-Path "dist\ObtainHub-Setup.exe") {
+            Write-Host "ObtainHub-Setup.exe EXISTS in dist"
+            Get-ChildItem dist\ObtainHub-Setup.exe
+          } else {
+            Write-Host "ObtainHub-Setup.exe NOT FOUND in dist"
+          }
+          if (Test-Path "dist\ObtainHub.msi") {
+            Write-Host "ObtainHub.msi EXISTS in dist"
+            Get-ChildItem dist\ObtainHub.msi
+          } else {
+            Write-Host "ObtainHub.msi NOT FOUND in dist"
+          }
 
       - name: Create/Update Release and Upload Assets
         env:
