@@ -232,6 +232,7 @@ jobs:
             Get-ChildItem . -Recurse -Filter "*.exe"
             exit 1
           }
+          exit 0
 
       - name: Copy Inno Setup output to root dist
         shell: powershell
