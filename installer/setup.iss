@@ -28,7 +28,7 @@ DisableProgramGroupPage=yes
 DisableDirPage=no
 CreateAppDir=yes
 UninstallDisplayIcon={app}\{#AppExeName}
-SetupIconFile=..\assets\icon.ico
+; SetupIconFile=..\assets\icon.ico
 
 [Files]
 Source: "..\dist\ohub.exe"; DestDir: "{app}"; Flags: ignoreversion
