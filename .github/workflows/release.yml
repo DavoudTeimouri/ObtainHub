@@ -120,6 +120,13 @@ jobs:
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
           
+          # Check if choco installed Inno Setup
+          Write-Host "=== Checking Chocolatey Inno Setup ==="
+          $chocoInno = "C:\ProgramData\chocolatey\lib\innosetup"
+          if (Test-Path $chocoInno) {
+            Get-ChildItem $chocoInno -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
+          }
+          
           # Find ISCC directly - no env var dependency
           $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
           if (-not $isccPath) {
@@ -130,6 +137,10 @@ jobs:
           }
           if (-not (Test-Path $isccPath)) {
             Write-Host "ISCC NOT FOUND!"
+            # Search everywhere
+            Get-ChildItem "C:\Program Files" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\Program Files (x86)" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\ProgramData\chocolatey" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
             exit 1
           }
           
