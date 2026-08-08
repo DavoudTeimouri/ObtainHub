@@ -158,6 +158,7 @@ jobs:
           }
           
           Write-Host "Running ISCC: $isccPath setup.iss"
+          # Run ISCC directly and capture all output
           & $isccPath setup.iss
           $exitCode = $LASTEXITCODE
           Write-Host "ISCC exit code: $exitCode"
@@ -166,11 +167,23 @@ jobs:
             exit $exitCode
           }
           
-          if (Test-Path "Output\ObtainHub-Setup.exe") {
-            Write-Host "Inno Setup output FOUND at: installer\Output\ObtainHub-Setup.exe"
-            Get-ChildItem Output\
-          } else {
-            Write-Host "Inno Setup output NOT FOUND in installer\Output!"
+          # Check multiple possible output locations
+          $outputPaths = @(
+            "Output\ObtainHub-Setup.exe",
+            "..\dist\ObtainHub-Setup.exe",
+            ".\ObtainHub-Setup.exe"
+          )
+          $found = $false
+          foreach ($p in $outputPaths) {
+            if (Test-Path $p) {
+              Write-Host "Inno Setup output FOUND at: $p"
+              Get-ChildItem $p
+              $found = $true
+              break
+            }
+          }
+          if (-not $found) {
+            Write-Host "Inno Setup output NOT FOUND in any expected location!"
             Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
             Get-ChildItem ..\dist -Filter "*.exe" -ErrorAction SilentlyContinue
             Get-ChildItem . -Recurse -Filter "*.exe"
