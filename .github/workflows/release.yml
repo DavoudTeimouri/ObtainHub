@@ -127,51 +127,41 @@ jobs:
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
           
-          # First, check the env var from Install step
+          # First, check the env var from Install step - this is the actual ISCC.exe path from Chocolatey lib
           $isccPath = $env:ISCC_PATH
           Write-Host "ISCC from env var: '$isccPath'"
           
-          # Refresh environment to pick up Chocolatey shims
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          
-          # Try to find ISCC - first check if in PATH after refresh
-          $pathIscc = Get-Command iscc -ErrorAction SilentlyContinue
-          if ($pathIscc) {
-            Write-Host "Found ISCC in PATH after refresh: $pathIscc"
-            $isccPath = $pathIscc
-          }
-          
+          # Only use PATH/shim if env var didn't provide a valid path
           if (-not $isccPath -or -not (Test-Path $isccPath)) {
-            Write-Host "ISCC not found via env or PATH, searching common locations..."
-            # Search common locations including Chocolatey shim and versioned paths
-            $possiblePaths = @(
-              # Chocolatey shim (usually in PATH after install)
-              "C:\ProgramData\chocolatey\bin\ISCC.exe"
-              # Chocolatey versioned lib paths (recursive)
-              "C:\ProgramData\chocolatey\lib\innosetup\*"
-              # Default Inno Setup 6 paths
-              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-              "C:\Program Files\Inno Setup 6\ISCC.exe"
-            )
-            
-            foreach ($path in $possiblePaths) {
-              $matches = Get-ChildItem $path -Filter "ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($matches) {
-                Write-Host "Found ISCC at: $($matches.FullName)"
-                $isccPath = $matches.FullName
-                break
+            Write-Host "ISCC from env var not found or invalid, searching..."
+            # Try PATH (might be shim, prefer actual exe)
+            $pathIscc = Get-Command iscc -ErrorAction SilentlyContinue
+            if ($pathIscc) {
+              Write-Host "Found ISCC in PATH: $pathIscc"
+              $isccPath = $pathIscc
+            } else {
+              # Search common locations including Chocolatey lib paths
+              $possiblePaths = @(
+                "C:\ProgramData\chocolatey\lib\innosetup\*"
+                "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+                "C:\Program Files\Inno Setup 6\ISCC.exe"
+              )
+              foreach ($path in $possiblePaths) {
+                $matches = Get-ChildItem $path -Filter "ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($matches) {
+                  Write-Host "Found ISCC at: $($matches.FullName)"
+                  $isccPath = $matches.FullName
+                  break
+                }
               }
             }
           }
           
           if (-not $isccPath) {
             Write-Host "ISCC NOT FOUND in any common location!"
-            # Show what's in the Chocolatey bin directory
-            Write-Host "Checking Chocolatey bin directory:"
-            Get-ChildItem "C:\ProgramData\chocolatey\bin" -Filter "*iscc*" -ErrorAction SilentlyContinue
             Write-Host "Checking Chocolatey lib directory for Inno Setup:"
             Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "innosetup" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue }
-            Write-Host "Checking if iscc is in PATH after refresh:"
+            Write-Host "Checking if iscc is in PATH:"
             Get-Command iscc -ErrorAction SilentlyContinue
             exit 1
           }
@@ -191,7 +181,6 @@ jobs:
           }
           
           Write-Host "Running ISCC: $isccPath setup.iss"
-          # Run ISCC and capture output - use explicit output redirection
           Write-Host "=== ISCC COMPILATION OUTPUT START ==="
           & $isccPath setup.iss 2>&1
           $exitCode = $LASTEXITCODE
@@ -202,7 +191,6 @@ jobs:
             exit $exitCode
           }
           
-          # Check if Output directory exists and what's in it
           Write-Host "=== Checking Output directory ==="
           if (Test-Path "Output") {
             Get-ChildItem Output\
@@ -210,7 +198,6 @@ jobs:
             Write-Host "Output directory does NOT exist"
           }
           
-          # Check multiple possible output locations
           $outputPaths = @(
             "Output\ObtainHub-Setup.exe",
             "..\dist\ObtainHub-Setup.exe",
