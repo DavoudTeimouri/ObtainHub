@@ -128,6 +128,8 @@ jobs:
         run: |
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
+          Write-Host "PWD: $(pwd)"
+          Write-Host "Files in installer: $(Get-ChildItem)"
           
           # First, check the env var from Install step - this is the actual ISCC.exe path from Chocolatey lib
           $isccPath = $env:ISCC_PATH
@@ -181,6 +183,7 @@ jobs:
             exit 1
           }
           
+          Write-Host "Checking setup.iss exists: $(Test-Path setup.iss)"
           Write-Host "Running ISCC: $isccPath setup.iss"
           Write-Host "=== ISCC COMPILATION OUTPUT START ==="
           & $isccPath setup.iss 2>&1
