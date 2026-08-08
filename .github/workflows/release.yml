@@ -39,11 +39,34 @@ jobs:
       - name: Find WiX tools
         shell: powershell
         run: |
+          Write-Host "=== Find WiX Tools Debug ==="
           $wixPath = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Directory | Select-Object -First 1
           if ($wixPath) {
+            Write-Host "Found WiX Toolset at: $($wixPath.FullName)"
             $binPath = Join-Path $wixPath.FullName "bin"
             if (Test-Path $binPath) {
+              Write-Host "Found bin at: $binPath"
+              $candle = Join-Path $binPath "candle.exe"
+              $light = Join-Path $binPath "light.exe"
+              Write-Host "candle.exe: $(Test-Path $candle)"
+              Write-Host "light.exe: $(Test-Path $light)"
               echo "WIX_BIN=$binPath" >> $env:GITHUB_ENV
+              Write-Host "Set WIX_BIN to: $binPath"
+            } else {
+              Write-Host "bin directory NOT FOUND"
+            }
+          } else {
+            Write-Host "WiX Toolset NOT FOUND in C:\Program Files (x86)"
+            # Try other locations
+            $wixPath64 = Get-ChildItem "C:\Program Files\WiX Toolset*" -Directory | Select-Object -First 1
+            if ($wixPath64) {
+              Write-Host "Found WiX Toolset at: $($wixPath64.FullName)"
+              $binPath = Join-Path $wixPath64.FullName "bin"
+              if (Test-Path $binPath) {
+                Write-Host "Found bin at: $binPath"
+                echo "WIX_BIN=$binPath" >> $env:GITHUB_ENV
+                Write-Host "Set WIX_BIN to: $binPath"
+              }
             }
           }
 
