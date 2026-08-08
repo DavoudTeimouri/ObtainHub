@@ -21,13 +21,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install WiX Toolset
-        uses: MinoruFujimoto/wix-toolset-action@v1
-
-      - name: Install Inno Setup
-        uses: MinoruFujimoto/inno-setup-action@v1
-        id: inno-setup
-
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
@@ -44,28 +37,58 @@ jobs:
         shell: powershell
         run: |
           Write-Host "=== WiX MSI Build Debug ==="
-          $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
-          $lightPath = Get-Command light.exe -ErrorAction SilentlyContinue
-          
-          if ($candlePath -and $lightPath) {
-            Write-Host "Found candle.exe: $candlePath"
-            Write-Host "Found light.exe: $lightPath"
+          # Try to find WiX on the system
+          $wixPaths = @(
+            "C:\Program Files (x86)\WiX Toolset v3.11\bin",
+            "C:\Program Files\WiX Toolset v3.11\bin",
+            "C:\Program Files (x86)\WiX Toolset v4.0\bin",
+            "C:\Program Files\WiX Toolset v4.0\bin",
+            "C:\Program Files (x86)\WiX Toolset*\bin",
+            "C:\Program Files\WiX Toolset*\bin"
+          )
+          $wixBin = $null
+          foreach ($path in $wixPaths) {
+            $resolved = Get-ChildItem $path -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($resolved -and (Test-Path (Join-Path $resolved.FullName "candle.exe"))) {
+              $wixBin = $resolved.FullName
+              Write-Host "Found WiX at: $wixBin"
+              break
+            }
+          }
+          if (-not $wixBin) {
+            $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
+            if ($candlePath) {
+              $wixBin = Split-Path $candlePath
+              Write-Host "Found candle.exe at: $candlePath, using dir: $wixBin"
+            }
+          }
+          if ($wixBin) {
+            Write-Host "Using WiX bin: $wixBin"
+            $candle = Join-Path $wixBin "candle.exe"
+            $light = Join-Path $wixBin "light.exe"
+            Write-Host "candle: $candle (exists: $(Test-Path $candle))"
+            Write-Host "light: $light (exists: $(Test-Path $light))"
             Write-Host "setup.wxs: $(Test-Path installer\setup.wxs)"
             Write-Host "ohub.exe: $(Test-Path dist\ohub.exe)"
             Write-Host "Running candle..."
-            & $candlePath -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
+            & $candle -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
             Write-Host "candle exit code: $LASTEXITCODE"
             Write-Host "Running light..."
-            & $lightPath -out dist/ObtainHub.msi dist/ObtainHub.wixobj 2>&1
+            & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj 2>&1
             Write-Host "light exit code: $LASTEXITCODE"
             Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
             Get-ChildItem dist/
           } else {
-            Write-Host "WiX Toolset NOT FOUND in PATH - skipping MSI build"
+            Write-Host "WiX Toolset NOT FOUND anywhere on system - skipping MSI build"
             Get-ChildItem "C:\Program Files (x86)" -Filter "*WiX*" -ErrorAction SilentlyContinue
             Get-ChildItem "C:\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "*wix*" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue }
           }
           exit 0
+
+      - name: Install Inno Setup
+        uses: MinoruFujimoto/inno-setup-action@v1
+        id: inno-setup
 
       - name: Build Inno Setup EXE
         shell: powershell
