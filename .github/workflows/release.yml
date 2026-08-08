@@ -76,6 +76,8 @@ jobs:
             Write-Host "ERROR: ISCC_PATH not set!"
             exit 1
           }
+          # Verify the env var is set for next steps
+          Write-Host "GITHUB_ENV ISCC_PATH: $env:ISCC_PATH"
 
       - name: Build WiX MSI
         shell: powershell
@@ -93,7 +95,35 @@ jobs:
         run: |
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
-          Write-Host "ISCC_PATH: $env:ISCC_PATH"
+          Write-Host "ISCC_PATH from env: $env:ISCC_PATH"
+          
+          # Check if ISCC_PATH is available, if not try to find it
+          if (-not $env:ISCC_PATH) {
+            Write-Host "ISCC_PATH not set in env, searching..."
+            $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
+            if ($isccPath) {
+              Write-Host "Found iscc in PATH: $isccPath"
+              $env:ISCC_PATH = $isccPath
+            } else {
+              $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+              if (Test-Path $isccPath) {
+                Write-Host "Found at default x86 location: $isccPath"
+                $env:ISCC_PATH = $isccPath
+              } else {
+                $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
+                if (Test-Path $isccPath) {
+                  Write-Host "Found at default x64 location: $isccPath"
+                  $env:ISCC_PATH = $isccPath
+                } else {
+                  Write-Host "ISCC NOT FOUND in any default location!"
+                  exit 1
+                }
+              }
+            }
+          }
+          
+          Write-Host "ISCC_PATH resolved to: $env:ISCC_PATH"
+          Write-Host "ISCC exists: $(Test-Path $env:ISCC_PATH)"
           
           # Check if ohub.exe exists
           $ohubPath = "..\dist\ohub.exe"
@@ -107,27 +137,6 @@ jobs:
             exit 1
           }
           
-          # Check ISCC
-          if (-not $env:ISCC_PATH) {
-            Write-Host "ISCC_PATH not set, searching..."
-            $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
-            if (-not $isccPath) {
-              $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-              if (-not (Test-Path $isccPath)) {
-                $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
-              }
-            }
-            if (Test-Path $isccPath) {
-              Write-Host "Found ISCC at: $isccPath"
-              $env:ISCC_PATH = $isccPath
-            } else {
-              Write-Host "ISCC NOT FOUND!"
-              exit 1
-            }
-          }
-          
-          Write-Host "ISCC_PATH resolved to: $env:ISCC_PATH"
-          Write-Host "ISCC exists: $(Test-Path $env:ISCC_PATH)"
           Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
           try {
             $process = Start-Process -FilePath $env:ISCC_PATH -ArgumentList "setup.iss" -Wait -PassThru -RedirectStandardOutput "stdout.txt" -RedirectStandardError "stderr.txt"
@@ -147,11 +156,11 @@ jobs:
           }
           
           # Verify output
-          if (Test-Path "dist\ObtainHub-Setup.exe") {
-            Write-Host "Inno Setup output FOUND at: installer\dist\ObtainHub-Setup.exe"
-            Get-ChildItem dist\
+          if (Test-Path "Output\ObtainHub-Setup.exe") {
+            Write-Host "Inno Setup output FOUND at: installer\Output\ObtainHub-Setup.exe"
+            Get-ChildItem Output\
           } else {
-            Write-Host "Inno Setup output NOT FOUND in installer\dist!"
+            Write-Host "Inno Setup output NOT FOUND in installer\Output!"
             Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
             Get-ChildItem ..\dist -Filter "*.exe" -ErrorAction SilentlyContinue
             Get-ChildItem . -Recurse -Filter "*.exe"
@@ -161,13 +170,13 @@ jobs:
       - name: Copy Inno Setup output to root dist
         shell: powershell
         run: |
-          if (Test-Path "installer\dist\ObtainHub-Setup.exe") {
-            Copy-Item "installer\dist\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
+          if (Test-Path "installer\Output\ObtainHub-Setup.exe") {
+            Copy-Item "installer\Output\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
             Write-Host "Copied to dist\ObtainHub-Setup.exe"
           } elseif (Test-Path "dist\ObtainHub-Setup.exe") {
             Write-Host "Found at dist\ObtainHub-Setup.exe (already in root)"
           } else {
-            Write-Host "Source not found: installer\dist\ObtainHub-Setup.exe"
+            Write-Host "Source not found: installer\Output\ObtainHub-Setup.exe"
             Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
           }
 
