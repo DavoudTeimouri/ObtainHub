@@ -22,19 +22,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install Build Dependencies
+        shell: powershell
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
           Write-Host "=== Installing WiX Toolset via Chocolatey ==="
-          choco install wixtoolset -y --params "'/InstallDir:C:\Program Files (x86)\WiX Toolset v3.11'"
+          choco install wixtoolset -y
           Write-Host "=== Verifying WiX Installation ==="
-          # Check what choco actually installed
-          Write-Host "=== Checking Chocolatey Install Location ==="
-          $chocoLib = "C:\ProgramData\chocolatey\lib\wixtoolset"
-          if (Test-Path $chocoLib) {
-            Get-ChildItem $chocoLib -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue
-          }
           $wixPaths = @(
             "C:\Program Files (x86)\WiX Toolset v3.11\bin",
             "C:\Program Files\WiX Toolset v3.11\bin",
@@ -63,9 +58,8 @@ jobs:
         shell: powershell
         run: |
           python -m PyInstaller --onefile --name ohub --clean obtainhub/main.py
-          Write-Host "=== PyInstaller Output ==="
+          Write-Host "PyInstaller completed"
           Get-ChildItem dist\
-          Get-ChildItem dist\ -Recurse -Filter "*.exe"
 
       - name: Find Inno Setup
         shell: powershell
@@ -74,36 +68,32 @@ jobs:
           $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
           if ($isccPath) {
             Write-Host "Found iscc in PATH: $isccPath"
+            $env:ISCC_PATH = $isccPath
+            Write-Host "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
           } else {
-            Write-Host "iscc not in PATH, checking default locations..."
             $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
             if (Test-Path $isccPath) {
               Write-Host "Found at default x86 location: $isccPath"
+              $env:ISCC_PATH = $isccPath
+              Write-Host "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
             } else {
               $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
               if (Test-Path $isccPath) {
                 Write-Host "Found at default x64 location: $isccPath"
+                $env:ISCC_PATH = $isccPath
+                Write-Host "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
               } else {
                 Write-Host "ISCC NOT FOUND in any default location!"
-                $isccPath = $null
+                exit 1
               }
             }
           }
-          if ($isccPath) {
-            echo "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
-            Write-Host "Set ISCC_PATH to: $isccPath"
-          } else {
-            Write-Host "ERROR: ISCC_PATH not set!"
-            exit 1
-          }
-          # Verify the env var is set for next steps
           Write-Host "GITHUB_ENV ISCC_PATH: $env:ISCC_PATH"
 
       - name: Build WiX MSI
         shell: powershell
         run: |
           Write-Host "=== WiX MSI Build Debug ==="
-          # Try to find WiX on the system - check multiple versions/locations
           $wixPaths = @(
             "C:\Program Files (x86)\WiX Toolset v3.11\bin",
             "C:\Program Files\WiX Toolset v3.11\bin",
@@ -122,7 +112,6 @@ jobs:
             }
           }
           if (-not $wixBin) {
-            # Try to find candle.exe directly
             $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
             if ($candlePath) {
               $wixBin = Split-Path $candlePath
@@ -147,12 +136,10 @@ jobs:
             Get-ChildItem dist/
           } else {
             Write-Host "WiX Toolset NOT FOUND anywhere on system - skipping MSI build"
-            # List all WiX-like directories
             Get-ChildItem "C:\Program Files (x86)" -Filter "*WiX*" -ErrorAction SilentlyContinue
             Get-ChildItem "C:\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
             Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "*wix*" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue }
           }
-          # Always succeed to not block the workflow
           exit 0
 
       - name: Build Inno Setup EXE
@@ -163,7 +150,6 @@ jobs:
           Write-Host "Current directory: $(Get-Location)"
           Write-Host "ISCC_PATH from env: $env:ISCC_PATH"
           
-          # Check if ISCC_PATH is available, if not try to find it
           if (-not $env:ISCC_PATH) {
             Write-Host "ISCC_PATH not set in env, searching..."
             $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
@@ -191,7 +177,6 @@ jobs:
           Write-Host "ISCC_PATH resolved to: $env:ISCC_PATH"
           Write-Host "ISCC exists: $(Test-Path $env:ISCC_PATH)"
           
-          # Check if ohub.exe exists
           $ohubPath = "..\dist\ohub.exe"
           Write-Host "Looking for ohub.exe at: $ohubPath"
           if (Test-Path $ohubPath) {
@@ -204,7 +189,6 @@ jobs:
           }
           
           Write-Host "Running ISCC: $env:ISCC_PATH setup.iss"
-          # Simple direct invocation without output redirection
           & $env:ISCC_PATH setup.iss
           $exitCode = $LASTEXITCODE
           Write-Host "ISCC exit code: $exitCode"
@@ -213,7 +197,6 @@ jobs:
             exit $exitCode
           }
           
-          # Verify output
           if (Test-Path "Output\ObtainHub-Setup.exe") {
             Write-Host "Inno Setup output FOUND at: installer\Output\ObtainHub-Setup.exe"
             Get-ChildItem Output\
@@ -227,61 +210,55 @@ jobs:
           exit 0
 
       - name: Copy Inno Setup output to root dist
-        shell: powershell
         run: |
-          if (Test-Path "installer\Output\ObtainHub-Setup.exe") {
-            Copy-Item "installer\Output\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
-            Write-Host "Copied to dist\ObtainHub-Setup.exe"
-          } elseif (Test-Path "dist\ObtainHub-Setup.exe") {
-            Write-Host "Found at dist\ObtainHub-Setup.exe (already in root)"
-          } else {
-            Write-Host "Source not found: installer\Output\ObtainHub-Setup.exe"
-            Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
-          }
+          cp installer/Output/ObtainHub-Setup.exe dist/ObtainHub-Setup.exe
+          ls -la dist/
 
       - name: List dist directory
-        shell: powershell
-        run: |
-          Get-ChildItem dist\
+        run: ls -la dist/
 
       - name: Create/Update Release and Upload Assets
-        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ErrorActionPreference = "Continue"
-          $tag = "${{ github.ref_name }}"
-          $prerelease = $tag -match 'beta|alpha'
+          tag=${{ github.ref_name }}
+          echo "Tag: $tag"
           
-          Write-Host "Tag: $tag"
-          Write-Host "Prerelease: $prerelease"
+          # Determine if prerelease
+          if [[ "$tag" == *"-beta"* ]] || [[ "$tag" == *"-alpha"* ]] || [[ "$tag" == *"-rc"* ]]; then
+            prerelease="true"
+          else
+            prerelease="false"
+          fi
+          echo "Prerelease: $prerelease"
           
-          # Check if release exists
-          $existingRelease = gh release view $tag --json id --jq .id 2>$null
-          if ($existingRelease) {
-            Write-Host "Deleting existing release: $existingRelease"
+          # Delete existing release if it exists
+          existingRelease=$(gh release view $tag --json id --jq .id 2>/dev/null)
+          if [ -n "$existingRelease" ]; then
+            echo "Deleting existing release: $existingRelease"
             gh release delete $tag --yes --cleanup-tag
-          }
+          fi
           
           # Create new release
-          Write-Host "Creating release..."
-          $releaseArgs = @("release", "create", $tag, "--title", "Release $tag", "--generate-notes")
-          if ($prerelease) { $releaseArgs += "--prerelease" }
-          $result = gh $releaseArgs 2>&1
-          Write-Host "Release create result: $result"
+          echo "Creating release..."
+          releaseArgs=("release" "create" "$tag" "--title" "Release $tag" "--generate-notes")
+          if [ "$prerelease" = "true" ]; then
+            releaseArgs+=("--prerelease")
+          fi
+          result=$(gh "${releaseArgs[@]}" 2>&1)
+          echo "Release create result: $result"
           
           # Upload assets - ONLY MSI and Setup EXE (no standalone ohub.exe)
-          $assets = @(
-            "dist/ObtainHub.msi",
+          assets=(
+            "dist/ObtainHub.msi"
             "dist/ObtainHub-Setup.exe"
           )
           
-          foreach ($asset in $assets) {
-            if (Test-Path $asset) {
-              Write-Host "Uploading $asset..."
-              gh release upload $tag $asset --clobber
-            }
-            else {
-              Write-Host "Asset not found: $asset"
-            }
-          }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          for asset in "${assets[@]}"; do
+            if [ -f "$asset" ]; then
+              echo "Uploading $asset..."
+              gh release upload "$tag" "$asset" --clobber
+            else
+              echo "Asset not found: $asset"
+            fi
+          done
