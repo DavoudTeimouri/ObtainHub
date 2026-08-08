@@ -275,6 +275,10 @@ jobs:
           $prerelease = $tag -match 'beta|alpha|rc'
           Write-Host "Prerelease: $prerelease"
           
+          # List what's in dist before upload
+          Write-Host "=== Assets in dist before upload ==="
+          Get-ChildItem dist\
+          
           # Delete existing release if it exists
           $existingRelease = gh release view $tag --json id --jq .id 2>$null
           if ($existingRelease) {
@@ -301,6 +305,8 @@ jobs:
               gh release upload $tag $asset --clobber
             }
             else {
-              Write-Host "Asset not found: $asset"
+              Write-Host "Asset NOT FOUND: $asset"
+              Write-Host "Current dist contents:"
+              Get-ChildItem dist\
             }
           }
