@@ -186,8 +186,8 @@ jobs:
           Write-Host "Checking setup.iss exists: $(Test-Path setup.iss)"
           Write-Host "Running ISCC: $isccPath setup.iss"
           Write-Host "=== ISCC COMPILATION OUTPUT START ==="
-          & $isccPath setup.iss 2>&1
-          $exitCode = $LASTEXITCODE
+          & $isccPath setup.iss 2>&1 | Tee-Object -FilePath iscc_output.txt
+          $exitCode = ${PIPESTATUS}[0]
           Write-Host "=== ISCC COMPILATION OUTPUT END ==="
           Write-Host "ISCC exit code: $exitCode"
           if ($exitCode -ne 0) {
