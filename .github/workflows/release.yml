@@ -106,10 +106,34 @@ jobs:
         shell: powershell
         run: |
           Write-Host "=== WiX MSI Build Debug ==="
-          if ($env:WIX_BIN) {
-            Write-Host "WIX_BIN: $env:WIX_BIN"
-            $candle = Join-Path $env:WIX_BIN "candle.exe"
-            $light = Join-Path $env:WIX_BIN "light.exe"
+          # Try to find WiX on the system
+          $wixPaths = @(
+            "C:\Program Files (x86)\WiX Toolset v3.11\bin",
+            "C:\Program Files\WiX Toolset v3.11\bin",
+            "C:\Program Files (x86)\WiX Toolset*\bin",
+            "C:\Program Files\WiX Toolset*\bin"
+          )
+          $wixBin = $null
+          foreach ($path in $wixPaths) {
+            $resolved = Get-ChildItem $path -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($resolved -and (Test-Path (Join-Path $resolved.FullName "candle.exe"))) {
+              $wixBin = $resolved.FullName
+              Write-Host "Found WiX at: $wixBin"
+              break
+            }
+          }
+          if (-not $wixBin) {
+            # Try to find candle.exe directly
+            $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
+            if ($candlePath) {
+              $wixBin = Split-Path $candlePath
+              Write-Host "Found candle.exe at: $candlePath, using dir: $wixBin"
+            }
+          }
+          if ($wixBin) {
+            Write-Host "Using WiX bin: $wixBin"
+            $candle = Join-Path $wixBin "candle.exe"
+            $light = Join-Path $wixBin "light.exe"
             Write-Host "candle: $candle (exists: $(Test-Path $candle))"
             Write-Host "light: $light (exists: $(Test-Path $light))"
             Write-Host "setup.wxs: $(Test-Path installer\setup.wxs)"
@@ -119,7 +143,8 @@ jobs:
             Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
             Get-ChildItem dist/
           } else {
-            Write-Host "WIX_BIN not set, skipping MSI build"
+            Write-Host "WiX Toolset NOT FOUND anywhere on system!"
+            exit 1
           }
 
       - name: Build Inno Setup EXE
