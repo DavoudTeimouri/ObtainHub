@@ -138,10 +138,10 @@ jobs:
             Write-Host "setup.wxs: $(Test-Path installer\setup.wxs)"
             Write-Host "ohub.exe: $(Test-Path dist\ohub.exe)"
             Write-Host "Running candle..."
-            & $candle -out dist/ObtainHub.wixobj installer/setup.wxs
+            & $candle -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
             Write-Host "candle exit code: $LASTEXITCODE"
             Write-Host "Running light..."
-            & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj
+            & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj 2>&1
             Write-Host "light exit code: $LASTEXITCODE"
             Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
             Get-ChildItem dist/
@@ -150,6 +150,7 @@ jobs:
             # List all WiX-like directories
             Get-ChildItem "C:\Program Files (x86)" -Filter "*WiX*" -ErrorAction SilentlyContinue
             Get-ChildItem "C:\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "*wix*" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue }
             exit 1
           }
 
