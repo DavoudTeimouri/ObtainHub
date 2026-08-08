@@ -122,24 +122,34 @@ jobs:
         run: |
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
-          Write-Host "ISCC from env: '$env:ISCC_PATH'"
           
-          $isccPath = $env:ISCC_PATH
-          if (-not $isccPath -or -not (Test-Path $isccPath)) {
-            Write-Host "ISCC path from env not found or empty, searching..."
-            $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
-            if (-not $isccPath) {
-              $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-              if (-not (Test-Path $isccPath)) {
-                $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
-              }
+          # Try to find ISCC in common locations
+          $isccPath = $null
+          $possiblePaths = @(
+            # Chocolatey installed Inno Setup (shim in bin)
+            "C:\ProgramData\chocolatey\bin\ISCC.exe"
+            # Chocolatey installed Inno Setup (direct)
+            "C:\ProgramData\chocolatey\lib\innosetup\tools\ISCC.exe"
+            # Default Inno Setup 6 paths
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          )
+          
+          foreach ($path in $possiblePaths) {
+            if (Test-Path $path) {
+              Write-Host "Found ISCC at: $path"
+              $isccPath = $path
+              break
             }
           }
-          if (-not (Test-Path $isccPath)) {
-            Write-Host "ISCC NOT FOUND!"
-            Get-ChildItem "C:\Program Files" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
-            Get-ChildItem "C:\Program Files (x86)" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
-            Get-ChildItem "C:\ProgramData\chocolatey" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
+          
+          if (-not $isccPath) {
+            Write-Host "ISCC NOT FOUND in any common location!"
+            # Show what's in the Chocolatey bin directory
+            Write-Host "Checking Chocolatey bin directory:"
+            Get-ChildItem "C:\ProgramData\chocolatey\bin" -Filter "*iscc*" -ErrorAction SilentlyContinue
+            Write-Host "Checking Chocolatey lib directory for Inno Setup:"
+            Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "innosetup" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue }
             exit 1
           }
           
