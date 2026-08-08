@@ -82,11 +82,21 @@ jobs:
       - name: Build WiX MSI
         shell: powershell
         run: |
+          Write-Host "=== WiX MSI Build Debug ==="
           if ($env:WIX_BIN) {
+            Write-Host "WIX_BIN: $env:WIX_BIN"
             $candle = Join-Path $env:WIX_BIN "candle.exe"
             $light = Join-Path $env:WIX_BIN "light.exe"
+            Write-Host "candle: $candle (exists: $(Test-Path $candle))"
+            Write-Host "light: $light (exists: $(Test-Path $light))"
+            Write-Host "setup.wxs: $(Test-Path installer\setup.wxs)"
+            Write-Host "ohub.exe: $(Test-Path dist\ohub.exe)"
             & $candle -out dist/ObtainHub.wixobj installer/setup.wxs
             & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj
+            Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
+            Get-ChildItem dist/
+          } else {
+            Write-Host "WIX_BIN not set, skipping MSI build"
           }
 
       - name: Build Inno Setup EXE
