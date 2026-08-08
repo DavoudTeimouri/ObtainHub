@@ -29,6 +29,12 @@ jobs:
           Write-Host "=== Installing WiX Toolset via Chocolatey ==="
           choco install wixtoolset -y --params "'/InstallDir:C:\Program Files (x86)\WiX Toolset v3.11'"
           Write-Host "=== Verifying WiX Installation ==="
+          # Check what choco actually installed
+          Write-Host "=== Checking Chocolatey Install Location ==="
+          $chocoLib = "C:\ProgramData\chocolatey\lib\wixtoolset"
+          if (Test-Path $chocoLib) {
+            Get-ChildItem $chocoLib -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue
+          }
           $wixPaths = @(
             "C:\Program Files (x86)\WiX Toolset v3.11\bin",
             "C:\Program Files\WiX Toolset v3.11\bin",
