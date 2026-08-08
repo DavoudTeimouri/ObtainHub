@@ -199,6 +199,14 @@ jobs:
           exit 0
         continue-on-error: true
 
+      - name: Upload ISCC output for debugging
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iscc-output
+          path: installer/iscc_output.txt
+          retention-days: 5
+
       - name: Copy Inno Setup output to root dist
         shell: powershell
         run: |
