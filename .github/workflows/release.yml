@@ -123,17 +123,20 @@ jobs:
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
           
-          # Try to find ISCC - first check env var from Install step
-          $isccPath = $env:ISCC_PATH
-          if ($isccPath -and (Test-Path $isccPath)) {
-            Write-Host "Found ISCC from env var: $isccPath"
+          # Refresh environment to pick up Chocolatey shims
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          
+          # Try to find ISCC - first check if in PATH
+          $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($isccPath) {
+            Write-Host "Found ISCC in PATH: $isccPath"
           } else {
-            Write-Host "ISCC from env var not found, searching..."
+            Write-Host "ISCC not in PATH, searching common locations..."
             # Search common locations including Chocolatey shim and versioned paths
             $possiblePaths = @(
               # Chocolatey shim (usually in PATH after install)
               "C:\ProgramData\chocolatey\bin\ISCC.exe"
-              # Chocolatey versioned lib paths
+              # Chocolatey versioned lib paths (recursive)
               "C:\ProgramData\chocolatey\lib\innosetup\*"
               # Default Inno Setup 6 paths
               "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
@@ -157,6 +160,8 @@ jobs:
             Get-ChildItem "C:\ProgramData\chocolatey\bin" -Filter "*iscc*" -ErrorAction SilentlyContinue
             Write-Host "Checking Chocolatey lib directory for Inno Setup:"
             Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "innosetup" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue }
+            Write-Host "Checking if iscc is in PATH after refresh:"
+            Get-Command iscc -ErrorAction SilentlyContinue
             exit 1
           }
           
