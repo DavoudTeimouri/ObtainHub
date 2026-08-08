@@ -146,12 +146,11 @@ jobs:
             Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
             Get-ChildItem dist/
           } else {
-            Write-Host "WiX Toolset NOT FOUND anywhere on system!"
+            Write-Host "WiX Toolset NOT FOUND anywhere on system - skipping MSI build"
             # List all WiX-like directories
             Get-ChildItem "C:\Program Files (x86)" -Filter "*WiX*" -ErrorAction SilentlyContinue
             Get-ChildItem "C:\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
             Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "*wix*" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue }
-            exit 1
           }
 
       - name: Build Inno Setup EXE
