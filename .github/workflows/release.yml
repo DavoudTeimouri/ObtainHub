@@ -87,8 +87,34 @@ jobs:
           exit 0
 
       - name: Install Inno Setup
-        uses: MinoruFujimoto/inno-setup-action@v1
-        id: inno-setup
+        shell: powershell
+        run: |
+          Write-Host "=== Installing Inno Setup via Chocolatey ==="
+          choco install innosetup -y --verbose
+          Write-Host "=== Verifying Inno Setup Installation ==="
+          $chocoInno = "C:\ProgramData\chocolatey\lib\innosetup"
+          if (Test-Path $chocoInno) {
+            Write-Host "Choco lib dir exists"
+            Get-ChildItem $chocoInno -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "Choco lib dir NOT found"
+          }
+          $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($isccPath) {
+            Write-Host "ISCC found in PATH: $isccPath"
+          } else {
+            Write-Host "ISCC NOT in PATH"
+            $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            if (Test-Path $isccPath) {
+              Write-Host "Found at default x86: $isccPath"
+            } else {
+              $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
+              if (Test-Path $isccPath) {
+                Write-Host "Found at default x64: $isccPath"
+              }
+            }
+          }
+          Write-Host "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
 
       - name: Build Inno Setup EXE
         shell: powershell
@@ -96,11 +122,11 @@ jobs:
         run: |
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
-          Write-Host "ISCC from action: ${{ steps.inno-setup.outputs.iscc }}"
+          Write-Host "ISCC from env: $env:ISCC_PATH"
           
-          $isccPath = "${{ steps.inno-setup.outputs.iscc }}"
+          $isccPath = $env:ISCC_PATH
           if (-not (Test-Path $isccPath)) {
-            Write-Host "ISCC path from action not found, searching..."
+            Write-Host "ISCC path from env not found, searching..."
             $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
             if (-not $isccPath) {
               $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
@@ -113,6 +139,7 @@ jobs:
             Write-Host "ISCC NOT FOUND!"
             Get-ChildItem "C:\Program Files" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
             Get-ChildItem "C:\Program Files (x86)" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\ProgramData\chocolatey" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
             exit 1
           }
           
