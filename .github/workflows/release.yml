@@ -122,11 +122,11 @@ jobs:
         run: |
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
-          Write-Host "ISCC from env: $env:ISCC_PATH"
+          Write-Host "ISCC from env: '$env:ISCC_PATH'"
           
           $isccPath = $env:ISCC_PATH
-          if (-not (Test-Path $isccPath)) {
-            Write-Host "ISCC path from env not found, searching..."
+          if (-not $isccPath -or -not (Test-Path $isccPath)) {
+            Write-Host "ISCC path from env not found or empty, searching..."
             $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
             if (-not $isccPath) {
               $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
