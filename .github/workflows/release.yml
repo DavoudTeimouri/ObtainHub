@@ -233,6 +233,14 @@ jobs:
           }
           Get-ChildItem dist\
 
+      - name: Upload Inno Setup EXE artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: innosetup-output
+          path: dist/ObtainHub-Setup.exe
+          retention-days: 5
+
       - name: List dist directory
         shell: powershell
         run: Get-ChildItem dist\
