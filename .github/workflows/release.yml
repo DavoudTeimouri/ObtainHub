@@ -26,17 +26,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
-          choco install innosetup wixtoolset -y
-          # Verify WiX installation
+          Write-Host "=== Installing WiX Toolset via Chocolatey ==="
+          choco install wixtoolset -y
           Write-Host "=== Verifying WiX Installation ==="
           $wixPaths = @(
             "C:\Program Files (x86)\WiX Toolset v3.11\bin",
-            "C:\Program Files\WiX Toolset v3.11\bin"
+            "C:\Program Files\WiX Toolset v3.11\bin",
+            "C:\Program Files (x86)\WiX Toolset*\bin",
+            "C:\Program Files\WiX Toolset*\bin"
           )
           foreach ($path in $wixPaths) {
-            if (Test-Path $path) {
-              Write-Host "Found WiX at: $path"
-              Get-ChildItem $path
+            $resolved = Get-ChildItem $path -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($resolved) {
+              Write-Host "Found WiX at: $($resolved.FullName)"
+              Get-ChildItem $resolved.FullName
             }
           }
           $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
@@ -45,6 +48,8 @@ jobs:
           } else {
             Write-Host "candle.exe NOT in PATH"
           }
+          # Also install Inno Setup
+          choco install innosetup -y
 
       - name: Build with PyInstaller
         shell: powershell
@@ -53,40 +58,6 @@ jobs:
           Write-Host "=== PyInstaller Output ==="
           Get-ChildItem dist\
           Get-ChildItem dist\ -Recurse -Filter "*.exe"
-
-      - name: Find WiX tools
-        shell: powershell
-        run: |
-          Write-Host "=== Find WiX Tools Debug ==="
-          $wixPath = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Directory | Select-Object -First 1
-          if ($wixPath) {
-            Write-Host "Found WiX Toolset at: $($wixPath.FullName)"
-            $binPath = Join-Path $wixPath.FullName "bin"
-            if (Test-Path $binPath) {
-              Write-Host "Found bin at: $binPath"
-              $candle = Join-Path $binPath "candle.exe"
-              $light = Join-Path $binPath "light.exe"
-              Write-Host "candle.exe: $(Test-Path $candle)"
-              Write-Host "light.exe: $(Test-Path $light)"
-              echo "WIX_BIN=$binPath" >> $env:GITHUB_ENV
-              Write-Host "Set WIX_BIN to: $binPath"
-            } else {
-              Write-Host "bin directory NOT FOUND"
-            }
-          } else {
-            Write-Host "WiX Toolset NOT FOUND in C:\Program Files (x86)"
-            # Try other locations
-            $wixPath64 = Get-ChildItem "C:\Program Files\WiX Toolset*" -Directory | Select-Object -First 1
-            if ($wixPath64) {
-              Write-Host "Found WiX Toolset at: $($wixPath64.FullName)"
-              $binPath = Join-Path $wixPath64.FullName "bin"
-              if (Test-Path $binPath) {
-                Write-Host "Found bin at: $binPath"
-                echo "WIX_BIN=$binPath" >> $env:GITHUB_ENV
-                Write-Host "Set WIX_BIN to: $binPath"
-              }
-            }
-          }
 
       - name: Find Inno Setup
         shell: powershell
