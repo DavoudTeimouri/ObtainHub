@@ -123,23 +123,30 @@ jobs:
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
           
-          # Try to find ISCC in common locations
-          $isccPath = $null
-          $possiblePaths = @(
-            # Chocolatey installed Inno Setup (shim in bin)
-            "C:\ProgramData\chocolatey\bin\ISCC.exe"
-            # Chocolatey installed Inno Setup (direct)
-            "C:\ProgramData\chocolatey\lib\innosetup\tools\ISCC.exe"
-            # Default Inno Setup 6 paths
-            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-            "C:\Program Files\Inno Setup 6\ISCC.exe"
-          )
-          
-          foreach ($path in $possiblePaths) {
-            if (Test-Path $path) {
-              Write-Host "Found ISCC at: $path"
-              $isccPath = $path
-              break
+          # Try to find ISCC - first check env var from Install step
+          $isccPath = $env:ISCC_PATH
+          if ($isccPath -and (Test-Path $isccPath)) {
+            Write-Host "Found ISCC from env var: $isccPath"
+          } else {
+            Write-Host "ISCC from env var not found, searching..."
+            # Search common locations including Chocolatey shim and versioned paths
+            $possiblePaths = @(
+              # Chocolatey shim (usually in PATH after install)
+              "C:\ProgramData\chocolatey\bin\ISCC.exe"
+              # Chocolatey versioned lib paths
+              "C:\ProgramData\chocolatey\lib\innosetup\*"
+              # Default Inno Setup 6 paths
+              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+              "C:\Program Files\Inno Setup 6\ISCC.exe"
+            )
+            
+            foreach ($path in $possiblePaths) {
+              $matches = Get-ChildItem $path -Filter "ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($matches) {
+                Write-Host "Found ISCC at: $($matches.FullName)"
+                $isccPath = $matches.FullName
+                break
+              }
             }
           }
           
