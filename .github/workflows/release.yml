@@ -123,15 +123,22 @@ jobs:
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
           
+          # First, check the env var from Install step
+          $isccPath = $env:ISCC_PATH
+          Write-Host "ISCC from env var: '$isccPath'"
+          
           # Refresh environment to pick up Chocolatey shims
           $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           
-          # Try to find ISCC - first check if in PATH
-          $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
-          if ($isccPath) {
-            Write-Host "Found ISCC in PATH: $isccPath"
-          } else {
-            Write-Host "ISCC not in PATH, searching common locations..."
+          # Try to find ISCC - first check if in PATH after refresh
+          $pathIscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($pathIscc) {
+            Write-Host "Found ISCC in PATH after refresh: $pathIscc"
+            $isccPath = $pathIscc
+          }
+          
+          if (-not $isccPath -or -not (Test-Path $isccPath)) {
+            Write-Host "ISCC not found via env or PATH, searching common locations..."
             # Search common locations including Chocolatey shim and versioned paths
             $possiblePaths = @(
               # Chocolatey shim (usually in PATH after install)
