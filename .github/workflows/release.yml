@@ -210,6 +210,10 @@ jobs:
       - name: Copy Inno Setup output to root dist
         shell: powershell
         run: |
+          Write-Host "=== Checking installer/Output ==="
+          Get-ChildItem installer\Output\ -ErrorAction SilentlyContinue
+          Write-Host "=== Checking dist before copy ==="
+          Get-ChildItem dist\
           if (Test-Path "installer\Output\ObtainHub-Setup.exe") {
             Copy-Item "installer\Output\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
             Write-Host "Copied to dist\ObtainHub-Setup.exe"
