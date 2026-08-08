@@ -30,7 +30,7 @@
   <Fragment>
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable" Guid="*">
-        <File Id="ohub.exe" Source="..\dist\ohub.exe" KeyPath="yes" Checksum="yes" />
+        <File Id="ohub.exe" Source="dist\ohub.exe" KeyPath="yes" Checksum="yes" />
         <Shortcut Id="ApplicationStartMenuShortcut"
                   Directory="ApplicationProgramsFolder"
                   Name="ObtainHub"
