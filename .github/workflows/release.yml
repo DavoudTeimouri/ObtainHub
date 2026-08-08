@@ -156,8 +156,12 @@ jobs:
             Write-Host "light: $light (exists: $(Test-Path $light))"
             Write-Host "setup.wxs: $(Test-Path installer\setup.wxs)"
             Write-Host "ohub.exe: $(Test-Path dist\ohub.exe)"
+            Write-Host "Running candle..."
             & $candle -out dist/ObtainHub.wixobj installer/setup.wxs
+            Write-Host "candle exit code: $LASTEXITCODE"
+            Write-Host "Running light..."
             & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj
+            Write-Host "light exit code: $LASTEXITCODE"
             Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
             Get-ChildItem dist/
           } else {
