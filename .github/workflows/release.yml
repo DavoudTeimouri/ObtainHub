@@ -158,10 +158,14 @@ jobs:
           }
           
           Write-Host "Running ISCC: $isccPath setup.iss"
-          # Run ISCC directly and capture all output
-          & $isccPath setup.iss
+          # Capture stdout and stderr
+          & $isccPath setup.iss 2>&1 | Tee-Object -Variable isccOutput
           $exitCode = $LASTEXITCODE
           Write-Host "ISCC exit code: $exitCode"
+          if ($isccOutput) {
+            Write-Host "ISCC output:"
+            $isccOutput
+          }
           if ($exitCode -ne 0) {
             Write-Host "Inno Setup FAILED with exit code $exitCode"
             exit $exitCode
