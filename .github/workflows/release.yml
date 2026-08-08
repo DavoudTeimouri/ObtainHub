@@ -159,14 +159,19 @@ jobs:
           
           Write-Host "Running ISCC: $isccPath setup.iss"
           # Capture stdout and stderr to file
-          & $isccPath setup.iss 2>&1 | Tee-Object -Variable isccOutput
-          $exitCode = $LASTEXITCODE
-          Write-Host "ISCC exit code: $exitCode"
-          if ($isccOutput) {
-            Write-Host "ISCC output:"
-            $isccOutput
-            # Write to file for artifact upload
-            $isccOutput | Out-File -FilePath "iscc_output.txt" -Encoding utf8
+          try {
+            & $isccPath setup.iss 2>&1 | Tee-Object -Variable isccOutput
+            $exitCode = $LASTEXITCODE
+            Write-Host "ISCC exit code: $exitCode"
+            if ($isccOutput) {
+              Write-Host "ISCC output:"
+              $isccOutput
+              # Write to file for artifact upload
+              $isccOutput | Out-File -FilePath "iscc_output.txt" -Encoding utf8
+            }
+          } catch {
+            Write-Host "Exception running ISCC: $_"
+            $_ | Out-File -FilePath "iscc_output.txt" -Encoding utf8
           }
           
           # Check multiple possible output locations
@@ -192,6 +197,7 @@ jobs:
           }
           # Always succeed to allow artifact upload
           exit 0
+        continue-on-error: true
 
       - name: Copy Inno Setup output to root dist
         shell: powershell
