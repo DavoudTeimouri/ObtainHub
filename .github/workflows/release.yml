@@ -95,10 +95,12 @@ jobs:
         shell: powershell
         run: |
           Write-Host "=== WiX MSI Build Debug ==="
-          # Try to find WiX on the system
+          # Try to find WiX on the system - check multiple versions/locations
           $wixPaths = @(
             "C:\Program Files (x86)\WiX Toolset v3.11\bin",
             "C:\Program Files\WiX Toolset v3.11\bin",
+            "C:\Program Files (x86)\WiX Toolset v4.0\bin",
+            "C:\Program Files\WiX Toolset v4.0\bin",
             "C:\Program Files (x86)\WiX Toolset*\bin",
             "C:\Program Files\WiX Toolset*\bin"
           )
@@ -137,6 +139,9 @@ jobs:
             Get-ChildItem dist/
           } else {
             Write-Host "WiX Toolset NOT FOUND anywhere on system!"
+            # List all WiX-like directories
+            Get-ChildItem "C:\Program Files (x86)" -Filter "*WiX*" -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
             exit 1
           }
 
