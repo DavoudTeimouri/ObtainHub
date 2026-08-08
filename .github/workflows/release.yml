@@ -158,20 +158,13 @@ jobs:
           }
           
           Write-Host "Running ISCC: $isccPath setup.iss"
-          # Capture stdout and stderr to file
-          try {
-            & $isccPath setup.iss 2>&1 | Tee-Object -Variable isccOutput
-            $exitCode = $LASTEXITCODE
-            Write-Host "ISCC exit code: $exitCode"
-            if ($isccOutput) {
-              Write-Host "ISCC output:"
-              $isccOutput
-              # Write to file for artifact upload
-              $isccOutput | Out-File -FilePath "iscc_output.txt" -Encoding utf8
-            }
-          } catch {
-            Write-Host "Exception running ISCC: $_"
-            $_ | Out-File -FilePath "iscc_output.txt" -Encoding utf8
+          # Run ISCC and capture output
+          & $isccPath setup.iss 2>&1
+          $exitCode = $LASTEXITCODE
+          Write-Host "ISCC exit code: $exitCode"
+          if ($exitCode -ne 0) {
+            Write-Host "Inno Setup FAILED with exit code $exitCode"
+            exit $exitCode
           }
           
           # Check if Output directory exists and what's in it
@@ -202,10 +195,9 @@ jobs:
             Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
             Get-ChildItem ..\dist -Filter "*.exe" -ErrorAction SilentlyContinue
             Get-ChildItem . -Recurse -Filter "*.exe"
+            exit 1
           }
-          # Always succeed to allow artifact upload
           exit 0
-        continue-on-error: true
 
       - name: Upload ISCC output for debugging
         if: always()
