@@ -27,6 +27,24 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
           choco install innosetup wixtoolset -y
+          # Verify WiX installation
+          Write-Host "=== Verifying WiX Installation ==="
+          $wixPaths = @(
+            "C:\Program Files (x86)\WiX Toolset v3.11\bin",
+            "C:\Program Files\WiX Toolset v3.11\bin"
+          )
+          foreach ($path in $wixPaths) {
+            if (Test-Path $path) {
+              Write-Host "Found WiX at: $path"
+              Get-ChildItem $path
+            }
+          }
+          $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
+          if ($candlePath) {
+            Write-Host "Found candle.exe in PATH: $candlePath"
+          } else {
+            Write-Host "candle.exe NOT in PATH"
+          }
 
       - name: Build with PyInstaller
         shell: powershell
