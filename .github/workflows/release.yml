@@ -87,40 +87,10 @@ jobs:
           exit 0
 
       - name: Install Inno Setup
-        shell: powershell
-        run: |
-          Write-Host "=== Installing Inno Setup via Chocolatey (with PATH fix) ==="
-          choco install innosetup -y --verbose
-          Write-Host "=== Verifying Inno Setup Installation ==="
-          $chocoInno = "C:\ProgramData\chocolatey\lib\innosetup"
-          if (Test-Path $chocoInno) {
-            Write-Host "Choco lib dir exists"
-            Get-ChildItem $chocoInno -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
-          } else {
-            Write-Host "Choco lib dir NOT found"
-          }
-          # Add Chocolatey bin to PATH explicitly
-          $env:PATH = "C:\ProgramData\chocolatey\bin;$env:PATH"
-          # Find the actual ISCC.exe in the Chocolatey lib directory (not the shim)
-          $isccPath = $null
-          $isccFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\innosetup" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
-          if ($isccFiles) {
-            $isccPath = $isccFiles[0].FullName
-            Write-Host "Found ISCC in Chocolatey lib: $isccPath"
-          } else {
-            Write-Host "ISCC not found in Chocolatey lib, trying PATH..."
-            $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
-            if ($isccPath) {
-              Write-Host "Found ISCC in PATH: $isccPath"
-            } else {
-              # Fallback to default paths
-              $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-              if (-not (Test-Path $isccPath)) {
-                $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
-              }
-            }
-          }
-          Write-Host "ISCC_PATH=$isccPath" >> $env:GITHUB_ENV
+        uses: minedreaction/setup-innosetup@v1
+        with:
+          version: 6.2.2
+          arch: x64
 
       - name: Build Inno Setup EXE
         shell: powershell
@@ -131,39 +101,18 @@ jobs:
           Write-Host "PWD: $(pwd)"
           Write-Host "Files in installer: $(Get-ChildItem)"
           
-          # First, check the env var from Install step - this is the actual ISCC.exe path from Chocolatey lib
-          $isccPath = $env:ISCC_PATH
-          Write-Host "ISCC from env var: '$isccPath'"
-          
-          if (-not $isccPath -or -not (Test-Path $isccPath)) {
-            Write-Host "ISCC from env var not found or invalid, searching..."
-            # Try PATH (might be shim, prefer actual exe)
-            $pathIscc = Get-Command iscc -ErrorAction SilentlyContinue
-            if ($pathIscc) {
-              Write-Host "Found ISCC in PATH: $pathIscc"
-              $isccPath = $pathIscc
-            } else {
-              # Search common locations including Chocolatey lib paths
-              $possiblePaths = @(
-                "C:\ProgramData\chocolatey\lib\innosetup\*"
-                "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-                "C:\Program Files\Inno Setup 6\ISCC.exe"
-              )
-              foreach ($path in $possiblePaths) {
-                $matches = Get-ChildItem $path -Filter "ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($matches) {
-                  Write-Host "Found ISCC at: $($matches.FullName)"
-                  $isccPath = $matches.FullName
-                  break
-                }
-              }
+          # Find ISCC - setup-innosetup adds it to PATH
+          $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
+          if (-not $isccPath) {
+            # Fallback to default paths
+            $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $isccPath)) {
+              $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
             }
           }
           
-          if (-not $isccPath) {
+          if (-not $isccPath -or -not (Test-Path $isccPath)) {
             Write-Host "ISCC NOT FOUND in any common location!"
-            Write-Host "Checking Chocolatey lib directory for Inno Setup:"
-            Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "innosetup" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue }
             Write-Host "Checking if iscc is in PATH:"
             Get-Command iscc -ErrorAction SilentlyContinue
             exit 1
