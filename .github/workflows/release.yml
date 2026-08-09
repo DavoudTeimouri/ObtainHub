@@ -133,14 +133,23 @@ jobs:
           Write-Host "Current directory: $(Get-Location)"
           Write-Host "PWD: $(pwd)"
           Write-Host "Files in installer: $(Get-ChildItem)"
+          Write-Host "=== PATH Debug ==="
+          $env:PATH -split ';' | ForEach-Object { Write-Host "PATH: $_" }
           
-          # Find ISCC - setup-innosetup adds it to PATH
+          # Find ISCC - should be in PATH now
           $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
           if (-not $isccPath) {
-            # Fallback to default paths
-            $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-            if (-not (Test-Path $isccPath)) {
-              $isccPath = "C:\Program Files\Inno Setup 6\ISCC.exe"
+            Write-Host "ISCC not in PATH, searching..."
+            $possiblePaths = @(
+              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+              "C:\Program Files\Inno Setup 6\ISCC.exe"
+            )
+            foreach ($p in $possiblePaths) {
+              if (Test-Path $p) {
+                $isccPath = $p
+                Write-Host "Found ISCC at fallback: $isccPath"
+                break
+              }
             }
           }
           
