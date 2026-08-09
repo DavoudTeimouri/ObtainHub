@@ -95,7 +95,11 @@ jobs:
           Write-Host "=== Verifying Inno Setup Installation ==="
           
           # Find ISCC - try PATH first (Chocolatey may have added it)
-          $isccPath = Get-Command iscc -ErrorAction SilentlyContinue
+          $isccCmd = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($isccCmd) {
+            $isccPath = $isccCmd.Source
+            Write-Host "Found ISCC in PATH: $isccPath"
+          }
           if (-not $isccPath) {
             Write-Host "ISCC not in PATH, checking Chocolatey lib..."
             $isccFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\innosetup" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
