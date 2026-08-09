@@ -87,10 +87,33 @@ jobs:
           exit 0
 
       - name: Install Inno Setup
-        uses: minedreaction/setup-innosetup@v1
-        with:
-          version: 6.2.2
-          arch: x64
+        shell: powershell
+        run: |
+          Write-Host "=== Installing Inno Setup via direct download ==="
+          $isccUrl = "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
+          $installerPath = "$env:TEMP\is.exe"
+          Invoke-WebRequest -Uri $isccUrl -OutFile $installerPath -UseBasicParsing
+          Write-Host "Downloaded Inno Setup installer to $installerPath"
+          
+          # Silent install
+          & $installerPath /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="C:\Program Files (x86)\Inno Setup 6"
+          Write-Host "Inno Setup installed"
+          
+          # Verify installation
+          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (Test-Path $isccPath) {
+            Write-Host "ISCC found at: $isccPath"
+          } else {
+            Write-Host "ISCC NOT FOUND at expected location!"
+            Get-ChildItem "C:\Program Files (x86)\Inno Setup 6" -Recurse -ErrorAction SilentlyContinue
+            exit 1
+          }
+          
+          # Also check if it's in PATH
+          $pathIscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($pathIscc) {
+            Write-Host "ISCC also in PATH: $pathIscc"
+          }
 
       - name: Build Inno Setup EXE
         shell: powershell
