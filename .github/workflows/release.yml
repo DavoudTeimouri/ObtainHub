@@ -94,10 +94,10 @@ jobs:
           choco install innosetup -y --verbose --limit-output --execution-timeout=300
           Write-Host "=== Verifying Inno Setup Installation ==="
           
-          # Find ISCC - try PATH first (Chocolatey may have added it)
+          # Find ISCC - try PATH first
           $isccCmd = Get-Command iscc -ErrorAction SilentlyContinue
           if ($isccCmd) {
-            $isccPath = $isccCmd.Source
+            $isccPath = $isccCmd.Path
             Write-Host "Found ISCC in PATH: $isccPath"
           }
           if (-not $isccPath) {
