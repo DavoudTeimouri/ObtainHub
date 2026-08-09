@@ -97,7 +97,7 @@ jobs:
             $isccDir = Split-Path $isccFiles[0].FullName
             Write-Host "Found ISCC at: $($isccFiles[0].FullName)"
             Write-Host "ISCC directory: $isccDir"
-            echo "ISCC_PATH=$isccDir" >> $env:GITHUB_ENV
+            Add-Content -Path $env:GITHUB_ENV -Value "ISCC_PATH=$isccDir"
           } else {
             Write-Host "ISCC not found in Chocolatey lib"
             exit 1
