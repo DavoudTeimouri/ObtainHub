@@ -21,7 +21,7 @@ OutputBaseFilename=ObtainHub-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=auto
+PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
 ArchitecturesAllowed=x64
 DisableProgramGroupPage=yes
@@ -41,8 +41,7 @@ Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desk
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Registry]
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "PATH"; ValueData: "{app};%PATH%"; Check: IsUserInstallMode; Flags: preservestringtype uninsdeletevalue
-Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "PATH"; ValueData: "{app};%PATH%"; Check: IsAdminInstallMode; Flags: preservestringtype uninsdeletevalue
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "PATH"; ValueData: "{app};%PATH%"; Flags: preservestringtype uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
@@ -53,11 +52,6 @@ Type: filesandordirs; Name: "{localappdata}\ObtainHub"
 [Code]
 var
   RemoveDataPage: TWizardPage;
-
-function IsUserInstallMode: Boolean;
-begin
-  Result := not IsAdminInstallMode;
-end;
 
 procedure CurUninstallStepChange(CurUninstallStep: TUninstallStep);
 var
@@ -90,17 +84,9 @@ begin
   end;
 end;
 
-function IsAdminInstallMode: Boolean;
-begin
-  Result := WizardSetupData.AdminPrivilegesRequired;
-end;
-
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if CurPageID = wpReady then begin
-    { Check if user wants per-user install }
-  end;
 end;
 
 procedure InitializeWizard();
