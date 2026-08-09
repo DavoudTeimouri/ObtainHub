@@ -89,26 +89,36 @@ jobs:
       - name: Install Inno Setup
         shell: powershell
         run: |
-          Write-Host "=== Installing Inno Setup via Chocolatey ==="
+          Write-Host "=== Checking for existing ISCC ==="
+          $existingIscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($existingIscc) {
+            Write-Host "ISCC already available: $existingIscc"
+            Write-Host "$(Split-Path $existingIscc)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            exit 0
+          }
+          Write-Host "ISCC not found, installing via Chocolatey..."
           choco install innosetup -y --verbose
           Write-Host "=== Verifying Inno Setup Installation ==="
-          $chocoInno = "C:\ProgramData\chocolatey\lib\innosetup"
-          if (Test-Path $chocoInno) {
-            Write-Host "Choco lib dir exists"
-            Get-ChildItem $chocoInno -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
-          } else {
-            Write-Host "Choco lib dir NOT found"
-          }
-          # Find the actual ISCC.exe in the Chocolatey lib directory
           $isccFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\innosetup" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
           if ($isccFiles) {
             $isccDir = Split-Path $isccFiles[0].FullName
             Write-Host "Found ISCC at: $($isccFiles[0].FullName)"
             Write-Host "ISCC directory: $isccDir"
-            # Add to GITHUB_PATH so it's available in next steps
             Write-Host "$isccDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           } else {
-            Write-Host "ISCC not found in Chocolatey lib"
+            Write-Host "ISCC not found in Chocolatey lib, checking default locations..."
+            $defaultPaths = @(
+              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+              "C:\Program Files\Inno Setup 6\ISCC.exe"
+            )
+            foreach ($p in $defaultPaths) {
+              if (Test-Path $p) {
+                Write-Host "Found ISCC at default: $p"
+                Write-Host "$(Split-Path $p)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                exit 0
+              }
+            }
+            Write-Host "ISCC NOT FOUND anywhere!"
             exit 1
           }
 
