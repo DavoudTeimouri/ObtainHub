@@ -33,6 +33,14 @@ jobs:
           Write-Host "PyInstaller completed"
           Get-ChildItem dist\
 
+      - name: Create portable ZIP
+        shell: powershell
+        run: |
+          Write-Host "=== Creating portable ZIP ==="
+          Compress-Archive -Path "dist/ohub.exe" -DestinationPath "dist/ObtainHub-portable.zip" -Force
+          Write-Host "Portable ZIP created"
+          Get-ChildItem dist\
+
       - name: Build WiX MSI
         shell: powershell
         run: |
@@ -248,10 +256,11 @@ jobs:
           $result = gh $releaseArgs 2>&1
           Write-Host "Release create result: $result"
           
-          # Upload assets - ONLY MSI and Setup EXE (no standalone ohub.exe)
+          # Upload assets - MSI, Setup EXE, and portable ZIP
           $assets = @(
             "dist/ObtainHub.msi",
-            "dist/ObtainHub-Setup.exe"
+            "dist/ObtainHub-Setup.exe",
+            "dist/ObtainHub-portable.zip"
           )
           
           foreach ($asset in $assets) {
