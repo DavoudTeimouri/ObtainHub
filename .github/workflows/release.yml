@@ -90,7 +90,7 @@ jobs:
         shell: powershell
         run: |
           Write-Host "=== Installing Inno Setup via direct download ==="
-          $isccUrl = "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
+          $isccUrl = "https://jrsoftware.org/download.php/is.exe?site=2&version=6.2.2"
           $installerPath = "$env:TEMP\is.exe"
           Invoke-WebRequest -Uri $isccUrl -OutFile $installerPath -UseBasicParsing
           Write-Host "Downloaded Inno Setup installer to $installerPath"
