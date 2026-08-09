@@ -93,7 +93,9 @@ jobs:
           $existingIscc = Get-Command iscc -ErrorAction SilentlyContinue
           if ($existingIscc) {
             Write-Host "ISCC already available: $existingIscc"
-            Write-Host "$(Split-Path $existingIscc)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $isccDir = Split-Path $existingIscc
+            Write-Host "Adding to PATH: $isccDir"
+            echo "$isccDir" >> $env:GITHUB_PATH
             exit 0
           }
           Write-Host "ISCC not found, installing via Chocolatey..."
@@ -104,7 +106,7 @@ jobs:
             $isccDir = Split-Path $isccFiles[0].FullName
             Write-Host "Found ISCC at: $($isccFiles[0].FullName)"
             Write-Host "ISCC directory: $isccDir"
-            Write-Host "$isccDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            echo "$isccDir" >> $env:GITHUB_PATH
           } else {
             Write-Host "ISCC not found in Chocolatey lib, checking default locations..."
             $defaultPaths = @(
@@ -114,7 +116,8 @@ jobs:
             foreach ($p in $defaultPaths) {
               if (Test-Path $p) {
                 Write-Host "Found ISCC at default: $p"
-                Write-Host "$(Split-Path $p)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                $dir = Split-Path $p
+                echo "$dir" >> $env:GITHUB_PATH
                 exit 0
               }
             }
