@@ -90,8 +90,22 @@ jobs:
         shell: powershell
         run: |
           Write-Host "=== Installing Inno Setup via Chocolatey ==="
-          choco install innosetup -y --verbose --limit-output --execution-timeout=300
+          $chocoResult = choco install innosetup -y --verbose --limit-output --execution-timeout=300 2>&1
+          $chocoExit = $LASTEXITCODE
+          Write-Host "Chocolatey exit code: $chocoExit"
+          Write-Host "Chocolatey output: $chocoResult"
+          if ($chocoExit -ne 0) {
+            Write-Host "Chocolatey install failed with exit code $chocoExit"
+            exit 1
+          }
           Write-Host "=== Verifying Inno Setup Installation ==="
+          Write-Host "Checking Chocolatey lib directory..."
+          if (Test-Path "C:\ProgramData\chocolatey\lib\innosetup") {
+            Write-Host "Choco lib dir exists"
+            Get-ChildItem "C:\ProgramData\chocolatey\lib\innosetup" -Recurse -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "Choco lib dir NOT found"
+          }
           $isccFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\innosetup" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
           if ($isccFiles) {
             $isccDir = Split-Path $isccFiles[0].FullName
