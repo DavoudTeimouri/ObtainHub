@@ -245,8 +245,8 @@ jobs:
           Get-ChildItem dist\
           
           # Delete existing release if it exists
-          $existingRelease = gh release view $tag --json id --jq .id 2>$null
-          if ($existingRelease) {
+          $existingRelease = gh release view $tag --json id --jq .id 2> $null
+          if ($LASTEXITCODE -eq 0 -and $existingRelease) {
             Write-Host "Deleting existing release: $existingRelease"
             gh release delete $tag --yes --cleanup-tag
           }
