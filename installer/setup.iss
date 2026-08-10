@@ -51,13 +51,12 @@ Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; F
 Type: filesandordirs; Name: "{localappdata}\ObtainHub"
 
 [Code]
-function CurUninstallStepChange(CurUninstallStep: TUninstallStep): Boolean;
+procedure CurUninstallStepChange(CurUninstallStep: TUninstallStep);
 var
   RemoveDataPage: TWizardPage;
   RemoveDataCheckBox: TCheckBox;
   RemoveData: Boolean;
 begin
-  Result := True;
   if CurUninstallStep = usUninstall then begin
     RemoveDataPage := CreateCustomPage(wpWelcome, 'Remove User Data?', 'Do you want to remove your ObtainHub configuration and cache data?');
     RemoveDataCheckBox := TCheckBox.Create(RemoveDataPage);
