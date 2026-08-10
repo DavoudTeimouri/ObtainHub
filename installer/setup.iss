@@ -42,9 +42,46 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Registry]
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "PATH"; ValueData: "{app};%PATH%"; Flags: preservestringtype uninsdeletevalue
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "PATH"; ValueData: "{app};%PATH%"; Flags: preservestringtype uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\ObtainHub"
+
+[Code]
+function CurUninstallStepChange(CurUninstallStep: TUninstallStep): Boolean;
+var
+  RemoveDataPage: TWizardPage;
+  RemoveDataCheckBox: TCheckBox;
+  RemoveData: Boolean;
+begin
+  Result := True;
+  if CurUninstallStep = usUninstall then begin
+    RemoveDataPage := CreateCustomPage(wpWelcome, 'Remove User Data?', 'Do you want to remove your ObtainHub configuration and cache data?');
+    RemoveDataCheckBox := TCheckBox.Create(RemoveDataPage);
+    with RemoveDataCheckBox do begin
+      Parent := RemoveDataPage.Surface;
+      Caption := 'Remove configuration and cache data (%LOCALAPPDATA%\ObtainHub)';
+      Top := 10;
+      Left := 10;
+      Width := RemoveDataPage.SurfaceWidth - 20;
+      Checked := True;
+      Name := 'RemoveDataCheckBox';
+    end;
+    RemoveDataPage.Show;
+  end;
+  if CurUninstallStep = usPostUninstall then begin
+    RemoveData := True;
+    if Assigned(RemoveDataPage) then begin
+      RemoveDataCheckBox := TCheckBox(RemoveDataPage.FindComponent('RemoveDataCheckBox'));
+      if Assigned(RemoveDataCheckBox) then
+        RemoveData := RemoveDataCheckBox.Checked;
+    end;
+    if RemoveData then begin
+      DeleteFile(ExpandConstant('{localappdata}\ObtainHub\*'), True);
+      RemoveDir(ExpandConstant('{localappdata}\ObtainHub'));
+    end;
+  end;
+end;

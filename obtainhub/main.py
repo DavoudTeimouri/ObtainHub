@@ -82,6 +82,9 @@ def main(args: Optional[List[str]] = None) -> int:
     check_parser.add_argument(
         "--json", action="store_true", help="Output as JSON"
     )
+    check_parser.add_argument(
+        "--yes", "-y", action="store_true", help="Auto-confirm prompts"
+    )
 
     # list
     list_parser = subparsers.add_parser("list", help="List installed apps")
@@ -670,11 +673,11 @@ def cmd_source(
             print("No custom sources configured.")
         else:
             for src in config.sources:
-                print(f"{src.name}: {src.url} ({src.type})")
+                print(f"{src.name}: {src.url}")
         return 0
 
     elif parsed.source_action == "add":
-        source = ManifestSource(name=parsed.name, url=parsed.url, type=parsed.type)
+        source = ManifestSource(name=parsed.name, url=parsed.url, enabled=True, headers={})
         config.sources.append(source)
         config_manager.save(config)
         print(f"Added source: {parsed.name}")

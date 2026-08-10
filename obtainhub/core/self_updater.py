@@ -133,9 +133,9 @@ class SelfUpdater:
     def fetch_latest_release(self, allow_prerelease: bool = False) -> Optional[ReleaseInfo]:
         """Fetch latest release from GitHub API."""
         try:
+            # Always fetch full releases list, filter client-side
+            # /releases/latest only returns non-prerelease releases
             url = f"{GITHUB_API_URL}/releases"
-            if not allow_prerelease:
-                url += "/latest"
 
             req = request.Request(url)
             if self.config.github_token:
