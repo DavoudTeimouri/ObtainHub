@@ -27,31 +27,44 @@ class GitHubClient:
             self.headers["Authorization"] = f"Bearer {self.token}"
 
     def search_repositories(self, query: str, min_stars: int = 0, ignore_case: bool = True, active_only: bool = True):
-        url = "https://api.github.com/search/repositories"
-        search_q = f"{query} stars:>={min_stars}" if min_stars > 0 else query
-        if active_only:
-            search_q += " archived:false"
-            
-        params = {"q": search_q, "sort": "stars", "order": "desc"}
+            url = "https://api.github.com/search/repositories"
+            search_q = f"{query} stars:>={min_stars}" if min_stars > 0 else query
+            if active_only:
+                search_q += " archived:false"
+           
+            params = {"q": search_q, "sort": "stars", "order": "desc"}
         
-        try:
-            response = requests.get(url, headers=self.headers, params=params)
-            if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
-                print("\n[!] Error: GitHub API rate limit exceeded.")
-                print("[!] Set the GITHUB_TOKEN environment variable (e.g. `$env:GITHUB_TOKEN='your_token'`) to increase limit from 60 to 5000 req/hr.\n")
-                return []
-            response.raise_for_status()
-            data = response.json()
-            items = data.get("items", [])
+            try:
+                response = requests.get(url, headers=self.headers, params=params)
+                if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
+                    return {"error": "rate_limit", "items": []}
+                response.raise_for_status()
+                data = response.json()
+                items = data.get("items", [])
             
-            if ignore_case:
-                query_lower = query.lower()
-                items = [item for item in items if query_lower in item["full_name"].lower() or (item.get("description") and query_lower in item["description"].lower())]
+                if ignore_case:
+                    query_lower = query.lower()
+                    items = [item for item in items if query_lower in item["full_name"].lower() or (item.get("description") and query_lower in item["description"].lower())]
+            
+                # Add latest release info to each repo
+                for item in items:
+                    owner = item.get("owner", {}).get("login", "")
+                    repo = item.get("name", "")
+                    if owner and repo:
+                        releases = self.get_releases(owner, repo, per_page=1)
+                        if releases and len(releases) > 0:
+                            latest = releases[0]
+                            item["latest_release"] = latest.get("tag_name", "")
+                            item["latest_release_prerelease"] = latest.get("prerelease", False)
+                            item["latest_release_url"] = latest.get("html_url", "")
+                        else:
+                            item["latest_release"] = ""
+                            item["latest_release_prerelease"] = False
+                            item["latest_release_url"] = ""
                 
-            return items
-        except requests.RequestException as e:
-            print(f"[!] Network error while querying GitHub API: {e}")
-            return []
+                return {"error": None, "items": items}
+            except requests.RequestException as e:
+                return {"error": str(e), "items": []}
 
     def get_repo(self, owner: str, repo: str) -> Optional[Dict]:
         """Get repository information."""

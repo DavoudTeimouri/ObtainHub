@@ -2,6 +2,7 @@
 
 import sys
 import argparse
+import signal
 from typing import List, Optional
 
 from obtainhub.core.config import get_config_manager, ConfigManager, ManifestSource
@@ -24,6 +25,19 @@ from obtainhub.core.exceptions import (
 )
 from obtainhub.utils.helpers import get_architecture as get_system_architecture
 
+# Global flag for graceful shutdown
+_shutdown_requested = False
+
+def _signal_handler(signum, frame):
+    """Handle Ctrl+C gracefully."""
+    global _shutdown_requested
+    _shutdown_requested = True
+    print("\n[!] Interrupted. Stopping gracefully...")
+    sys.exit(130)
+
+signal.signal(signal.SIGINT, _signal_handler)
+signal.signal(signal.SIGTERM, _signal_handler)
+
 
 def main(args: Optional[List[str]] = None) -> int:
     """Main CLI entry point."""
@@ -35,7 +49,7 @@ def main(args: Optional[List[str]] = None) -> int:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0-beta.3"
+        "--version", action="version", version="%(prog)s 0.1.0-beta.4"
     )
     parser.add_argument(
         "--skip-self-update", action="store_true", help="Skip self-update check on startup"
@@ -523,13 +537,21 @@ def cmd_check(
             print("    Checking GitHub for matching repository...")
             
             # Search for the app on GitHub
-            search_results = client.search_repositories(
+            search_result = client.search_repositories(
                 query=sys_app.name,
                 min_stars=0,
                 ignore_case=True,
                 active_only=True,
             )
             
+            if search_result.get("error") == "rate_limit":
+                print("    [!] Rate limited - skipping")
+                continue
+            elif search_result.get("error"):
+                print(f"    [!] Search failed: {search_result['error']}")
+                continue
+            
+            search_results = search_result.get("items", [])
             if search_results:
                 # Try to find exact match
                 exact_match = None
@@ -542,34 +564,47 @@ def cmd_check(
                     owner = exact_match['owner']['login']
                     repo_name = exact_match['name']
                     print(f"    Found: {owner}/{repo_name}")
+                    repo_id = f"{owner}/{repo_name}"
                     if not parsed.yes:
-                        confirm = input(f"    Add {owner}/{repo_name} to ohub management? [y/N]: ").strip().lower()
+                        confirm = input(f"    Add {repo_id} to ohub management? [y/N]: ").strip().lower()
                         if confirm == "y":
-                            # Add as source
-                            from obtainhub.core.config import ManifestSource
-                            source = ManifestSource(
+                            # Add to state as managed app
+                            from obtainhub.core.state import InstalledApp
+                            from datetime import datetime
+                            app_state = InstalledApp(
+                                id=repo_id,
                                 name=repo_name,
-                                url=f"https://api.github.com/repos/{owner}/{repo_name}",
-                                enabled=True,
-                                headers={}
+                                version=sys_app.version,
+                                installer_type="unknown",
+                                installer_path="",
+                                source_url=f"https://github.com/{owner}/{repo_name}",
+                                tag="",
+                                installed_at=int(datetime.now().timestamp()),
+                                updated_at=int(datetime.now().timestamp()),
+                                requires_manual_uninstall=False,
+                                architecture="x64"
                             )
-                            config = config_manager.load()
-                            config.sources.append(source)
-                            config_manager.save(config)
-                            print(f"    Added {owner}/{repo_name} to sources")
+                            state_manager.add_installed_app(app_state)
+                            print(f"    Added {repo_id} to ohub management")
                     else:
                         # Auto-add with --yes
-                        from obtainhub.core.config import ManifestSource
-                        source = ManifestSource(
+                        from obtainhub.core.state import InstalledApp
+                        from datetime import datetime
+                        app_state = InstalledApp(
+                            id=repo_id,
                             name=repo_name,
-                            url=f"https://api.github.com/repos/{owner}/{repo_name}",
-                            enabled=True,
-                            headers={}
+                            version=sys_app.version,
+                            installer_type="unknown",
+                            installer_path="",
+                            source_url=f"https://github.com/{owner}/{repo_name}",
+                            tag="",
+                            installed_at=int(datetime.now().timestamp()),
+                            updated_at=int(datetime.now().timestamp()),
+                            requires_manual_uninstall=False,
+                            architecture="x64"
                         )
-                        config = config_manager.load()
-                        config.sources.append(source)
-                        config_manager.save(config)
-                        print(f"    Added {owner}/{repo_name} to sources (auto)")
+                        state_manager.add_installed_app(app_state)
+                        print(f"    Added {repo_id} to ohub management (auto)")
                 else:
                     print(f"    No exact match found on GitHub")
             else:
@@ -729,13 +764,21 @@ def cmd_search(
     token = config_manager.load().github_token
     client = GitHubClient(token=token)
     
-    repos = client.search_repositories(
+    result = client.search_repositories(
         query=parsed.query,
         min_stars=parsed.min_stars,
         ignore_case=True,
         active_only=parsed.active_only,
     )
     
+    if result.get("error") == "rate_limit":
+        print("[!] GitHub API rate limit exceeded. Set GITHUB_TOKEN env var to increase limit.")
+        return 1
+    elif result.get("error"):
+        print(f"[!] Search failed: {result['error']}")
+        return 1
+    
+    repos = result.get("items", [])
     if not repos:
         print("No repositories found.")
         return 0
@@ -746,14 +789,16 @@ def cmd_search(
         import json
         print(json.dumps(repos, indent=2))
     else:
-        print(f"{'Repository':<40} {'Stars':<8} {'Latest Release':<15} {'Updated':<12} Description")
-        print("-" * 100)
+        print(f"{'Repository':<40} {'Stars':<8} {'Latest Release':<18} {'Updated':<12} Description")
+        print("-" * 105)
         for repo in repos:
             stars = repo.get("stargazers_count", 0)
-            latest = "Yes" if repo.get("has_releases") else "No"
+            latest = repo.get("latest_release", "")
+            if repo.get("latest_release_prerelease"):
+                latest += " (pre)"
             updated = repo.get("updated_at", "")[:10] if repo.get("updated_at") else "N/A"
-            desc = (repo.get("description") or "")[:50]
-            print(f"{repo['full_name']:<40} {stars:<8} {latest:<15} {updated:<12} {desc}")
+            desc = (repo.get("description") or "")[:45]
+            print(f"{repo['full_name']:<40} {stars:<8} {latest:<18} {updated:<12} {desc}")
     
     return 0
 
