@@ -255,8 +255,7 @@ jobs:
           Write-Host "Creating release..."
           $releaseArgs = @("release", "create", $tag, "--title", "Release $tag", "--generate-notes")
           if ($prerelease) { $releaseArgs += "--prerelease" }
-          $result = gh $releaseArgs 2>&1
-          Write-Host "Release create result: $result"
+          gh $releaseArgs 2>&1
           
           # Upload assets - ONLY MSI and Setup EXE
           $assets = @(
