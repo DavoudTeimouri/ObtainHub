@@ -51,7 +51,7 @@ def main(args: Optional[List[str]] = None) -> int:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0-beta.5"
+        "--version", action="version", version="%(prog)s 0.1.0-beta.6"
     )
     parser.add_argument(
         "--skip-self-update", action="store_true", help="Skip self-update check on startup"
@@ -615,7 +615,6 @@ def cmd_check(
                         if confirm == "y":
                             # Add to state as managed app
                             from obtainhub.core.state import InstalledApp
-                            from datetime import datetime
                             app_state = InstalledApp(
                                 id=repo_id,
                                 name=repo_name,
@@ -654,7 +653,6 @@ def cmd_check(
                     else:
                         # Auto-add with --yes
                         from obtainhub.core.state import InstalledApp
-                        from datetime import datetime
                         app_state = InstalledApp(
                             id=repo_id,
                             name=repo_name,
