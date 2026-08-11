@@ -50,6 +50,25 @@ class ManifestEntry:
         return cls(**data)
 
 
+@dataclass
+class CheckHistoryEntry:
+    """Record of a check operation for an unmanaged app."""
+    app_name: str
+    app_version: str
+    github_repo: str = ""  # owner/repo if found
+    has_github_repo: bool = False
+    user_choice: str = ""  # "managed", "ignored", "error"
+    checked_at: int = 0
+    error: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "CheckHistoryEntry":
+        return cls(**data)
+
+
 class StateManager:
     def __init__(self, state_file=None):
         if not state_file:
@@ -64,12 +83,12 @@ class StateManager:
 
     def _load_state(self):
         if not self.state_file.exists():
-            return {"installed": {}, "manifest_cache": {}}
+            return {"installed": {}, "manifest_cache": {}, "check_history": {}}
         try:
             with open(self.state_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
-            return {"installed": {}, "manifest_cache": {}}
+            return {"installed": {}, "manifest_cache": {}, "check_history": {}}
 
     def save(self):
         with open(self.state_file, "w", encoding="utf-8") as f:
@@ -119,6 +138,23 @@ class StateManager:
     def set_manifest_cache(self, cache: Dict[str, ManifestEntry]):
         """Update manifest cache."""
         self.data["manifest_cache"] = {k: v.to_dict() for k, v in cache.items()}
+        self.save()
+
+    def get_check_history(self) -> Dict[str, CheckHistoryEntry]:
+        """Get check history for unmanaged apps."""
+        cache = {}
+        for key, data in self.data.get("check_history", {}).items():
+            cache[key] = CheckHistoryEntry.from_dict(data)
+        return cache
+
+    def set_check_history(self, cache: Dict[str, CheckHistoryEntry]):
+        """Update check history."""
+        self.data["check_history"] = {k: v.to_dict() for k, v in cache.items()}
+        self.save()
+
+    def add_check_history(self, entry: CheckHistoryEntry):
+        """Add or update a check history entry."""
+        self.data.setdefault("check_history", {})[entry.app_name] = entry.to_dict()
         self.save()
 
 

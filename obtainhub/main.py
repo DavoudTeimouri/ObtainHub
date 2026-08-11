@@ -3,10 +3,12 @@
 import sys
 import argparse
 import signal
+import time
+from datetime import datetime
 from typing import List, Optional
 
 from obtainhub.core.config import get_config_manager, ConfigManager, ManifestSource
-from obtainhub.core.state import get_state_manager, StateManager
+from obtainhub.core.state import get_state_manager, StateManager, CheckHistoryEntry
 from obtainhub.core.logger import setup_logging, get_logger, LogLevel
 from obtainhub.core.self_updater import SelfUpdater, check_and_update
 from obtainhub.core.github_client import GitHubClient
@@ -49,7 +51,7 @@ def main(args: Optional[List[str]] = None) -> int:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0-beta.4"
+        "--version", action="version", version="%(prog)s 0.1.0-beta.5"
     )
     parser.add_argument(
         "--skip-self-update", action="store_true", help="Skip self-update check on startup"
@@ -530,25 +532,68 @@ def cmd_check(
 
     # Check unmanaged apps
     if unmanaged_apps:
+        check_history = state_manager.get_check_history()
         print(f"\nFound {len(unmanaged_apps)} unmanaged application(s) in system registry:\n")
         for sys_app in unmanaged_apps:
+            # Check history first
+            history = check_history.get(sys_app.name.lower())
+            if history and history.user_choice == "ignored":
+                print(f"  {sys_app.name} (v{sys_app.version}) - ignored by user")
+                continue
+            elif history and history.user_choice == "managed":
+                print(f"  {sys_app.name} (v{sys_app.version}) - already managed by ohub")
+                continue
+            elif history and history.error:
+                print(f"  {sys_app.name} (v{sys_app.version}) - previous error, retrying...")
+
             # Try to find GitHub repo for this app
             print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
             print("    Checking GitHub for matching repository...")
             
-            # Search for the app on GitHub
-            search_result = client.search_repositories(
-                query=sys_app.name,
-                min_stars=0,
-                ignore_case=True,
-                active_only=True,
-            )
+            # Search for the app on GitHub with retry
+            search_result = None
+            for attempt in range(3):
+                try:
+                    search_result = client.search_repositories(
+                        query=sys_app.name,
+                        min_stars=0,
+                        ignore_case=True,
+                        active_only=True,
+                    )
+                    if search_result.get("error") != "rate_limit":
+                        break
+                except Exception as e:
+                    if attempt < 2:
+                        print(f"    [!] Search failed (attempt {attempt+1}/3): {e}, retrying in 10s...")
+                        time.sleep(10)
+                    else:
+                        print(f"    [!] Search failed after 3 attempts: {e}")
+                        search_result = {"error": str(e), "items": []}
             
+            if not search_result:
+                search_result = {"error": "timeout", "items": []}
+
             if search_result.get("error") == "rate_limit":
                 print("    [!] Rate limited - skipping")
+                entry = CheckHistoryEntry(
+                    app_name=sys_app.name,
+                    app_version=sys_app.version,
+                    user_choice="error",
+                    checked_at=int(datetime.now().timestamp()),
+                    error="rate_limit"
+                )
+                state_manager.add_check_history(entry)
                 continue
             elif search_result.get("error"):
                 print(f"    [!] Search failed: {search_result['error']}")
+                entry = CheckHistoryEntry(
+                    app_name=sys_app.name,
+                    app_version=sys_app.version,
+                    user_choice="error",
+                    checked_at=int(datetime.now().timestamp()),
+                    error=search_result['error']
+                )
+                state_manager.add_check_history(entry)
                 continue
             
             search_results = search_result.get("items", [])
@@ -586,6 +631,26 @@ def cmd_check(
                             )
                             state_manager.add_installed_app(app_state)
                             print(f"    Added {repo_id} to ohub management")
+                            entry = CheckHistoryEntry(
+                                app_name=sys_app.name,
+                                app_version=sys_app.version,
+                                github_repo=repo_id,
+                                has_github_repo=True,
+                                user_choice="managed",
+                                checked_at=int(datetime.now().timestamp())
+                            )
+                            state_manager.add_check_history(entry)
+                        else:
+                            print(f"    Skipped - not adding to ohub")
+                            entry = CheckHistoryEntry(
+                                app_name=sys_app.name,
+                                app_version=sys_app.version,
+                                github_repo=repo_id,
+                                has_github_repo=True,
+                                user_choice="ignored",
+                                checked_at=int(datetime.now().timestamp())
+                            )
+                            state_manager.add_check_history(entry)
                     else:
                         # Auto-add with --yes
                         from obtainhub.core.state import InstalledApp
@@ -605,10 +670,35 @@ def cmd_check(
                         )
                         state_manager.add_installed_app(app_state)
                         print(f"    Added {repo_id} to ohub management (auto)")
+                        entry = CheckHistoryEntry(
+                            app_name=sys_app.name,
+                            app_version=sys_app.version,
+                            github_repo=repo_id,
+                            has_github_repo=True,
+                            user_choice="managed",
+                            checked_at=int(datetime.now().timestamp())
+                        )
+                        state_manager.add_check_history(entry)
                 else:
                     print(f"    No exact match found on GitHub")
+                    entry = CheckHistoryEntry(
+                        app_name=sys_app.name,
+                        app_version=sys_app.version,
+                        has_github_repo=False,
+                        user_choice="ignored",
+                        checked_at=int(datetime.now().timestamp())
+                    )
+                    state_manager.add_check_history(entry)
             else:
                 print(f"    Not found on GitHub")
+                entry = CheckHistoryEntry(
+                    app_name=sys_app.name,
+                    app_version=sys_app.version,
+                    has_github_repo=False,
+                    user_choice="ignored",
+                    checked_at=int(datetime.now().timestamp())
+                )
+                state_manager.add_check_history(entry)
 
     if parsed.json:
         import json
@@ -704,24 +794,23 @@ def cmd_source(
     config = config_manager.load()
 
     if parsed.source_action == "list":
-        if not config.sources:
+        if not config.manifest_sources:
             print("No custom sources configured.")
         else:
-            for src in config.sources:
+            for src in config.manifest_sources:
                 print(f"{src.name}: {src.url}")
         return 0
 
     elif parsed.source_action == "add":
-        source = ManifestSource(name=parsed.name, url=parsed.url, enabled=True, headers={})
-        config.sources.append(source)
-        config_manager.save(config)
+        config_manager.add_manifest_source(parsed.name, parsed.url, enabled=True, headers={})
         print(f"Added source: {parsed.name}")
         return 0
 
     elif parsed.source_action == "remove":
-        config.sources = [s for s in config.sources if s.name != parsed.name]
-        config_manager.save(config)
-        print(f"Removed source: {parsed.name}")
+        if config_manager.remove_manifest_source(parsed.name):
+            print(f"Removed source: {parsed.name}")
+        else:
+            print(f"Source not found: {parsed.name}")
         return 0
 
     return 0
