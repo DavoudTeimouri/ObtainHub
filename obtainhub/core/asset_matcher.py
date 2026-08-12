@@ -142,6 +142,16 @@ class AssetMatcher:
 
     def _detect_installer_type(self, name: str) -> InstallerType:
         """Detect installer type from filename."""
+        name_lower = name.lower()
+        
+        # Check for installer inside ZIP (packaged MSI/EXE in ZIP)
+        # If ZIP contains installer-like names, treat as installer
+        if name_lower.endswith('.zip'):
+            # Check if ZIP likely contains an installer (has Setup, Install, or version patterns)
+            if re.search(r'(setup|install|-\d+\.\d+\.\d+-)', name_lower):
+                # Still ZIP but mark as potential installer container
+                pass
+        
         for installer_type, regex in self.installer_regexes.items():
             if regex.search(name):
                 return installer_type
@@ -215,7 +225,11 @@ class AssetMatcher:
                 continue
 
             # Determine if download-only (ZIP files)
+            # But if ZIP looks like it contains an installer, it's not purely download-only
+            name_lower = name.lower()
             is_download_only = (inst_type == InstallerType.ZIP)
+            if is_download_only and re.search(r'(setup|install|-\d+\.\d+\.\d+-)', name_lower):
+                is_download_only = False  # ZIP likely contains an installer
 
             matches.append(AssetMatch(
                 name=name,

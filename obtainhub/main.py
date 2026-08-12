@@ -51,7 +51,7 @@ def main(args: Optional[List[str]] = None) -> int:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0-beta.6"
+        "--version", action="version", version="%(prog)s 0.1.0-beta.7"
     )
     parser.add_argument(
         "--skip-self-update", action="store_true", help="Skip self-update check on startup"
@@ -562,6 +562,14 @@ def cmd_check(
                     )
                     if search_result.get("error") != "rate_limit":
                         break
+                    else:
+                        if not client.token:
+                            print(f"    [!] GitHub API rate limit (60 req/hr without token)")
+                            print(f"    Set GITHUB_TOKEN env var for 5000 req/hr: $env:GITHUB_TOKEN='your_token'")
+                        if attempt < 2:
+                            print(f"    [!] Rate limited (attempt {attempt+1}/3), retrying in 10s...")
+                            time.sleep(10)
+                        continue
                 except Exception as e:
                     if attempt < 2:
                         print(f"    [!] Search failed (attempt {attempt+1}/3): {e}, retrying in 10s...")
@@ -569,7 +577,7 @@ def cmd_check(
                     else:
                         print(f"    [!] Search failed after 3 attempts: {e}")
                         search_result = {"error": str(e), "items": []}
-            
+           
             if not search_result:
                 search_result = {"error": "timeout", "items": []}
 
@@ -583,6 +591,7 @@ def cmd_check(
                     error="rate_limit"
                 )
                 state_manager.add_check_history(entry)
+                state_manager.save()  # Save after each item
                 continue
             elif search_result.get("error"):
                 print(f"    [!] Search failed: {search_result['error']}")
@@ -594,6 +603,7 @@ def cmd_check(
                     error=search_result['error']
                 )
                 state_manager.add_check_history(entry)
+                state_manager.save()  # Save after each item
                 continue
             
             search_results = search_result.get("items", [])
@@ -639,6 +649,7 @@ def cmd_check(
                                 checked_at=int(datetime.now().timestamp())
                             )
                             state_manager.add_check_history(entry)
+                            state_manager.save()  # Save after each item
                         else:
                             print(f"    Skipped - not adding to ohub")
                             entry = CheckHistoryEntry(
@@ -650,6 +661,7 @@ def cmd_check(
                                 checked_at=int(datetime.now().timestamp())
                             )
                             state_manager.add_check_history(entry)
+                            state_manager.save()  # Save after each item
                     else:
                         # Auto-add with --yes
                         from obtainhub.core.state import InstalledApp
@@ -677,6 +689,7 @@ def cmd_check(
                             checked_at=int(datetime.now().timestamp())
                         )
                         state_manager.add_check_history(entry)
+                        state_manager.save()  # Save after each item
                 else:
                     print(f"    No exact match found on GitHub")
                     entry = CheckHistoryEntry(
@@ -687,6 +700,7 @@ def cmd_check(
                         checked_at=int(datetime.now().timestamp())
                     )
                     state_manager.add_check_history(entry)
+                    state_manager.save()  # Save after each item
             else:
                 print(f"    Not found on GitHub")
                 entry = CheckHistoryEntry(
@@ -697,6 +711,7 @@ def cmd_check(
                     checked_at=int(datetime.now().timestamp())
                 )
                 state_manager.add_check_history(entry)
+                state_manager.save()  # Save after each item
 
     if parsed.json:
         import json
