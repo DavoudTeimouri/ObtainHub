@@ -18,10 +18,11 @@ class Architecture(Enum):
 
 class InstallerType(Enum):
     """Supported installer types in priority order (highest first)."""
-    EXE_SETUP = "exe_setup"   # Inno Setup EXE installer (highest priority)
-    MSI = "msi"               # WiX MSI installer
-    ZIP = "zip"               # Portable ZIP archive
-    EXE_STANDALONE = "exe"    # Standalone EXE (lowest priority)
+    EXE_SETUP = "exe_setup"        # Inno Setup EXE installer (highest priority)
+    MSI = "msi"                    # WiX MSI installer
+    ZIP_INSTALLER = "zip_installer"  # ZIP containing installer (Setup/Install/version in name)
+    ZIP = "zip"                    # Portable ZIP archive
+    EXE_STANDALONE = "exe"         # Standalone EXE (lowest priority)
     UNKNOWN = "unknown"
 
 
@@ -80,6 +81,7 @@ class AssetMatcher:
         self.installer_regexes = {
             InstallerType.EXE_SETUP: re.compile(r'-Setup\.exe$|-setup\.exe$', re.IGNORECASE),
             InstallerType.MSI: re.compile(r'\.msi$', re.IGNORECASE),
+            InstallerType.ZIP_INSTALLER: re.compile(r'\.zip$', re.IGNORECASE),  # Will be further filtered
             InstallerType.ZIP: re.compile(r'\.zip$', re.IGNORECASE),
             InstallerType.EXE_STANDALONE: re.compile(r'\.exe$', re.IGNORECASE),
         }
@@ -144,17 +146,25 @@ class AssetMatcher:
         """Detect installer type from filename."""
         name_lower = name.lower()
         
-        # Check for installer inside ZIP (packaged MSI/EXE in ZIP)
-        # If ZIP contains installer-like names, treat as installer
-        if name_lower.endswith('.zip'):
-            # Check if ZIP likely contains an installer (has Setup, Install, or version patterns)
-            if re.search(r'(setup|install|-\d+\.\d+\.\d+-)', name_lower):
-                # Still ZIP but mark as potential installer container
-                pass
+        # Check for EXE_SETUP (Inno Setup)
+        if self.installer_regexes[InstallerType.EXE_SETUP].search(name):
+            return InstallerType.EXE_SETUP
         
-        for installer_type, regex in self.installer_regexes.items():
-            if regex.search(name):
-                return installer_type
+        # Check for MSI
+        if self.installer_regexes[InstallerType.MSI].search(name):
+            return InstallerType.MSI
+        
+        # Check for ZIP - determine if installer or portable
+        if name_lower.endswith('.zip'):
+            # Check if ZIP name suggests it contains an installer
+            if re.search(r'(setup|install|-\d+\.\d+\.\d+-)', name_lower):
+                return InstallerType.ZIP_INSTALLER
+            return InstallerType.ZIP
+        
+        # Check for standalone EXE
+        if self.installer_regexes[InstallerType.EXE_STANDALONE].search(name):
+            return InstallerType.EXE_STANDALONE
+            
         return InstallerType.UNKNOWN
 
     def _is_excluded(self, name: str) -> bool:
@@ -173,13 +183,14 @@ class AssetMatcher:
             Architecture.X86: 2,
             Architecture.UNKNOWN: 3,
         }
-        # Installer priority: EXE_SETUP > MSI > ZIP > EXE_STANDALONE
+        # Installer priority: EXE_SETUP > MSI > ZIP_INSTALLER > ZIP > EXE_STANDALONE
         inst_priority = {
             InstallerType.EXE_SETUP: 0,
             InstallerType.MSI: 1,
-            InstallerType.ZIP: 2,
-            InstallerType.EXE_STANDALONE: 3,
-            InstallerType.UNKNOWN: 4,
+            InstallerType.ZIP_INSTALLER: 2,
+            InstallerType.ZIP: 3,
+            InstallerType.EXE_STANDALONE: 4,
+            InstallerType.UNKNOWN: 5,
         }
         return (
             arch_priority.get(match.architecture, 3),
@@ -225,11 +236,15 @@ class AssetMatcher:
                 continue
 
             # Determine if download-only (ZIP files)
-            # But if ZIP looks like it contains an installer, it's not purely download-only
+            # But if ZIP looks like it contains an installer, treat as installer not portable
             name_lower = name.lower()
             is_download_only = (inst_type == InstallerType.ZIP)
-            if is_download_only and re.search(r'(setup|install|-\d+\.\d+\.\d+-)', name_lower):
-                is_download_only = False  # ZIP likely contains an installer
+            if is_download_only:
+                # Check if ZIP name suggests it contains an installer
+                if re.search(r'(setup|install|-\d+\.\d+\.\d+-)', name_lower):
+                    is_download_only = False  # ZIP likely contains an installer
+                # Also check if there are MSI/EXE assets in the same release - if so, prefer those
+                # This will be handled by get_best_match priority
 
             matches.append(AssetMatch(
                 name=name,
@@ -246,29 +261,31 @@ class AssetMatcher:
         return matches
 
     def get_best_match(self, assets: List[dict]) -> Optional[AssetMatch]:
-        """Get the single best matching asset.
-        
-        Priority order:
-        1. Inno Setup EXE installer (Setup.exe)
-        2. WiX MSI installer
-        3. Portable ZIP
-        4. Standalone EXE (only if no other installer found)
-        """
-        matches = self.match_assets(assets)
-        
-        if not matches:
-            return None
-        
-        # Priority order: EXE_SETUP > MSI > ZIP > EXE_STANDALONE
-        priority = {
-            InstallerType.EXE_SETUP: 0,
-            InstallerType.MSI: 1,
-            InstallerType.ZIP: 2,
-            InstallerType.EXE_STANDALONE: 3,
-        }
-        
-        matches.sort(key=lambda m: priority.get(m.installer_type, 99))
-        return matches[0]
+            """Get the single best matching asset.
+
+            Priority order:
+            1. Inno Setup EXE installer (Setup.exe)
+            2. WiX MSI installer
+            3. ZIP containing installer (Setup/Install/version in name)
+            4. Portable ZIP
+            5. Standalone EXE (only if no other installer found)
+            """
+            matches = self.match_assets(assets)
+
+            if not matches:
+                return None
+
+            # Priority order: EXE_SETUP > MSI > ZIP_INSTALLER > ZIP > EXE_STANDALONE
+            priority = {
+                InstallerType.EXE_SETUP: 0,
+                InstallerType.MSI: 1,
+                InstallerType.ZIP_INSTALLER: 2,
+                InstallerType.ZIP: 3,
+                InstallerType.EXE_STANDALONE: 4,
+            }
+
+            matches.sort(key=lambda m: priority.get(m.installer_type, 99))
+            return matches[0]
 
 
 def get_asset_matcher(**kwargs) -> AssetMatcher:

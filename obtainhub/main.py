@@ -51,7 +51,7 @@ def main(args: Optional[List[str]] = None) -> int:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0-beta.7"
+        "--version", action="version", version="%(prog)s 0.1.0-beta.8"
     )
     parser.add_argument(
         "--skip-self-update", action="store_true", help="Skip self-update check on startup"
@@ -723,8 +723,24 @@ def cmd_check(
 def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
     """Handle list command."""
     apps = state_manager.get_all_apps()
-
-    # Include system apps by default
+    
+    # By default show only ohub-managed apps, use --all to include unmanaged
+    if not parsed.all:
+        if parsed.json:
+            import json
+            print(json.dumps([a.to_dict() for a in apps], indent=2))
+        else:
+            if apps:
+                print(f"{'Name':<40} {'Version':<15} {'Source':<15}")
+                print("-" * 75)
+                for app in apps:
+                    print(f"{app.name:<40} {app.version:<15} {'ohub':<15}")
+            else:
+                print("No apps managed by ohub.")
+                print("Use 'ohub list --all' to see all system-installed applications.")
+        return 0
+    
+    # Show all system apps (managed + unmanaged) with --all flag
     system_apps = get_installed_system_apps()
     print(f"\nSystem-installed applications ({len(system_apps)} found):")
     
