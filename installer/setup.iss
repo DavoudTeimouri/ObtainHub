@@ -1,5 +1,5 @@
 ; Inno Setup Script for ObtainHub
-; Windows x64 installer with PATH addition, uninstall data removal prompt, no desktop shortcut, no run after install
+; Windows x64 installer with PATH addition, no desktop shortcut, no run after install
 
 #define AppName "ObtainHub"
 #define AppVersion "0.1.0.7"
@@ -97,36 +97,9 @@ end;
 procedure CurUninstallStepChange(CurUninstallStep: TUninstallStep);
 var
   AppPath: String;
-  RemoveDataPage: TWizardPage;
-  RemoveDataCheckBox: TCheckBox;
-  RemoveData: Boolean;
 begin
   AppPath := ExpandConstant('{app}');
-  if CurUninstallStep = usUninstall then begin
-    RemoveDataPage := CreateCustomPage(wpWelcome, 'Remove User Data?', 'Do you want to remove your ObtainHub configuration and cache data?');
-    RemoveDataCheckBox := TCheckBox.Create(RemoveDataPage);
-    with RemoveDataCheckBox do begin
-      Parent := RemoveDataPage.Surface;
-      Caption := 'Remove configuration and cache data (%LOCALAPPDATA%\ObtainHub)';
-      Top := 10;
-      Left := 10;
-      Width := RemoveDataPage.SurfaceWidth - 20;
-      Checked := True;
-      Name := 'RemoveDataCheckBox';
-    end;
-    RemoveDataPage.Show;
-  end;
   if CurUninstallStep = usPostUninstall then begin
-    RemoveData := True;
-    if Assigned(RemoveDataPage) then begin
-      RemoveDataCheckBox := TCheckBox(RemoveDataPage.FindComponent('RemoveDataCheckBox'));
-      if Assigned(RemoveDataCheckBox) then
-        RemoveData := RemoveDataCheckBox.Checked;
-    end;
-    if RemoveData then begin
-      DeleteFile(ExpandConstant('{localappdata}\ObtainHub\*'), True);
-      RemoveDir(ExpandConstant('{localappdata}\ObtainHub'));
-    end;
     // Remove from PATH
     RemoveFromPath(AppPath, HKCU, 'Environment', 'PATH');
     if IsAdminLoggedOn() then
