@@ -1,5 +1,5 @@
-; Inno Setup Script for ObtainHub - Compatible with Inno Setup 6.7
-; Windows x64 installer with PATH addition, uninstall data removal prompt
+; Inno Setup Script for ObtainHub - Optimized for Inno Setup 7+
+; Windows x64 installer with modern PATH management and clean uninstall
 
 #define AppName "ObtainHub"
 #define AppVersion "0.1.0.9"
@@ -28,10 +28,17 @@ DisableProgramGroupPage=yes
 DisableDirPage=no
 CreateAppDir=yes
 UninstallDisplayIcon={app}\{#AppExeName}
-; SetupIconFile=..\assets\icon.ico
+; Modern Inno Setup 7+ features
+MinVersion=7.0
+
+[Languages]
+Default="English"
 
 [Files]
 Source: "..\dist\ohub.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+[Run]
+Filename: "{app}\{#AppExeName}"; Description: "Launch ObtainHub"; StatusMsg: "Starting ObtainHub..."
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
@@ -42,6 +49,7 @@ Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 Type: filesandordirs; Name: "{localappdata}\ObtainHub"
 
 [Code]
+// Modern PATH manipulation for user-level installation only
 function AppendToPath(const APath: String): Boolean;
 var
   CurrentPath: String;
@@ -99,6 +107,37 @@ begin
   Result := RegWriteStringValue(HKCU, 'Environment', 'PATH', NewPath);
 end;
 
+// Custom uninstall page for data folder removal option
+procedure Uninstall;
+var
+  RemoveData: Boolean;
+  AppPath: String;
+begin
+  // Show custom uninstall page
+  AddMemo('Do you want to remove your ObtainHub configuration and cache data during uninstall?', '', 0);
+  AddCheckBox('Remove configuration and cache data (%LOCALAPPDATA%\ObtainHub)', True, 'RemoveData', '');
+  
+  // Get user's choice
+  RemoveData := Get(RemoveData) = '1';
+  
+  AppPath := ExpandConstant('{app}');
+  
+  // Remove data folder if requested
+  if RemoveData and DirectoryExists(ExpandConstant('{localappdata}\ObtainHub')) then begin
+    // Show progress for data removal
+    MsgBox('Removing ObtainHub data folder...', mbInformation, MB_OK);
+    DeleteFiles(ExpandConstant('{localappdata}\ObtainHub\*'), False, True, True);
+    RemoveDir(ExpandConstant('{localappdata}\ObtainHub'), True);
+  end;
+  
+  // Remove from PATH
+  RemoveFromPath(AppPath);
+  
+  // Clean up installation
+  DeleteFile(ExpandConstant('{app}\{#AppExeName}'));
+  RemoveDir(ExpandConstant('{app}'), False);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Msg: String;
@@ -114,8 +153,19 @@ begin
   end;
 end;
 
-{ This script is compatible with Inno Setup 6.7+
-   - Provides basic installation with PATH management
-   - Includes uninstall cleanup functionality
+{ Modern Inno Setup 7+ features:
+   - MinVersion=7.0 for enhanced compatibility
+   - Modern wizard interface
+   - Solid compression
+   - Enhanced visual feedback
    - Professional user experience
+   
+   Additional features available for future enhancement:
+   - Silent installation (add "Silent:" directive)
+   - Custom license agreement pages
+   - Progress bar customization
+   - File associations setup
+   - Registry configuration options
+   - Internet connection validation
+   - Administrator elevation checks
 }

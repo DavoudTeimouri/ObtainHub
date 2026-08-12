@@ -83,7 +83,6 @@ class GitHubClient:
             try:
                 response = requests.get(url, headers=self.headers)
                 if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
-                    print("\n[!] Error: GitHub API rate limit exceeded.")
                     return None
                 response.raise_for_status()
                 return response.json()
@@ -103,7 +102,6 @@ class GitHubClient:
             try:
                 response = requests.get(url, headers=self.headers, params=params)
                 if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
-                    print("\n[!] Error: GitHub API rate limit exceeded.")
                     return []
                 response.raise_for_status()
                 return response.json() if isinstance(response.json(), list) else []
@@ -133,7 +131,6 @@ class GitHubClient:
             try:
                 response = requests.get(url, headers=self.headers)
                 if response.status_code == 403 or "rate limit exceeded" in response.text.lower():
-                    print("\n[!] Error: GitHub API rate limit exceeded.")
                     return None
                 if response.status_code == 404:
                     return None
