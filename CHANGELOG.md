@@ -5,6 +5,11 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0.13] - 2026-08-13
+
+### Fixed
+- Version desync: installer (Inno/MWiX) and PyPI metadata now derive from `obtainhub/__init__.py` via `tools/sync_versions.py`, run automatically in the release build. The MSI `ProductVersion` was stuck at `0.1.0.3`, which made `MajorUpgrade` block upgrading from any `0.1.0.x` install ("newer version already installed"). All version surfaces now report the correct release.
+
 ## [0.1.0.12] - 2026-08-13
 
 ### Added
