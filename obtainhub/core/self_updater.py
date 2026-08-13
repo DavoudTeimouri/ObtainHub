@@ -329,7 +329,10 @@ class SelfUpdater:
                     logger.info(f"No update needed: {e}")
                     return None
             except SelfUpdateError as e:
-                logger.error(f"Self-update check failed: {e}")
+                if not self.config.github_token and "403" in str(e):
+                    logger.debug(f"Self-update check skipped (no token, 403): {e}")
+                else:
+                    logger.error(f"Self-update check failed: {e}")
                 return None
             except Exception as e:
                 logger.error(f"Unexpected error during self-update check: {e}")

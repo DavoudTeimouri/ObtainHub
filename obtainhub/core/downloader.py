@@ -160,7 +160,8 @@ class Downloader:
                         details={"expected": expected_sha256, "actual": actual_sha256},
                     )
 
-            temp_path.rename(final_path)
+            # os.replace overwrites an existing final file (handles WinError 183)
+            os.replace(temp_path, final_path)
             logger.info(f"Download complete: {final_path}")
             return final_path
 
@@ -268,7 +269,8 @@ class Downloader:
                         details={"expected": expected_sha256, "actual": actual_sha256},
                     )
 
-            temp_path.rename(final_path)
+            # os.replace overwrites an existing final file (handles WinError 183)
+            os.replace(temp_path, final_path)
             logger.info(f"Download complete: {final_path}")
             return final_path
 

@@ -5,6 +5,17 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0.14] - 2026-08-13
+
+### Fixed
+- `ohub update` crashed on folder-managed apps (`not enough values to unpack`), which aborted the whole update loop before checking anything. Folder apps are now skipped with a clear message.
+- `ohub update` / `ohub install` now resolve an app by display name, not just exact id (e.g. `ohub update v2rayN` works).
+- `ohub install` download failed with `WinError 183` when the target file already existed. Downloads now overwrite via `os.replace`.
+- `ohub check` no longer re-scans all unmanaged system apps every run — only with `--all`. Managed apps are still checked (that's the point of check). Folder apps are skipped cleanly.
+- `ohub check` now waits for you to pick a candidate asset when no strict installer is found (interactive; saves the chosen pattern for future updates).
+- `ohub add` strips surrounding quotes so folder paths with spaces work (`ohub add "C:\My Apps" --type folder`).
+- Self-update check no longer logs a scary `403 Forbidden` error when run without a GitHub token (unauthenticated rate limiting is expected).
+
 ## [0.1.0.13] - 2026-08-13
 
 ### Fixed

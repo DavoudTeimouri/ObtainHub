@@ -59,7 +59,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.1.0.13 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.1.0.14 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -297,6 +297,40 @@ def _warn_repo_status(client: GitHubClient, app_id: str) -> None:
         print(f"  [!] Warning: {app_id} appears INACTIVE{msg}.")
 
 
+def _resolve_app_id(state_manager: StateManager, token: str) -> str:
+    """Resolve a user-supplied token to a managed app id.
+
+    Accepts either the exact app id (e.g. ``owner/repo`` or ``folder:...``)
+    or the app's display name (case-insensitive).
+    """
+    if state_manager.get_app(token):
+        return token
+    for app in state_manager.get_all_apps():
+        if app.name.lower() == token.lower():
+            return app.id
+    return token
+
+
+def _pick_candidate(candidates, app_id, state_manager, parsed):
+    """Choose a candidate asset for an app that has no strict installer.
+
+    Interactive when stdin is a TTY and not --json/--yes; otherwise defaults
+    to the first candidate. Saves the chosen asset pattern to state.
+    """
+    chosen = candidates[0]
+    interactive = (
+        not parsed.json
+        and not getattr(parsed, "yes", False)
+        and sys.stdin.isatty()
+    )
+    if interactive and len(candidates) > 1:
+        sel = _select_from_options(candidates, "  Select asset to track")
+        if sel:
+            chosen = sel
+    state_manager.update_app(app_id, asset_pattern=AssetMatcher.derive_asset_pattern(chosen))
+    return chosen
+
+
 def _select_from_options(opts, prompt, allow_default=False):
     """Prompt user to pick from a list of AssetMatch options.
 
@@ -329,7 +363,7 @@ def cmd_install(
     state_manager: StateManager,
     logger,
 ) -> int:
-    app_id = parsed.app
+    app_id = _resolve_app_id(state_manager, parsed.app)
     logger.info(f"Installing {app_id}")
 
     # Parse owner/repo
@@ -490,7 +524,7 @@ def cmd_update(
 
     apps_to_update = []
     if parsed.app:
-        apps_to_update = [parsed.app]
+        apps_to_update = [_resolve_app_id(state_manager, parsed.app)]
     else:
         apps = state_manager.get_all_apps()
         apps_to_update = [app.id for app in apps]
@@ -507,6 +541,11 @@ def cmd_update(
             app = state_manager.get_app(app_id)
             if not app:
                 print(f"Skipping {app_id}: not found in state")
+                continue
+
+            # Folder-managed apps have no remote update source
+            if app.app_type == "folder":
+                print(f"  {app.name} ({app_id}): folder-managed, no remote update check")
                 continue
 
             owner, repo = app_id.split("/")
@@ -688,14 +727,20 @@ def cmd_check(
         apps = state_manager.get_all_apps()
         apps_to_check = [app.id for app in apps]
 
-    # Unmanaged system apps (managed via exact GitHub repo match only)
+    # Unmanaged system apps - only scanned with --all (avoid re-scanning everything)
     system_apps = get_installed_system_apps()
     ohub_app_names = {app.name.lower() for app in state_manager.get_all_apps()}
     unmanaged_apps = [sa for sa in system_apps if sa.name.lower() not in ohub_app_names]
 
-    if not apps_to_check and not unmanaged_apps:
-        print("No apps to check.")
-        return 0
+    if parsed.all:
+        if not apps_to_check and not unmanaged_apps:
+            print("No apps to check.")
+            return 0
+    else:
+        if not apps_to_check:
+            print("No managed apps to check. Use --all to also scan system-installed apps.")
+            return 0
+        unmanaged_apps = []  # skip unmanaged scan unless --all
 
     # Managed apps
     print(f"Checking {len(apps_to_check)} managed app(s)...\n")
@@ -706,6 +751,10 @@ def cmd_check(
             app = state_manager.get_app(app_id)
             if not app:
                 print(f"Skipping {app_id}: not found in state")
+                continue
+
+            if app.app_type == "folder":
+                print(f"  {app.name} ({app_id}): folder-managed, no remote check")
                 continue
 
             owner, repo = app_id.split("/")
@@ -741,9 +790,8 @@ def cmd_check(
                         print(f"    Available assets (install/upgrade candidates):")
                         for i, opt in enumerate(candidates):
                             print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
-                        # Save the recommended candidate pattern for future updates
-                        state_manager.update_app(app_id, asset_pattern=matcher.derive_asset_pattern(candidates[0]))
-                        print(f"    Saved asset pattern for future updates: {matcher.derive_asset_pattern(candidates[0])}")
+                        chosen = _pick_candidate(candidates, app_id, state_manager, parsed)
+                        print(f"    Saved asset pattern for future updates: {matcher.derive_asset_pattern(chosen)}")
                     print()
                 else:
                     if not strict and candidates:
@@ -754,7 +802,7 @@ def cmd_check(
                         print(f"    No installer package - available assets:")
                         for i, opt in enumerate(candidates):
                             print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
-                        state_manager.update_app(app_id, asset_pattern=matcher.derive_asset_pattern(candidates[0]))
+                        _pick_candidate(candidates, app_id, state_manager, parsed)
                         print()
                     elif parsed.all:
                         print(f"  {app.name} ({app_id}): Up to date ({current_version})")
@@ -990,6 +1038,7 @@ def cmd_add(
     if not parsed.repo:
         print("Error: specify a repository (owner/repo) or a folder path with --type folder", file=sys.stderr)
         return 1
+    parsed.repo = parsed.repo.strip('"\'')
 
     # ---- Folder mode (local) ----
     if parsed.add_type == "folder":
