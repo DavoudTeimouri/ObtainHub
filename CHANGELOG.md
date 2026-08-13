@@ -5,6 +5,19 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0.0] - 2026-08-13
+
+### Fixed
+- `ohub update` now actually updates: it fetches the repo release, and when no standard installer is found it **always** lists candidate assets for you to select, then installs/extracts the chosen one. Previously it silently did nothing for apps without a strict installer.
+- Folder/zip apps are now checked and updated by resolving a GitHub repository from the app's **name** (auto-search on first update) instead of being marked "no remote check". If no repository is found, ohub tells you to `ohub remove` and re-`add` with `--name`/`--repo`.
+- `ohub check` candidate selection now **persists** the chosen asset (and links folder apps to the selected GitHub release), so subsequent `update` works without re-prompting.
+- `ohub uninstall` now resolves apps by display name (was failing with "App not found in state").
+- `ohub install` no longer reinstalls an app already managed by ohub; it only proceeds (acting as an update) when a newer version is available.
+
+### Changed
+- `ohub add --type folder` now requires `--name` (the real application name), used to find the matching GitHub repository for updates.
+- `_apply_match` records `github_repo` on the app so folder/zip apps chosen from a GitHub release stay linked.
+
 ## [0.2.0.0] - 2026-08-13
 
 ### Added

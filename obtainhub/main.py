@@ -59,7 +59,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.2.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.3.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -366,7 +366,7 @@ def _pick_candidate(candidates, app_id, state_manager, parsed):
     return chosen
 
 
-def _apply_match(app_id, app, release, match, state_manager, installer, parsed, *, action=True):
+def _apply_match(app_id, app, release, match, state_manager, installer, parsed, *, action=True, owner="", repo=""):
     """Download (and optionally install/extract) a chosen asset, then record it.
 
     Used by both `update` and `check` once a candidate asset is picked.
@@ -394,7 +394,7 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
                 source_url=release.get('html_url', ''),
                 tag=release.get('tag_name', ''),
             )
-            state_manager.update_app(app_id, asset_pattern=pattern)
+            state_manager.update_app(app_id, asset_pattern=pattern, github_repo=f"{owner}/{repo}" if owner else app.github_repo)
             return True, message
         return False, message
 
@@ -414,6 +414,7 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
             preferred_asset=match.name,
             source_url=release.get('html_url', ''),
             tag=release.get('tag_name', ''),
+            github_repo=f"{owner}/{repo}" if owner else app.github_repo,
         )
         return True, f"Extracted to {dest}"
 
@@ -426,6 +427,7 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
         preferred_asset=match.name,
         source_url=release.get('html_url', ''),
         tag=release.get('tag_name', ''),
+        github_repo=f"{owner}/{repo}" if owner else app.github_repo,
     )
     return True, f"Downloaded to {downloaded_path}"
 
@@ -474,6 +476,44 @@ def _select_from_options(opts, prompt, allow_default=False):
         return None
     print("Invalid selection.")
     return None
+
+
+def _resolve_repo_for_app(client, app, state_manager, parsed):
+    """Return (owner, repo) for an app, resolving folder/zip apps by name.
+
+    GitHub apps use their id directly. Folder/zip apps without an explicit
+    ``github_repo`` link are resolved by searching GitHub for their display
+    name; the result is stored on the app for future use. Returns
+    ``(None, None)`` if no repository can be determined.
+    """
+    if app.app_type == "github" or app.github_repo:
+        repo_id = app.id if app.app_type == "github" else app.github_repo
+        return repo_id.split("/", 1)
+
+    # Folder/zip app: try to find a repo by the app's display name
+    print(f"  {app.name}: looking up GitHub repository by name '{app.name}'...")
+    try:
+        result = client.search_repositories(
+            query=app.name, min_stars=0, ignore_case=True, active_only=False,
+        )
+    except Exception as e:
+        print(f"    Search failed: {e}")
+        return None, None
+    if result.get("error"):
+        print(f"    Search failed: {result['error']}")
+        return None, None
+    items = result.get("items", [])
+    if not items:
+        print(f"    No GitHub repository found for '{app.name}'.")
+        print(f"    Tip: ohub remove {app.id}, then ohub add \"<path>\" --type folder --name {app.name} --repo owner/{app.name}")
+        return None, None
+    exact = next((r for r in items
+                  if r.get("name", "").lower() == app.name.lower()
+                  or r.get("full_name", "").lower().endswith("/" + app.name.lower())), None)
+    repo_id = (exact or items[0])["full_name"]
+    print(f"    Linked to: {repo_id}")
+    state_manager.update_app(app.id, github_repo=repo_id)
+    return repo_id.split("/", 1)
 
 
 def cmd_install(
@@ -525,6 +565,16 @@ def cmd_install(
 
     # Archived / inactive warning
     _warn_repo_status(client, app_id)
+
+    # If already managed by ohub, do not reinstall unless a newer version exists
+    existing = state_manager.get_app(app_id)
+    if existing:
+        latest_version = release.get('tag_name', '').lstrip('v')
+        if not (latest_version > (existing.version or '')):
+            print(f"{app_id} is already managed by ohub and up to date ({existing.version}).")
+            print("Use 'ohub update' to check for newer releases.")
+            return 0
+        print(f"{app_id} already managed but a newer version ({latest_version}) is available - updating.")
 
     # Match asset
     matcher = AssetMatcher(
@@ -666,15 +716,10 @@ def cmd_update(
                 print(f"Skipping {app_id}: not found in state")
                 continue
 
-            # Folder-managed apps: only updatable if linked to a GitHub repo
-            if app.app_type == "folder":
-                if app.github_repo:
-                    owner, repo = app.github_repo.split("/", 1)
-                else:
-                    print(f"  {app.name} ({app_id}): folder-managed, no remote update source")
-                    continue
-            else:
-                owner, repo = app_id.split("/")
+            owner, repo = _resolve_repo_for_app(client, app, state_manager, parsed)
+            if not owner:
+                continue
+
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
             if not release:
@@ -688,15 +733,12 @@ def cmd_update(
             latest_version = release.get('tag_name', '').lstrip("v")
             has_update = latest_version > current_version
 
-            if not has_update:
-                print(f"  {app.name} ({app_id}): Up to date ({current_version})")
-                continue
-
             match = matcher.get_best_match(release.get('assets', []))
             if app.app_type == "zip" and not match:
                 match = matcher.match_by_pattern(release.get('assets', []), app.asset_pattern)
 
-            # No strict installer found: offer candidate assets (installers + portable)
+            # No strict installer found: always offer candidate assets to pick from
+            user_picked = False
             if not match:
                 candidates = matcher.get_installable_candidates(release.get('assets', []))
                 if candidates:
@@ -705,9 +747,15 @@ def cmd_update(
                         print(f"    [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
                     chosen = candidates[0] if parsed.yes else (_select_from_options(candidates, "  Select asset") or candidates[0])
                     match = chosen
+                    user_picked = True
                 else:
-                    print(f"  {app.name} ({app_id}): No suitable asset found in new release")
+                    print(f"  {app.name} ({app_id}): No suitable asset found in release {latest_version}")
                     continue
+
+            # Standard installer present but app already up to date -> skip (unless user picked)
+            if not user_picked and not has_update:
+                print(f"  {app.name} ({app_id}): Up to date ({current_version})")
+                continue
 
             # If there are multiple installer options, let user choose
             if not parsed.yes:
@@ -721,14 +769,15 @@ def cmd_update(
                     if sel:
                         match = sel
 
-            print(f"  {app.name} ({app_id}): {current_version} -> {latest_version}")
+            print(f"  {app.name} ({app_id}): {current_version or '-'} -> {latest_version}")
             if parsed.dry_run:
                 print(f"    Would download {match.name} ({match.installer_type.name})")
                 updated_count += 1
                 continue
 
             applied, message = _apply_match(
-                app_id, app, release, match, state_manager, installer, parsed, action=True,
+                app_id, app, release, match, state_manager, installer, parsed,
+                action=True, owner=owner, repo=repo,
             )
             if applied:
                 print(f"  Success: {message}")
@@ -893,7 +942,8 @@ def cmd_check(
                         print(f"    Saved asset pattern for future updates: {matcher.derive_asset_pattern(chosen)}")
                         if has_update and not parsed.json:
                             applied, message = _apply_match(
-                                app_id, app, release, chosen, state_manager, SilentInstaller(), parsed, action=True,
+                                app_id, app, release, chosen, state_manager, SilentInstaller(), parsed,
+                                action=True, owner=owner, repo=repo,
                             )
                             print(f"    Applied: {message}")
                     print()
@@ -1061,7 +1111,7 @@ def cmd_uninstall(
     logger,
 ) -> int:
     """Handle uninstall command."""
-    app_id = parsed.app
+    app_id = _resolve_app_id(state_manager, parsed.app)
 
     if not parsed.yes:
         confirm = input(f"Uninstall {app_id}? [y/N]: ").strip().lower()
@@ -1174,7 +1224,7 @@ def cmd_add(
       github - add a GitHub repo for management (default)
       zip    - add a repo that only ships archive assets: download the archive,
                extract it to a folder, and track it for updates
-      folder - add a local folder; Only its ROOT is scanned for apps
+      folder - add a local folder; --name (app name) is REQUIRED to find updates
     """
     if not parsed.repo:
         print("Error: specify a repository (owner/repo) or a folder path with --type folder", file=sys.stderr)
@@ -1183,6 +1233,10 @@ def cmd_add(
 
     # ---- Folder mode (local) ----
     if parsed.add_type == "folder":
+        if not parsed.name:
+            print("Error: --name is required for folder mode (the real application name).", file=sys.stderr)
+            print("       Example: ohub add \"D:\\MyApp\" --type folder --name MyApp [--repo owner/MyApp]", file=sys.stderr)
+            return 1
         folder = Path(parsed.repo).expanduser()
         if is_restricted_folder(folder):
             print(f"Error: refusing to scan '{folder}' - it is a filesystem root (e.g. C:\\).", file=sys.stderr)

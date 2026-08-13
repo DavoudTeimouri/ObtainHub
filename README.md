@@ -50,7 +50,7 @@ ohub install owner/repo
 # Add a repo / archive / local folder for management
 ohub add owner/repo
 ohub add owner/repo --type zip            # repo ships archives: download, extract, track
-ohub add "D:\My Folder" --type folder     # track apps in a local folder
+ohub add "D:\My Folder" --type folder --name MyApp     # track folder app (name required)
 
 # Check for updates (don't install)
 ohub check
@@ -131,15 +131,15 @@ Add a repository, archive, or local folder for management.
 ohub add owner/repo                       # Track a GitHub repo (exact match)
 ohub add owner/repo --type zip             # Repo ships archives: download, extract, track
 ohub add owner/repo --type zip --location D:\Apps\MyApp
-ohub add "D:\MyFolder" --type folder      # Track apps in a local folder (root only, no recursion)
-ohub add "D:\MyFolder" --type folder --recursive   # Also scan one level into subfolders
-ohub add "D:\MyFolder" --type folder --repo owner/repo   # Link folder app to a GitHub repo for updates
+ohub add "D:\MyFolder" --type folder --name MyApp      # Track a folder app (--name required)
+ohub add "D:\MyFolder" --type folder --name MyApp --recursive   # Also scan one level into subfolders
+ohub add "D:\MyFolder" --type folder --name MyApp --repo owner/MyApp   # Link folder app to a GitHub repo for updates
 ohub add owner/repo --as-source            # Also register as a manifest source
 ```
 
 - `--type github` (default): track a GitHub repository by exact `owner/repo`.
 - `--type zip`: for repositories (including archived ones) that only ship ZIP/portable assets — the archive is downloaded, extracted to a folder, and tracked; updates re-use the saved asset pattern.
-- `--type folder`: scan a local folder for applications (root by default; `--recursive` also scans one level into subfolders). Drive roots such as `C:\` are refused. Quote the path if it contains spaces, e.g. `ohub add "D:\My Folder" --type folder`. Use `--repo owner/repo` to link the folder app to a GitHub repository so it can be checked/updated like a managed app.
+- `--type folder`: scan a local folder for applications (root by default; `--recursive` also scans one level into subfolders). **`--name` is required** — it is the real application name used to find the matching GitHub repository for updates. Drive roots such as `C:\` are refused. Quote the path if it contains spaces, e.g. `ohub add "D:\My Folder" --type folder --name MyApp`. Use `--repo owner/repo` to link the folder app to a GitHub repository so it can be checked/updated like a managed app.
 - During check/install/update/add, archived or inactive repositories print a warning.
 
 ### `ohub list`
