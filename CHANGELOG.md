@@ -5,6 +5,23 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0.12] - 2026-08-13
+
+### Added
+- `ohub add --type zip <owner/repo>`: manage repositories that only ship archive assets (e.g. archived repos) — the ZIP is downloaded, extracted to a folder, and tracked for updates
+- `ohub add --type folder <path>`: track applications inside a local folder (only the folder root is scanned, no recursion)
+- `ohub check` / `install` / `update` now list candidate assets when no standard installer is found, and remember the chosen asset pattern for future updates
+- Archived / inactive repositories are flagged with a warning during check, install, update, and add
+
+### Changed
+- `ohub check` no longer suggests candidate GitHub repositories for unmanaged apps — it only links an EXACT repository name match
+- Installer priority is EXE_SETUP (Inno Setup) > MSI > ZIP_INSTALLER; portable archives are now extracted and managed instead of being download-only
+- `ohub list` shows app type (github/zip/folder) and install location
+
+### Fixed
+- `ohub check` respects managed apps and reports updates/available assets without re-scanning everything every run
+- State schema extended with `app_type`, `install_location`, `asset_pattern`, `preferred_asset` (backward compatible)
+
 ## [0.1.0.11] - 2026-08-13
 
 ### Fixed

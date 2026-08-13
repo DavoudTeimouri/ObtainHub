@@ -85,13 +85,13 @@ class TestAssetMatcher:
         test_cases = [
             "app-Setup.exe", "app-Install.exe", "Setup.exe",
             "Install.exe", "app-setup.exe", "app_setup.exe",
-            "app-install.exe", "app_install.exe", "app.exe",
+            "app-install.exe", "app_install.exe",
         ]
         for name in test_cases:
             assets = [{"name": name, "browser_download_url": "url", "size": 100}]
             matches = matcher.match_assets(assets)
             assert len(matches) == 1, f"Failed for {name}"
-            assert matches[0].installer_type == InstallerType.EXE, f"Failed for {name}"
+            assert matches[0].installer_type == InstallerType.EXE_SETUP, f"Failed for {name}"
             assert matches[0].is_download_only is False, f"Failed for {name}"
 
     def test_installer_type_zip(self, matcher):
@@ -110,8 +110,8 @@ class TestAssetMatcher:
         ]
         matches = matcher.match_assets(assets)
         assert len(matches) == 2
-        assert matches[0].installer_type == InstallerType.MSI
-        assert matches[1].installer_type == InstallerType.EXE
+        assert matches[0].installer_type == InstallerType.EXE_SETUP
+        assert matches[1].installer_type == InstallerType.MSI
 
     def test_priority_exe_over_zip(self, matcher):
         """Test that EXE is preferred over ZIP."""
@@ -121,7 +121,7 @@ class TestAssetMatcher:
         ]
         matches = matcher.match_assets(assets)
         assert len(matches) == 2
-        assert matches[0].installer_type == InstallerType.EXE
+        assert matches[0].installer_type == InstallerType.EXE_SETUP
         assert matches[1].installer_type == InstallerType.ZIP
 
     def test_get_best_match(self, matcher):
@@ -133,7 +133,7 @@ class TestAssetMatcher:
         matches = matcher.match_assets(assets)
         best = matcher.get_best_match(assets)
         assert best is not None
-        assert best.installer_type == InstallerType.MSI
+        assert best.installer_type == InstallerType.EXE_SETUP
 
     def test_exclude_checksum_files(self, matcher):
         """Test that checksum files are excluded."""
@@ -400,7 +400,7 @@ class TestSelfUpdater:
                     name="app-Setup.exe",
                     url="url1",
                     architecture=Architecture.X64,
-                    installer_type=InstallerType.EXE,
+                    installer_type=InstallerType.EXE_SETUP,
                     is_download_only=False,
                     size=100,
                     sha256="",
@@ -429,7 +429,7 @@ class TestSelfUpdater:
         updater = SelfUpdater("1.0.0")
         installer = updater.find_windows_x64_installer(release, allow_prerelease=False)
         assert installer is not None
-        assert installer.installer_type == InstallerType.MSI
+        assert installer.installer_type == InstallerType.EXE_SETUP
 
 
 class TestCheckAndUpdate:

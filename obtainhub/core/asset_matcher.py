@@ -79,7 +79,7 @@ class AssetMatcher:
 
         # Installer type detection
         self.installer_regexes = {
-            InstallerType.EXE_SETUP: re.compile(r'-Setup\.exe$|-setup\.exe$', re.IGNORECASE),
+            InstallerType.EXE_SETUP: re.compile(r'-Setup\.exe$|-setup\.exe$|Setup\.exe$|-Install\.exe$|-install\.exe$|Install\.exe$', re.IGNORECASE),
             InstallerType.MSI: re.compile(r'\.msi$', re.IGNORECASE),
             InstallerType.ZIP_INSTALLER: re.compile(r'\.zip$', re.IGNORECASE),  # Will be further filtered
             InstallerType.ZIP: re.compile(r'\.zip$', re.IGNORECASE),
@@ -149,6 +149,7 @@ class AssetMatcher:
         # Check for EXE_SETUP (Inno Setup)
         if self.installer_regexes[InstallerType.EXE_SETUP].search(name):
             return InstallerType.EXE_SETUP
+
         
         # Check for MSI
         if self.installer_regexes[InstallerType.MSI].search(name):
@@ -305,6 +306,48 @@ class AssetMatcher:
         installer_matches = [m for m in matches if m.installer_type in installer_priority]
         installer_matches.sort(key=lambda m: installer_priority.get(m.installer_type, 99))
         return installer_matches
+
+    def get_installable_candidates(self, assets: List[dict]) -> List[AssetMatch]:
+        """Get every downloadable Windows asset as a candidate list.
+
+        Used when no strict installer (EXE_SETUP/MSI/ZIP_INSTALLER) is found, e.g.
+        archived repos that only ship portable ZIPs or standalone EXEs. Sorted by
+        installer priority so the recommended choice is first.
+        """
+        matches = self.match_assets(assets)
+        priority = {
+            InstallerType.EXE_SETUP: 0,
+            InstallerType.MSI: 1,
+            InstallerType.ZIP_INSTALLER: 2,
+            InstallerType.ZIP: 3,
+            InstallerType.EXE_STANDALONE: 4,
+        }
+        return sorted(matches, key=lambda m: priority.get(m.installer_type, 99))
+
+    @staticmethod
+    def derive_asset_pattern(match: AssetMatch) -> str:
+        """Build a glob pattern that re-selects this asset in future releases.
+
+        Strips the version segment (digits/dots) and anchors the architecture so
+        the same asset type is auto-picked on the next release without asking.
+        """
+        name = match.name
+        # Remove version-like tokens: 1.2.3, v1_2_3, 20240101
+        cleaned = re.sub(r'(?i)\bv?\d+[\d._-]*\d*', '*', name)
+        # Collapse repeated wildcards
+        cleaned = re.sub(r'\*+', '*', cleaned)
+        return cleaned
+
+    def match_by_pattern(self, assets: List[dict], pattern: str) -> Optional[AssetMatch]:
+        """Return the first asset whose name matches the saved glob pattern, else None."""
+        if not pattern:
+            return None
+        import fnmatch
+        matches = self.match_assets(assets)
+        for m in sorted(matches, key=self._sort_key):
+            if fnmatch.fnmatch(m.name.lower(), pattern.lower()):
+                return m
+        return None
 
 
 def get_asset_matcher(**kwargs) -> AssetMatcher:

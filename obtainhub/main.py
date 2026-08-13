@@ -5,6 +5,7 @@ import argparse
 import signal
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 from obtainhub.core.config import get_config_manager, ConfigManager, ManifestSource
@@ -12,9 +13,15 @@ from obtainhub.core.state import get_state_manager, StateManager, CheckHistoryEn
 from obtainhub.core.logger import setup_logging, get_logger, LogLevel
 from obtainhub.core.self_updater import SelfUpdater, check_and_update
 from obtainhub.core.github_client import GitHubClient
-from obtainhub.core.asset_matcher import AssetMatcher, InstallerType
+from obtainhub.core.asset_matcher import AssetMatcher, AssetMatch, InstallerType
 from obtainhub.core.downloader import download_file, Downloader
 from obtainhub.core.installer import install_app, InstallResult, SilentInstaller
+from obtainhub.core.local_apps import (
+    add_zip_app,
+    add_folder_app,
+    extract_archive,
+    is_restricted_folder,
+)
 from obtainhub.core.system_scanner import get_installed_system_apps
 from obtainhub.core.exceptions import (
     ObtainHubError,
@@ -52,7 +59,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.1.0.11 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.1.0.12 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -141,9 +148,20 @@ def main(args: Optional[List[str]] = None) -> int:
     remove_parser.add_argument("name", help="Source name")
 
     # add (shorthand for adding a GitHub repo by owner/repo)
-    add_parser = subparsers.add_parser("add", help="Add a GitHub repository (owner/repo)")
-    add_parser.add_argument("repo", help="Repository in owner/repo format")
+    add_parser = subparsers.add_parser("add", help="Add a repository, archive, or local folder for management")
+    add_parser.add_argument("repo", nargs="?", help="Repository in owner/repo format, or a local folder path (with --type folder)")
     add_parser.add_argument("--name", help="Custom name (default: repo name)")
+    add_parser.add_argument(
+        "--type", dest="add_type", choices=["github", "zip", "folder"],
+        default="github", help="Add mode: github repo, zip archive repo, or local folder",
+    )
+    add_parser.add_argument(
+        "--location", help="Destination folder for extracted zip apps (default: install dir/portable/<name>)",
+    )
+    add_parser.add_argument(
+        "--as-source", action="store_true",
+        help="Also register the repo as a manifest source",
+    )
 
     # search
     search_parser = subparsers.add_parser("search", help="Search GitHub repositories")
@@ -263,13 +281,54 @@ def main(args: Optional[List[str]] = None) -> int:
         return 1
 
 
+def _warn_repo_status(client: GitHubClient, app_id: str) -> None:
+    """Print a warning (once) if the repo is archived or inactive."""
+    try:
+        status = client.get_repo_status(*app_id.split("/", 1))
+    except Exception:
+        return
+    if not status:
+        return
+    if status["archived"]:
+        print(f"  [!] Warning: {app_id} is ARCHIVED — no new releases will be published.")
+    elif status["inactive"]:
+        days = status.get("last_push_days")
+        msg = f" (last push {days} days ago)" if days is not None else ""
+        print(f"  [!] Warning: {app_id} appears INACTIVE{msg}.")
+
+
+def _select_from_options(opts, prompt, allow_default=False):
+    """Prompt user to pick from a list of AssetMatch options.
+
+    Returns the chosen AssetMatch, or None to cancel. If ``allow_default`` is
+    set, choice 0 selects ``opts[0]`` (the recommended default).
+    """
+    if not opts:
+        return None
+    try:
+        if allow_default:
+            choice = input(prompt + f" [0-{len(opts)}]: ").strip()
+            if choice == "" or choice == "0":
+                return opts[0]
+            if choice.isdigit() and 1 <= int(choice) <= len(opts):
+                return opts[int(choice) - 1]
+        else:
+            choice = input(prompt + f" [1-{len(opts)}]: ").strip()
+            if choice.isdigit() and 1 <= int(choice) <= len(opts):
+                return opts[int(choice) - 1]
+    except (EOFError, KeyboardInterrupt):
+        print("\nCancelled.")
+        return None
+    print("Invalid selection.")
+    return None
+
+
 def cmd_install(
     parsed: argparse.Namespace,
     config_manager: ConfigManager,
     state_manager: StateManager,
     logger,
 ) -> int:
-    """Handle install command."""
     app_id = parsed.app
     logger.info(f"Installing {app_id}")
 
@@ -302,6 +361,18 @@ def cmd_install(
                 print("Cancelled.")
                 return 1
 
+    # Check prerelease
+    if release.get('prerelease') and not parsed.prerelease:
+        print(f"Warning: {release.tag_name} is a prerelease. Use --prerelease to install.")
+        if not parsed.yes:
+            confirm = input("Continue anyway? [y/N]: ").strip().lower()
+            if confirm != "y":
+                print("Cancelled.")
+                return 1
+
+    # Archived / inactive warning
+    _warn_repo_status(client, app_id)
+
     # Match asset
     matcher = AssetMatcher(
         allow_arm64=False,
@@ -310,48 +381,54 @@ def cmd_install(
     )
     match = matcher.get_best_match(release.get('assets', []))
 
-    # If no auto-match found, check for installer options and let user choose
+    # No strict installer? Offer candidate assets (ZIP/EXE/etc.) for selection
     if not match:
-        installer_options = matcher.get_installer_options(release.get('assets', []))
-        if installer_options:
-            print(f"Multiple installer assets found for {app_id}:")
-            for i, opt in enumerate(installer_options):
-                print(f"  [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
-            try:
-                choice = input(f"Select installer [1-{len(installer_options)}]: ").strip()
-                if choice.isdigit() and 1 <= int(choice) <= len(installer_options):
-                    match = installer_options[int(choice) - 1]
-                    print(f"Selected: {match.name} ({match.installer_type.name})")
-                else:
-                    print(f"Invalid selection. Using first option: {installer_options[0].name}")
-                    match = installer_options[0]
-            except (EOFError, KeyboardInterrupt):
-                print("\nCancelled.")
-                return 1
-        else:
-            print(f"Error: No suitable installer asset found for {app_id}", file=sys.stderr)
+        candidates = matcher.get_installable_candidates(release.get('assets', []))
+        if not candidates:
+            print(f"Error: No suitable installer or asset found for {app_id}", file=sys.stderr)
             return 1
+        print(f"No standard installer found for {app_id}. Available assets:")
+        for i, opt in enumerate(candidates):
+            print(f"  [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
+        if parsed.yes:
+            match = candidates[0]
+        else:
+            sel = _select_from_options(candidates, "Select asset to install")
+            if not sel:
+                return 1
+            match = sel
 
-    # If there are multiple installer options, let user choose
+    # If multiple strict installers, confirm the chosen one
     if not parsed.yes and not parsed.download_only:
         installer_options = matcher.get_installer_options(release.get('assets', []))
+        if len(installer_options) > 1 and match not in installer_options:
+            installer_options = [match] + installer_options
         if len(installer_options) > 1:
             print(f"Multiple installer assets found for {app_id}:")
             for i, opt in enumerate(installer_options):
-                print(f"  [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
-            print(f"  [0] Use default: {match.name} ({match.architecture.value}, {match.installer_type.name})")
-            try:
-                choice = input(f"Select installer [0-{len(installer_options)}]: ").strip()
-                if choice.isdigit() and 1 <= int(choice) <= len(installer_options):
-                    match = installer_options[int(choice) - 1]
-                    print(f"Selected: {match.name} ({match.installer_type.name})")
-                else:
-                    print(f"Using default: {match.name} ({match.installer_type.name})")
-            except (EOFError, KeyboardInterrupt):
-                print("\nCancelled.")
-                return 1
+                mark = " <=" if opt is match else ""
+                print(f"  [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes){mark}")
+            print(f"  [0] Use current selection: {match.name}")
+            sel = _select_from_options(installer_options, "Select installer", allow_default=True)
+            if sel:
+                match = sel
 
     print(f"Found: {match.name} ({match.architecture.value}, {match.installer_type.name})")
+
+    # Portable archive (ZIP / standalone EXE chosen as target): extract to a folder
+    if match.installer_type in (InstallerType.ZIP, InstallerType.ZIP_INSTALLER) and not parsed.download_only:
+        try:
+            app = add_zip_app(
+                app_id, release,
+                name=parsed.name or repo,
+                prefer_asset=match,
+            )
+            version = release.get('tag_name', '').lstrip('v')
+            print(f"Installed portable app {app.name} v{version} at {app.install_location}")
+            return 0
+        except Exception as e:
+            print(f"Failed to install archive: {e}", file=sys.stderr)
+            return 1
 
     # Download
     print(f"Downloading...")
@@ -368,7 +445,7 @@ def cmd_install(
     print(f"Downloaded to: {downloaded_path}")
 
     # Install
-    if parsed.download_only or match.installer_type == InstallerType.ZIP:
+    if parsed.download_only or match.installer_type == InstallerType.EXE_STANDALONE:
         print(f"Download-only mode: {downloaded_path}")
         return 0
 
@@ -390,6 +467,7 @@ def cmd_install(
             "installer_path": str(downloaded_path),
             "source_url": release.get('html_url', ''),
             "tag": release.get('tag_name', ''),
+            "asset_pattern": matcher.derive_asset_pattern(match),
         })
     else:
         print(f"Install failed: {message}")
@@ -431,12 +509,15 @@ def cmd_update(
                 print(f"Skipping {app_id}: not found in state")
                 continue
 
-            owner, repo = app_id.split("/", 1)
+            owner, repo = app_id.split("/")
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
             if not release:
-                print(f"Skipping {app_id}: no release found")
+                print(f"  Skipping {app_id}: no release found")
                 continue
+
+            # Archived / inactive warning
+            _warn_repo_status(client, app_id)
 
             current_version = app.version
             latest_version = release.get('tag_name', '').lstrip("v")
@@ -448,24 +529,36 @@ def cmd_update(
 
             match = matcher.get_best_match(release.get('assets', []))
 
-            # If no auto-match found, check for installer options and let user choose
+            # Portable archive apps: re-pick by saved pattern, then re-extract
+            if app.app_type == "zip":
+                if not match:
+                    match = matcher.match_by_pattern(release.get('assets', []), app.asset_pattern)
+                if not match:
+                    candidates = matcher.get_installable_candidates(release.get('assets', []))
+                    if not candidates:
+                        print(f"  {app.name} ({app_id}): No suitable asset found in new release")
+                        continue
+                    match = candidates[0] if parsed.yes else (_select_from_options(candidates, "  Select asset") or candidates[0])
+                print(f"  {app.name} ({app_id}): {current_version} -> {latest_version}")
+                try:
+                    add_zip_app(app_id, release, name=app.name, prefer_asset=match)
+                    print(f"  Updated portable app {app.name} -> {app.install_location}")
+                    updated_count += 1
+                except Exception as e:
+                    print(f"  Failed to update archive: {e}")
+                continue
+
+            # If no auto-match found, offer candidate assets
             if not match:
-                installer_options = matcher.get_installer_options(release.get('assets', []))
+                candidates = matcher.get_installable_candidates(release.get('assets', []))
+                installer_options = [m for m in candidates if m.installer_type in (InstallerType.EXE_SETUP, InstallerType.MSI, InstallerType.ZIP_INSTALLER)]
                 if installer_options:
                     print(f"  Multiple installer assets found for {app_id}:")
                     for i, opt in enumerate(installer_options):
                         print(f"    [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
-                    try:
-                        choice = input(f"  Select installer [1-{len(installer_options)}]: ").strip()
-                        if choice.isdigit() and 1 <= int(choice) <= len(installer_options):
-                            match = installer_options[int(choice) - 1]
-                            print(f"  Selected: {match.name} ({match.installer_type.name})")
-                        else:
-                            print(f"  Invalid selection. Using first option: {installer_options[0].name}")
-                            match = installer_options[0]
-                    except (EOFError, KeyboardInterrupt):
-                        print("\nCancelled.")
-                        return 1
+                    sel = installer_options[0] if parsed.yes else _select_from_options(installer_options, "  Select installer")
+                    if sel:
+                        match = sel
                 else:
                     print(f"  {app.name} ({app_id}): No suitable installer asset found")
                     continue
@@ -478,16 +571,9 @@ def cmd_update(
                     for i, opt in enumerate(installer_options):
                         print(f"    [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
                     print(f"    [0] Use default: {match.name} ({match.architecture.value}, {match.installer_type.name})")
-                    try:
-                        choice = input(f"  Select installer [0-{len(installer_options)}]: ").strip()
-                        if choice.isdigit() and 1 <= int(choice) <= len(installer_options):
-                            match = installer_options[int(choice) - 1]
-                            print(f"  Selected: {match.name} ({match.installer_type.name})")
-                        else:
-                            print(f"  Using default: {match.name} ({match.installer_type.name})")
-                    except (EOFError, KeyboardInterrupt):
-                        print("\nCancelled.")
-                        return 1
+                    sel = _select_from_options(installer_options, "  Select installer", allow_default=True)
+                    if sel:
+                        match = sel
 
             print(f"  {app.name} ({app_id}): {current_version} -> {latest_version}")
             print(f"    Downloading {match.name}...")
@@ -512,6 +598,7 @@ def cmd_update(
                     source_url=release.get('html_url', ''),
                     tag=release.get('tag_name', ''),
                 )
+                state_manager.update_app(app_id, asset_pattern=matcher.derive_asset_pattern(match))
                 updated_count += 1
             elif result == InstallResult.MANUAL_UNINSTALL_REQUIRED:
                 print(f"  {message}")
@@ -584,8 +671,11 @@ def cmd_check(
     logger,
 ) -> int:
     """Handle check command - check for updates without installing.
-    
-    Also checks unmanaged system apps and offers to add them to ohub management.
+
+    - Managed apps: check exact GitHub repo, warn if archived/inactive, and if no
+      strict installer is found, list candidate assets for install/upgrade.
+    - Unmanaged apps: try to find the EXACT matching GitHub repo; candidates list
+      removed by design - only an exact match is offered for linking.
     """
     token = config_manager.load().github_token
     client = GitHubClient(token=token)
@@ -598,7 +688,7 @@ def cmd_check(
         apps = state_manager.get_all_apps()
         apps_to_check = [app.id for app in apps]
 
-    # Also check unmanaged system apps
+    # Unmanaged system apps (managed via exact GitHub repo match only)
     system_apps = get_installed_system_apps()
     ohub_app_names = {app.name.lower() for app in state_manager.get_all_apps()}
     unmanaged_apps = [sa for sa in system_apps if sa.name.lower() not in ohub_app_names]
@@ -607,7 +697,7 @@ def cmd_check(
         print("No apps to check.")
         return 0
 
-    # Managed apps: only show those with updates or asset/version issues
+    # Managed apps
     print(f"Checking {len(apps_to_check)} managed app(s)...\n")
 
     results = []
@@ -618,7 +708,7 @@ def cmd_check(
                 print(f"Skipping {app_id}: not found in state")
                 continue
 
-            owner, repo = app_id.split("/", 1)
+            owner, repo = app_id.split("/")
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
             if not release:
@@ -629,46 +719,55 @@ def cmd_check(
             latest_version = release.get('tag_name', '').lstrip("v")
             has_update = latest_version > current_version
 
+            _warn_repo_status(client, app_id)
+
+            # Prefer saved asset pattern, then strict installer, then candidates
             match = matcher.get_best_match(release.get('assets', []))
-            installer_options = matcher.get_installer_options(release.get('assets', []))
+            if app.app_type == "zip" and not match:
+                match = matcher.match_by_pattern(release.get('assets', []), app.asset_pattern)
+
+            candidates = matcher.get_installable_candidates(release.get('assets', []))
+            strict = [m for m in candidates if m.installer_type in (InstallerType.EXE_SETUP, InstallerType.MSI, InstallerType.ZIP_INSTALLER)]
 
             if not parsed.json:
                 if has_update:
-                    asset_info = f"{match.name} ({match.installer_type.name})" if match else "No suitable asset"
+                    asset_info = f"{match.name} ({match.installer_type.name})" if match else "No suitable installer"
                     print(f"  {app.name} ({app_id})")
                     print(f"    Current:  {current_version}")
                     print(f"    Latest:   {latest_version}")
                     print(f"    Status:   UPDATE AVAILABLE")
                     print(f"    Asset:    {asset_info}")
-                    if not match and installer_options:
-                        print(f"    Available assets:")
-                        for i, opt in enumerate(installer_options):
-                            print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name})")
+                    if not match and candidates:
+                        print(f"    Available assets (install/upgrade candidates):")
+                        for i, opt in enumerate(candidates):
+                            print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
+                        # Save the recommended candidate pattern for future updates
+                        state_manager.update_app(app_id, asset_pattern=matcher.derive_asset_pattern(candidates[0]))
+                        print(f"    Saved asset pattern for future updates: {matcher.derive_asset_pattern(candidates[0])}")
                     print()
                 else:
-                    # Up to date: silent unless --all/--json or no installable asset
-                    if not match and installer_options:
+                    if not strict and candidates:
                         print(f"  {app.name} ({app_id})")
                         print(f"    Current:  {current_version}")
                         print(f"    Latest:   {latest_version}")
                         print(f"    Status:   Up to date")
-                        print(f"    Available assets:")
-                        for i, opt in enumerate(installer_options):
-                            print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name})")
+                        print(f"    No installer package - available assets:")
+                        for i, opt in enumerate(candidates):
+                            print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
+                        state_manager.update_app(app_id, asset_pattern=matcher.derive_asset_pattern(candidates[0]))
                         print()
                     elif parsed.all:
                         print(f"  {app.name} ({app_id}): Up to date ({current_version})")
 
-            result = {
+            results.append({
                 "app": app_id,
                 "current_version": current_version,
                 "latest_version": latest_version,
                 "has_update": has_update,
                 "prerelease": release.get('prerelease', False),
-                "asset": f"{match.name} ({match.installer_type.name})" if match else "No suitable asset",
+                "asset": f"{match.name} ({match.installer_type.name})" if match else "No suitable installer",
                 "release_url": release.get('html_url', ''),
-            }
-            results.append(result)
+            })
 
         except Exception as e:
             logger.error(f"Failed to check {app_id}: {e}")
@@ -677,7 +776,7 @@ def cmd_check(
             else:
                 results.append({"app": app_id, "error": str(e)})
 
-    # Check unmanaged apps
+    # Unmanaged apps: exact GitHub repo match only (no candidate list)
     if unmanaged_apps:
         check_history = state_manager.get_check_history()
         print(f"\nFound {len(unmanaged_apps)} unmanaged application(s) in system registry:\n")
@@ -692,37 +791,13 @@ def cmd_check(
                 continue
 
             print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
-            print("    Checking GitHub for matching repository...")
+            print("    Searching GitHub for EXACT repository match...")
 
-            search_result = None
-            for attempt in range(3):
-                try:
-                    search_result = client.search_repositories(
-                        query=sys_app.name,
-                        min_stars=0,
-                        ignore_case=True,
-                        active_only=True,
-                    )
-                    if search_result.get("error") != "rate_limit":
-                        break
-                    if not client.token:
-                        print(f"    [!] GitHub API rate limit exceeded (60 req/hr without token).")
-                        print(f"        Please set your GitHub token using: ohub config set github_token <your_token>")
-                    if attempt < 2:
-                        print(f"    [!] Rate limited (attempt {attempt+1}/3), retrying in 10s...")
-                        time.sleep(10)
-                except Exception as e:
-                    if attempt < 2:
-                        print(f"    [!] Search failed (attempt {attempt+1}/3): {e}, retrying in 10s...")
-                        time.sleep(10)
-                    else:
-                        search_result = {"error": str(e), "items": []}
-
-            if not search_result:
-                search_result = {"error": "timeout", "items": []}
-
+            search_result = client.search_repositories(
+                query=sys_app.name, min_stars=0, ignore_case=True, active_only=False,
+            )
             if search_result.get("error") == "rate_limit":
-                print("    [!] Rate limited - skipping")
+                print("    [!] Rate limited - set a token with: ohub config set github_token <token>")
                 state_manager.add_check_history(CheckHistoryEntry(
                     app_name=sys_app.name, app_version=sys_app.version,
                     user_choice="error", checked_at=int(datetime.now().timestamp()), error="rate_limit"))
@@ -736,38 +811,17 @@ def cmd_check(
                 state_manager.save()
                 continue
 
-            search_results = search_result.get("items", [])
-            if search_results:
-                # Exact name match first
-                exact_match = next((r for r in search_results[:10]
-                                    if r.get('name', '').lower() == sys_app.name.lower()), None)
-                # Otherwise list candidates and let user pick
-                candidates = search_results[:5]
-                if exact_match:
-                    owner = exact_match['owner']['login']
-                    repo_name = exact_match['name']
-                    repo_id = f"{owner}/{repo_name}"
-                    print(f"    Found: {repo_id}")
-                    _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
-                else:
-                    print(f"    No exact match. Candidates on GitHub:")
-                    for i, r in enumerate(candidates):
-                        print(f"      [{i+1}] {r['owner']['login']}/{r['name']} ({r.get('stargazers_count', 0)} stars)")
-                    try:
-                        choice = input(f"    Select repository to link [1-{len(candidates)}], or 0 to skip: ").strip()
-                        if choice.isdigit() and 1 <= int(choice) <= len(candidates):
-                            r = candidates[int(choice) - 1]
-                            repo_id = f"{r['owner']['login']}/{r['name']}"
-                            print(f"    Selected: {repo_id}")
-                            _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
-                        else:
-                            print(f"    Skipped - not linking to any repository")
-                            _check_record_ignored(state_manager, sys_app)
-                    except (EOFError, KeyboardInterrupt):
-                        print("\nCancelled.")
-                        return 1
+            # Exact full_name match only
+            exact = next((r for r in search_result.get("items", [])
+                          if r.get("name", "").lower() == sys_app.name.lower()
+                          or r.get("full_name", "").lower().endswith("/" + sys_app.name.lower())), None)
+            if exact:
+                repo_id = exact["full_name"]
+                print(f"    Found exact match: {repo_id}")
+                _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
             else:
-                print(f"    Not found on GitHub")
+                print(f"    No exact GitHub repository found for '{sys_app.name}'.")
+                print(f"    To manage it, add manually: ohub add <owner/{sys_app.name}>")
                 _check_record_ignored(state_manager, sys_app)
 
     if parsed.json:
@@ -819,12 +873,16 @@ def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
         combined = [a.to_dict() for a in apps] + [a for a in unmanaged_apps]
         print(json.dumps(combined, indent=2))
     else:
-        print(f"{'Name':<40} {'Version':<15} {'Source':<15}")
-        print("-" * 75)
+        print(f"{'Name':<30} {'Version':<15} {'Type':<10} {'Source':<12}")
+        print("-" * 70)
         for app in apps:
-            print(f"{app.name:<40} {app.version:<15} {'ohub':<15}")
+            loc = app.install_location if app.install_location else ""
+            label = f"{app.app_type}"
+            if loc:
+                label += f" @ {loc}"
+            print(f"{app.name:<30} {app.version:<15} {label:<10} {'ohub':<12}")
         for app in unmanaged_apps:
-            print(f"{app.name:<40} {app.version:<15} {'unmanaged':<15}")
+            print(f"{app.name:<30} {app.version:<15} {'-':<10} {'unmanaged':<12}")
         
         if unmanaged_apps:
             print(f"\n{len(unmanaged_apps)} unmanaged application(s) found.")
@@ -851,6 +909,19 @@ def cmd_uninstall(
     if not app:
         print(f"App not found in state: {app_id}", file=sys.stderr)
         return 1
+
+    # Non-installer apps (zip/folder) have no MSI/EXE to remove
+    if app.app_type in ("zip", "folder"):
+        print(f"Removing tracked app: {app.name} ({app.app_type})")
+        if app.install_location and not parsed.keep_data:
+            try:
+                import shutil
+                shutil.rmtree(app.install_location, ignore_errors=True)
+                print(f"Removed files at: {app.install_location}")
+            except Exception as e:
+                print(f"Could not remove files at {app.install_location}: {e}")
+        state_manager.remove_app(app_id)
+        return 0
 
     installer = SilentInstaller()
     success, message = installer.uninstall(app_id)
@@ -908,25 +979,84 @@ def cmd_add(
     state_manager: StateManager,
     logger,
 ) -> int:
-    """Handle add command - add a GitHub repository by owner/repo."""
-    repo = parsed.repo
-    
-    if "/" not in repo:
-        print(f"Error: Repository must be in format 'owner/repo'", file=sys.stderr)
+    """Handle add command.
+
+    Modes (--type):
+      github - add a GitHub repo for management (default)
+      zip    - add a repo that only ships archive assets: download the archive,
+               extract it to a folder, and track it for updates
+      folder - add a local folder; Only its ROOT is scanned for apps
+    """
+    if not parsed.repo:
+        print("Error: specify a repository (owner/repo) or a folder path with --type folder", file=sys.stderr)
         return 1
-    
-    owner, repo_name = repo.split("/", 1)
+
+    # ---- Folder mode (local) ----
+    if parsed.add_type == "folder":
+        folder = Path(parsed.repo).expanduser()
+        if is_restricted_folder(folder):
+            print(f"Error: refusing to scan '{folder}' - it is a filesystem root (e.g. C:\\).", file=sys.stderr)
+            print("       ObtainHub only scans the folder root, never recursive child files/folders.", file=sys.stderr)
+            return 1
+        try:
+            add_folder_app(folder, name=parsed.name)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        return 0
+
+    # ---- GitHub / zip mode ----
+    if "/" not in parsed.repo:
+        print("Error: Repository must be in format 'owner/repo'", file=sys.stderr)
+        return 1
+
+    owner, repo_name = parsed.repo.split("/", 1)
     name = parsed.name or repo_name
-    
-    # Create a source entry for this repo
-    from obtainhub.core.config import ManifestSource
-    source = ManifestSource(name=name, url=f"https://api.github.com/repos/{owner}/{repo_name}", enabled=True, headers={})
-    
-    config = config_manager.load()
-    config.sources.append(source)
-    config_manager.save(config)
-    
-    print(f"Added source: {name} ({owner}/{repo_name})")
+    repo_id = f"{owner}/{repo_name}"
+
+    token = config_manager.load().github_token
+    client = GitHubClient(token=token)
+
+    # Optional manifest source registration
+    if parsed.as_source:
+        from obtainhub.core.config import ManifestSource
+        config = config_manager.load()
+        config.sources.append(ManifestSource(
+            name=name, url=f"https://api.github.com/repos/{owner}/{repo_name}", enabled=True, headers={}))
+        config_manager.save(config)
+        print(f"Registered source: {name} ({repo_id})")
+
+    # Archived / inactive warning
+    _warn_repo_status(client, repo_id)
+
+    if parsed.add_type == "zip":
+        release = client.get_latest_release(owner, repo_name, include_prerelease=parsed.prerelease)
+        if not release:
+            print(f"Error: No release found for {repo_id}", file=sys.stderr)
+            return 1
+        try:
+            add_zip_app(repo_id, release, name=name, location=parsed.location)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        return 0
+
+    # github mode: just record the repo as managed (next check/install updates it)
+    existing = state_manager.get_app(repo_id)
+    if existing:
+        print(f"{repo_id} is already managed.")
+        return 0
+    state_manager.add_installed_app({
+        "id": repo_id,
+        "name": name,
+        "version": "",
+        "installer_type": "github",
+        "installer_path": "",
+        "source_url": f"https://github.com/{owner}/{repo_name}",
+        "tag": "",
+        "app_type": "github",
+    })
+    print(f"Added {repo_id} to management. Run 'ohub install {repo_id}' or 'ohub check' to track versions.")
     return 0
 
 

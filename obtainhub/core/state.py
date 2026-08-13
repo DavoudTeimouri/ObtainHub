@@ -22,13 +22,21 @@ class InstalledApp:
     updated_at: int = 0
     requires_manual_uninstall: bool = False
     architecture: str = "x64"
+    # New fields (optional, backward compatible)
+    app_type: str = "github"      # "github" | "zip" | "folder"
+    install_location: str = ""    # extracted folder for zip/folder apps
+    asset_pattern: str = ""       # glob pattern to re-pick the same asset on update
+    preferred_asset: str = ""     # selected asset name for zip/exe apps
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "InstalledApp":
-        return cls(**data)
+        # Tolerate missing keys from older state files
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered = {k: v for k, v in data.items() if k in known}
+        return cls(**filtered)
 
 
 @dataclass
@@ -100,6 +108,21 @@ class StateManager:
         for app_data in self.data.get("installed", {}).values():
             apps.append(InstalledApp.from_dict(app_data))
         return apps
+
+    def get_apps_by_type(self, app_type: str):
+        """Get installed apps filtered by app_type ('github'|'zip'|'folder')."""
+        return [a for a in self.get_all_apps() if a.app_type == app_type]
+
+    def update_app(self, app_id: str, **changes) -> Optional[InstalledApp]:
+        """Update fields on an existing app and save."""
+        app = self.get_app(app_id)
+        if not app:
+            return None
+        for k, v in changes.items():
+            if hasattr(app, k):
+                setattr(app, k, v)
+        self.add_installed_app(app)
+        return app
 
     def get_app(self, app_id: str) -> Optional[InstalledApp]:
         """Get a specific installed app by ID."""

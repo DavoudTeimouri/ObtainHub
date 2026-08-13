@@ -2,9 +2,13 @@
 
 import os
 import time
+from datetime import datetime, timezone
 import requests
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+# Repos with no push in this many days are considered inactive
+INACTIVE_DAYS = 365
 
 
 @dataclass
@@ -92,6 +96,33 @@ class GitHubClient:
                     time.sleep(self.retry_delay)
                 continue
         return None
+
+    def get_repo_status(self, owner: str, repo: str) -> Optional[Dict[str, Any]]:
+        """Return repo status flags: archived, disabled, inactive, pushed_at, last_push_days.
+
+        Returns None if the repo cannot be fetched (rate limit / not found).
+        """
+        data = self.get_repo(owner, repo)
+        if not data:
+            return None
+        pushed_at = data.get("pushed_at") or data.get("updated_at") or ""
+        last_push_days = None
+        if pushed_at:
+            try:
+                dt = datetime.strptime(pushed_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                last_push_days = (datetime.now(timezone.utc) - dt).days
+            except ValueError:
+                last_push_days = None
+        archived = bool(data.get("archived"))
+        disabled = bool(data.get("disabled"))
+        inactive = (last_push_days is not None and last_push_days > INACTIVE_DAYS) or disabled
+        return {
+            "archived": archived,
+            "disabled": disabled,
+            "inactive": inactive,
+            "pushed_at": pushed_at,
+            "last_push_days": last_push_days,
+        }
 
     def get_releases(self, owner: str, repo: str, per_page: int = 10) -> List[Dict]:
         """Get all releases for a repository with retry."""

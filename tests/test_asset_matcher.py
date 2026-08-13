@@ -82,8 +82,8 @@ class TestAssetMatcher:
         """Test installer type detection."""
         test_cases = [
             ("app.msi", InstallerType.MSI),
-            ("app-Setup.exe", InstallerType.EXE),
-            ("app.exe", InstallerType.EXE),
+            ("app-Setup.exe", InstallerType.EXE_SETUP),
+            ("app.exe", InstallerType.EXE_STANDALONE),
             ("app.zip", InstallerType.ZIP),
         ]
         for name, expected_type in test_cases:
@@ -203,7 +203,7 @@ class TestRealWorldAssets:
         matches = matcher.match_assets(assets)
         assert len(matches) >= 1
         assert matches[0].architecture == Architecture.X64
-        assert matches[0].installer_type == InstallerType.EXE
+        assert matches[0].installer_type == InstallerType.EXE_STANDALONE
 
     def test_nodejs_assets(self, matcher):
         """Test Node.js style assets."""

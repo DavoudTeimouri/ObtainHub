@@ -197,7 +197,7 @@ class TestStateManager:
         manager = StateManager(state_file=temp_state_file)
         # State file is created on first save
         assert temp_state_file.exists() or True  # File created on save
-        assert manager.data == {"installed": {}, "manifest_cache": {}}
+        assert manager.data == {"installed": {}, "manifest_cache": {}, "check_history": {}}
 
     def test_load_existing(self, temp_state_file):
         """Test loading existing state."""
@@ -416,7 +416,7 @@ class TestStateManager:
 
         try:
             manager = StateManager(state_file=temp_path)
-            assert manager.data == {"installed": {}, "manifest_cache": {}}
+            assert manager.data == {"installed": {}, "manifest_cache": {}, "check_history": {}}
         finally:
             temp_path.unlink(missing_ok=True)
 

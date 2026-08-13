@@ -41,6 +41,8 @@ class TestGitHubClient:
         client = GitHubClient.__new__(GitHubClient)
         client.token = None
         client.headers = {"Accept": "application/vnd.github.v3+json"}
+        client.max_retries = 3
+        client.retry_delay = 0
         return client
 
     @patch("obtainhub.core.github_client.requests.get")

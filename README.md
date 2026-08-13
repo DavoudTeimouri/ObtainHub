@@ -97,6 +97,22 @@ ohub check --prerelease              # Include prereleases
 ohub check --json                    # Output as JSON
 ```
 
+### `ohub add <owner/repo>`
+Add a repository, archive, or local folder for management.
+
+```cmd
+ohub add owner/repo                       # Track a GitHub repo (exact match)
+ohub add owner/repo --type zip             # Repo ships archives: download, extract, track
+ohub add owner/repo --type zip --location D:\Apps\MyApp
+ohub add "D:\MyFolder" --type folder      # Track apps in a local folder (root only, no recursion)
+ohub add owner/repo --as-source            # Also register as a manifest source
+```
+
+- `--type github` (default): track a GitHub repository by exact `owner/repo`.
+- `--type zip`: for repositories (including archived ones) that only ship ZIP/portable assets — the archive is downloaded, extracted to a folder, and tracked; updates re-use the saved asset pattern.
+- `--type folder`: scan a local folder's **root only** for applications. Drive roots such as `C:\` are refused.
+- During check/install/update/add, archived or inactive repositories print a warning.
+
 ### `ohub list`
 List all installed applications.
 

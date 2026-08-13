@@ -223,8 +223,14 @@ class SelfUpdater:
         if not x64_assets:
             return None
 
-        # Sort by installer preference (MSI > EXE > ZIP)
-        type_priority = {InstallerType.MSI: 0, InstallerType.EXE: 1, InstallerType.ZIP: 2, InstallerType.UNKNOWN: 3}
+        # Sort by installer preference (EXE_SETUP > MSI > EXE_STANDALONE > ZIP)
+        type_priority = {
+            InstallerType.EXE_SETUP: 0,
+            InstallerType.MSI: 1,
+            InstallerType.EXE_STANDALONE: 2,
+            InstallerType.ZIP: 3,
+            InstallerType.UNKNOWN: 99,
+        }
         x64_assets.sort(key=lambda a: type_priority.get(a.installer_type, 99))
 
         return x64_assets[0] if x64_assets else None

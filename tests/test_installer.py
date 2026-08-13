@@ -55,7 +55,7 @@ class TestSilentInstaller:
         exe_file.write_bytes(b"fake exe")
 
         result, message = installer.install(
-            exe_file, InstallerType.EXE, "owner/repo"
+            exe_file, InstallerType.EXE_SETUP, "owner/repo"
         )
 
         assert result == InstallResult.SUCCESS
