@@ -281,3 +281,9 @@ jobs:
               Get-ChildItem dist\
             }
           }
+
+      - name: Sync CHANGELOG.md into release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: python .github/scripts/sync_release_notes.py
