@@ -156,8 +156,9 @@ class AssetMatcher:
         
         # Check for ZIP - determine if installer or portable
         if name_lower.endswith('.zip'):
-            # Check if ZIP name suggests it contains an installer
-            if re.search(r'(setup|install|-\d+\.\d+\.\d+-)', name_lower):
+            # Check if ZIP name explicitly suggests it contains an installer
+            # Must have explicit installer keywords, not just version numbers
+            if re.search(r'(setup|install)', name_lower):
                 return InstallerType.ZIP_INSTALLER
             return InstallerType.ZIP
         

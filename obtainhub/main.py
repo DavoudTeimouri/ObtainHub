@@ -104,6 +104,9 @@ def main(args: Optional[List[str]] = None) -> int:
     check_parser.add_argument(
         "--yes", "-y", action="store_true", help="Auto-confirm prompts"
     )
+    check_parser.add_argument(
+        "--all", action="store_true", help="Re-check all unmanaged applications, ignoring previous choices"
+    )
 
     # list
     list_parser = subparsers.add_parser("list", help="List installed apps")
@@ -578,14 +581,15 @@ def cmd_check(
         for sys_app in unmanaged_apps:
             # Check history first
             history = check_history.get(sys_app.name.lower())
-            if history and history.user_choice == "ignored":
-                print(f"  {sys_app.name} (v{sys_app.version}) - ignored by user")
+            if not parsed.all and history and history.user_choice in ("ignored", "managed"):
+                if history.user_choice == "ignored":
+                    print(f"  {sys_app.name} (v{sys_app.version}) - ignored by user (from history)")
+                elif history.user_choice == "managed":
+                    print(f"  {sys_app.name} (v{sys_app.version}) - already managed by ohub (from history)")
                 continue
-            elif history and history.user_choice == "managed":
-                print(f"  {sys_app.name} (v{sys_app.version}) - already managed by ohub")
+            elif not parsed.all and history and history.error:
+                print(f"  {sys_app.name} (v{sys_app.version}) - previous error: {history.error} (use --all to retry)")
                 continue
-            elif history and history.error:
-                print(f"  {sys_app.name} (v{sys_app.version}) - previous error, retrying...")
 
             # Try to find GitHub repo for this app
             print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
@@ -605,9 +609,9 @@ def cmd_check(
                         break
                     else:
                         if not client.token:
-                            print(f"    [!] GitHub API rate limit reached (60 req/hr for unauthenticated users).")
-                            print(f"        Tip: Set your GitHub token via 'ohub config set github_token <token>'")
-                            print(f"        or environment variable GITHUB_TOKEN to get 5000 req/hr.")
+                            print(f"    [!] GitHub API rate limit exceeded (60 req/hr without token).")
+                            print(f"        Please set your GitHub token using: ohub config set github_token <your_token>")
+                            print(f"        This will increase your limit to 5000 req/hr.")
                         if attempt < 2:
                             print(f"    [!] Rate limited (attempt {attempt+1}/3), retrying in 10s...")
                             time.sleep(10)
@@ -932,9 +936,9 @@ def cmd_search(
     )
     
     if result.get("error") == "rate_limit":
-        print("[!] GitHub API rate limit reached (60 req/hr for unauthenticated users).")
-        print("    Tip: Set your GitHub token via 'ohub config set github_token <token>'")
-        print("    or environment variable GITHUB_TOKEN to get 5000 req/hr.")
+        print("[!] GitHub API rate limit exceeded (60 req/hr without token).")
+        print("    Please set your GitHub token using: ohub config set github_token <your_token>")
+        print("    This will increase your limit to 5000 req/hr.")
         return 1
     elif result.get("error"):
         print(f"[!] Search failed: {result['error']}")
