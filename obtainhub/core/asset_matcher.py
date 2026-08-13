@@ -20,7 +20,7 @@ class InstallerType(Enum):
     """Supported installer types in priority order (highest first)."""
     EXE_SETUP = "exe_setup"        # Inno Setup EXE installer (highest priority)
     MSI = "msi"                    # WiX MSI installer
-    ZIP_INSTALLER = "zip_installer"  # ZIP containing installer (Setup/Install/version in name)
+    ZIP_INSTALLER = "zip_installer"  # ZIP containing installer (Setup/Install in name)
     ZIP = "zip"                    # Portable ZIP archive
     EXE_STANDALONE = "exe"         # Standalone EXE (lowest priority)
     UNKNOWN = "unknown"
@@ -264,29 +264,30 @@ class AssetMatcher:
     def get_best_match(self, assets: List[dict]) -> Optional[AssetMatch]:
             """Get the single best matching asset.
 
-            Priority order:
+            Priority order (strict - only installer types):
             1. Inno Setup EXE installer (Setup.exe)
             2. WiX MSI installer
-            3. ZIP containing installer (Setup/Install/version in name)
-            4. Portable ZIP
-            5. Standalone EXE (only if no other installer found)
+            3. ZIP containing installer (Setup/Install in name) - only if no EXE_SETUP/MSI
             """
             matches = self.match_assets(assets)
 
             if not matches:
                 return None
 
-            # Priority order: EXE_SETUP > MSI > ZIP_INSTALLER > ZIP > EXE_STANDALONE
+            # Priority order: EXE_SETUP > MSI > ZIP_INSTALLER
+            # ZIP and EXE_STANDALONE are NOT auto-selected
             priority = {
                 InstallerType.EXE_SETUP: 0,
                 InstallerType.MSI: 1,
                 InstallerType.ZIP_INSTALLER: 2,
-                InstallerType.ZIP: 3,
-                InstallerType.EXE_STANDALONE: 4,
             }
 
-            matches.sort(key=lambda m: priority.get(m.installer_type, 99))
-            return matches[0]
+            installer_matches = [m for m in matches if m.installer_type in priority]
+            if installer_matches:
+                installer_matches.sort(key=lambda m: priority.get(m.installer_type, 99))
+                return installer_matches[0]
+
+            return None
 
     def get_installer_options(self, assets: List[dict]) -> List[AssetMatch]:
         """Get all installer-type assets (EXE_SETUP, MSI, ZIP_INSTALLER) for user selection.

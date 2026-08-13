@@ -1,86 +1,91 @@
 # Changelog
 
-All notable changes to ObtainHub are documented in this file.
+All notable changes to ObtainHub will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v0.1.0-beta.2] - 2026-08-06
-
-### Fixed
-- **GitHubClient.search_repositories**: Fixed `min_stars` keyword argument error in search query construction
-- **GitHub API Rate Limiting**: Added Bearer token authentication support for `GITHUB_TOKEN`/`OBTAINHUB_TOKEN` environment variables
-- **Rate limit error handling**: Added clear warning when rate limit exceeded with instructions to set GITHUB_TOKEN for 5000 req/hr (vs 60/hr unauthenticated)
-- **State file persistence**: Moved state file to persistent `%APPDATA%\ObtainHub\state.json` on Windows (or `~/.config/ObtainHub/state.json` on other platforms)
-- **Quiet logging**: Default console log level set to INFO, DEBUG logs like "No state file found" suppressed unless `--verbose`/`--debug` flag passed
+## [0.1.0.9] - 2026-08-13
 
 ### Added
-- **Windows Registry System Scanner**: New `system_scanner.py` module scanning installed applications from:
-  - `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall`
-  - `HKLM\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall`
-  - `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall`
-- **ohub list --all**: New flag to include system-installed applications from Windows Registry
-- **ohub check**: Now matches system application names against GitHub repositories for update detection
+- Detailed `--version` output with homepage and license information
+- `--all` flag for `ohub check` to re-check all unmanaged applications
+- Asset selection menu when multiple installer assets are available (EXE_SETUP, MSI, ZIP_INSTALLER)
+- PATH management during installation (adds to user PATH, HKCU)
 
 ### Changed
-- Release workflow updated to trigger on tag push (`v*.*.*`) with auto-generated release notes
-- Pre-release detection: tags containing `beta` or `alpha` are published as pre-releases
-- GitHubClient now uses `requests` library for simpler HTTP handling
-
-## [v0.1.0-beta.1] - 2026-08-03
-
-### Added
-- **Windows x64 Native Installer Support**
-  - Inno Setup based `ObtainHub-Setup.exe` installer (pure CLI - no desktop shortcuts, no launch prompts)
-  - Python `msilib` based `ObtainHub.msi` installer (stdlib, no WiX dependency)
-  - Both installers support silent installation (`/VERYSILENT` for EXE, `/qn` for MSI)
-- **CLI Command Suite**
-  - `ohub search <query>` - Search GitHub repositories via GitHub Search API (`/search/repositories`)
-  - `ohub install <owner/repo>` - Install apps from GitHub Releases with asset matching
-  - `ohub update [owner/repo]` - Update installed apps sequentially
-  - `ohub check [owner/repo]` - Check for updates without installing (table/JSON output)
-  - `ohub list` - Display installed apps in terminal table or JSON
-  - `ohub uninstall <owner/repo>` - Uninstall apps with optional data retention
-  - `ohub self-update` - Self-update ObtainHub itself
-  - `ohub config` - Manage configuration
-  - `ohub source` - Manage custom GitHub/manifest sources
-- **Asset Matching & Selection**
-  - Architecture priority: x64 > ARM64 > x86 (ARM64/x86 only if explicitly allowed)
-  - Installer priority: MSI > Setup.exe > ZIP
-  - Exclusion filters for checksums, signatures, non-Windows packages
-  - Download-only fallback for portable `.zip` releases
-- **Prerelease Handling**
-  - Mandatory user confirmation prompts for prerelease versions
-  - `--prerelease` flag to opt-in
-  - `--yes` flag to auto-confirm prompts
-- **State Management**
-  - Tracks installed apps in `state.json` with version, installer type, paths, timestamps
-  - Records download history and update checks
-  - Manual uninstall detection fallback
-
-### Changed
-- Removed desktop shortcut generation from Inno Setup installer
-- Removed "Launch Application" checkbox from setup wizard final screen
-- Updated build pipeline to produce both `ObtainHub-Setup.exe` and `ObtainHub.msi`
-- Moved from WiX-based MSI to Python stdlib `msilib` for MSI generation
-- Updated GitHub Actions workflow to build and upload all three artifacts
+- Rate limit message now points to `ohub config set github_token <token>`
+- `ohub check` now respects previous user choices (managed/ignored) by default
+- Installer priority: EXE_SETUP (Inno Setup) > MSI (WiX) > ZIP_INSTALLER > ZIP > EXE_STANDALONE
+- ZIP_INSTALLER detection now requires explicit "setup" or "install" keywords
 
 ### Fixed
-- PyInstaller spec file path handling for cross-platform compatibility
-- Asset matcher architecture detection (ARM64 before X64, word boundaries for "64")
-- State manager API consistency (`add_installed_app`, `get_installed_app`, `get_all_apps`, `get_app`)
-- Self-updater `check_and_update` parameter handling and constructor signature
-- **Method signature mismatches resolved**: `AssetMatcher.__init__` now accepts `require_installer`, `SelfUpdater.__init__` accepts `config_manager`, `state_manager`, `current_version`
-- **CLI search enhancements**: Added `--min-stars` flag and case-insensitive search by default, results sorted by stars descending
-- All 121 unit tests passing
+- Inno Setup 6.7 compatibility (removed CurUninstallStepChanged)
+- GitHub API rate limit handling and messaging
 
-### Security
-- GitHub token stored in config file (not in code)
-- Optional token via `GITHUB_TOKEN` environment variable
-- Rate limit handling with automatic backoff
+## [0.1.0.8] - 2026-08-12
 
-### Known Limitations
-- Windows x64 only (no cross-platform support)
-- No ARM64 native builds (explicitly rejected by default)
-- Manual uninstall required for apps installed outside ObtainHub
-- ZIP assets are download-only (no auto-install)
+### Added
+- Inno Setup installer with PATH management
+- WiX MSI installer support
+- Uninstall data prompt (kept/removed config files)
+- Check history persistence in state.json
+
+### Changed
+- Version bump to 0.1.0.9 (stable, removed beta)
+
+## [0.1.0-beta.8] - 2026-08-11
+
+### Added
+- Check history for unmanaged applications
+- Installer selection when multiple assets available
+- Enhanced asset matching with ZIP_INSTALLER type
+
+### Changed
+- Asset priority: EXE_SETUP > MSI > ZIP_INSTALLER > ZIP > EXE_STANDALONE
+
+## [0.1.0-beta.7] - 2026-08-10
+
+### Added
+- GitHub API rate limit handling
+- Custom config sources support
+- Prerelease support for check/install/update
+
+### Fixed
+- Search case-insensitive matching
+- Active-only repository filtering
+
+## [0.1.0-beta.6] - 2026-08-09
+
+### Added
+- `ohub search` command with filters (--min-stars, --active-only)
+- `ohub list --all` to show system-installed apps
+- `ohub self-update` command
+
+## [0.1.0-beta.5] - 2026-08-08
+
+### Added
+- Silent installer support (Inno Setup, MSI, NSIS, WiX)
+- Download with SHA256 verification
+- State management with update history
+
+## [0.1.0-beta.4] - 2026-08-07
+
+### Added
+- `ohub check` for update checking without installing
+- Unmanaged system app detection
+- GitHub repository search and auto-add
+
+## [0.1.0-beta.3] - 2026-08-06
+
+### Added
+- `ohub install` and `ohub update` commands
+- Asset matching for Windows x64 installers
+- Configuration management (GitHub token, sources)
+
+## [0.1.0-beta.2] - 2026-08-05
+
+### Added
+- Initial CLI structure
+- GitHub client with token authentication
+- Release fetching and asset matching

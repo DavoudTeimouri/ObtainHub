@@ -310,9 +310,27 @@ def cmd_install(
     )
     match = matcher.get_best_match(release.get('assets', []))
 
+    # If no auto-match found, check for installer options and let user choose
     if not match:
-        print(f"Error: No suitable asset found for {app_id}", file=sys.stderr)
-        return 1
+        installer_options = matcher.get_installer_options(release.get('assets', []))
+        if installer_options:
+            print(f"Multiple installer assets found for {app_id}:")
+            for i, opt in enumerate(installer_options):
+                print(f"  [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
+            try:
+                choice = input(f"Select installer [1-{len(installer_options)}]: ").strip()
+                if choice.isdigit() and 1 <= int(choice) <= len(installer_options):
+                    match = installer_options[int(choice) - 1]
+                    print(f"Selected: {match.name} ({match.installer_type.name})")
+                else:
+                    print(f"Invalid selection. Using first option: {installer_options[0].name}")
+                    match = installer_options[0]
+            except (EOFError, KeyboardInterrupt):
+                print("\nCancelled.")
+                return 1
+        else:
+            print(f"Error: No suitable installer asset found for {app_id}", file=sys.stderr)
+            return 1
 
     # If there are multiple installer options, let user choose
     if not parsed.yes and not parsed.download_only:
@@ -429,9 +447,28 @@ def cmd_update(
                 continue
 
             match = matcher.get_best_match(release.get('assets', []))
+
+            # If no auto-match found, check for installer options and let user choose
             if not match:
-                print(f"  {app.name} ({app_id}): No suitable asset")
-                continue
+                installer_options = matcher.get_installer_options(release.get('assets', []))
+                if installer_options:
+                    print(f"  Multiple installer assets found for {app_id}:")
+                    for i, opt in enumerate(installer_options):
+                        print(f"    [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
+                    try:
+                        choice = input(f"  Select installer [1-{len(installer_options)}]: ").strip()
+                        if choice.isdigit() and 1 <= int(choice) <= len(installer_options):
+                            match = installer_options[int(choice) - 1]
+                            print(f"  Selected: {match.name} ({match.installer_type.name})")
+                        else:
+                            print(f"  Invalid selection. Using first option: {installer_options[0].name}")
+                            match = installer_options[0]
+                    except (EOFError, KeyboardInterrupt):
+                        print("\nCancelled.")
+                        return 1
+                else:
+                    print(f"  {app.name} ({app_id}): No suitable installer asset found")
+                    continue
 
             # If there are multiple installer options, let user choose
             if not parsed.yes:
