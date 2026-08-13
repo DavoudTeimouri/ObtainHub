@@ -5,6 +5,22 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0.10] - 2026-08-13
+
+### Added
+- CHANGELOG.md for release documentation
+- User selection menu when multiple installer assets are available (install/update/check)
+- Strict installer priority: EXE_SETUP (Inno Setup) > MSI (WiX) > ZIP_INSTALLER only (ZIP/EXE_STANDALONE no longer auto-selected)
+
+### Changed
+- `ohub check` now respects history by default (skips managed/ignored apps, shows from history)
+- Asset matcher: `get_best_match` only returns installer types, returns None for ZIP/standalone EXE
+- `ohub install/update` now prompts user to select when no strict match but installer options exist
+
+### Fixed
+- ZIP files no longer incorrectly selected as installers
+- Asset detection: ZIP_INSTALLER requires explicit "setup" or "install" keywords
+
 ## [0.1.0.9] - 2026-08-13
 
 ### Added
