@@ -52,7 +52,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.1.0.10 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.1.0.11 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -526,6 +526,57 @@ def cmd_update(
     return 0
 
 
+def _check_record_ignored(state_manager, sys_app, has_github_repo=False, repo_id=""):
+    """Record an unmanaged app as ignored in check history."""
+    entry = CheckHistoryEntry(
+        app_name=sys_app.name,
+        app_version=sys_app.version,
+        github_repo=repo_id,
+        has_github_repo=has_github_repo,
+        user_choice="ignored",
+        checked_at=int(datetime.now().timestamp()),
+    )
+    state_manager.add_check_history(entry)
+    state_manager.save()
+
+
+def _check_add_or_ignore(parsed, state_manager, sys_app, repo_id):
+    """Prompt to add a matched GitHub repo to ohub management during check."""
+    from obtainhub.core.state import InstalledApp
+    if not parsed.yes:
+        confirm = input(f"    Add {repo_id} to ohub management? [y/N]: ").strip().lower()
+        if confirm != "y":
+            print(f"    Skipped - not adding to ohub")
+            _check_record_ignored(state_manager, sys_app, has_github_repo=True, repo_id=repo_id)
+            return
+    owner, repo_name = repo_id.split("/", 1)
+    app_state = InstalledApp(
+        id=repo_id,
+        name=repo_name,
+        version=sys_app.version,
+        installer_type="unknown",
+        installer_path="",
+        source_url=f"https://github.com/{owner}/{repo_name}",
+        tag="",
+        installed_at=int(datetime.now().timestamp()),
+        updated_at=int(datetime.now().timestamp()),
+        requires_manual_uninstall=False,
+        architecture="x64",
+    )
+    state_manager.add_installed_app(app_state)
+    print(f"    Added {repo_id} to ohub management" + (" (auto)" if parsed.yes else ""))
+    entry = CheckHistoryEntry(
+        app_name=sys_app.name,
+        app_version=sys_app.version,
+        github_repo=repo_id,
+        has_github_repo=True,
+        user_choice="managed",
+        checked_at=int(datetime.now().timestamp()),
+    )
+    state_manager.add_check_history(entry)
+    state_manager.save()
+
+
 def cmd_check(
     parsed: argparse.Namespace,
     config_manager: ConfigManager,
@@ -556,7 +607,8 @@ def cmd_check(
         print("No apps to check.")
         return 0
 
-    print(f"Checking updates for {len(apps_to_check)} managed app(s)...\n")
+    # Managed apps: only show those with updates or asset/version issues
+    print(f"Checking {len(apps_to_check)} managed app(s)...\n")
 
     results = []
     for app_id in apps_to_check:
@@ -570,7 +622,7 @@ def cmd_check(
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
             if not release:
-                print(f"Skipping {app_id}: no release found")
+                print(f"  {app.name} ({app_id}): no release found")
                 continue
 
             current_version = app.version
@@ -578,7 +630,34 @@ def cmd_check(
             has_update = latest_version > current_version
 
             match = matcher.get_best_match(release.get('assets', []))
-            asset_info = f"{match.name} ({match.installer_type.name})" if match else "No suitable asset"
+            installer_options = matcher.get_installer_options(release.get('assets', []))
+
+            if not parsed.json:
+                if has_update:
+                    asset_info = f"{match.name} ({match.installer_type.name})" if match else "No suitable asset"
+                    print(f"  {app.name} ({app_id})")
+                    print(f"    Current:  {current_version}")
+                    print(f"    Latest:   {latest_version}")
+                    print(f"    Status:   UPDATE AVAILABLE")
+                    print(f"    Asset:    {asset_info}")
+                    if not match and installer_options:
+                        print(f"    Available assets:")
+                        for i, opt in enumerate(installer_options):
+                            print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name})")
+                    print()
+                else:
+                    # Up to date: silent unless --all/--json or no installable asset
+                    if not match and installer_options:
+                        print(f"  {app.name} ({app_id})")
+                        print(f"    Current:  {current_version}")
+                        print(f"    Latest:   {latest_version}")
+                        print(f"    Status:   Up to date")
+                        print(f"    Available assets:")
+                        for i, opt in enumerate(installer_options):
+                            print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name})")
+                        print()
+                    elif parsed.all:
+                        print(f"  {app.name} ({app_id}): Up to date ({current_version})")
 
             result = {
                 "app": app_id,
@@ -586,53 +665,35 @@ def cmd_check(
                 "latest_version": latest_version,
                 "has_update": has_update,
                 "prerelease": release.get('prerelease', False),
-                "asset": asset_info,
+                "asset": f"{match.name} ({match.installer_type.name})" if match else "No suitable asset",
                 "release_url": release.get('html_url', ''),
             }
             results.append(result)
 
-            if not parsed.json:
-                status = "UPDATE AVAILABLE" if has_update else "Up to date"
-                prerelease_str = " (prerelease)" if release.get('prerelease', False) else ""
-                print(f"  {app.name} ({app_id})")
-                print(f"    Current:  {current_version}")
-                print(f"    Latest:   {latest_version}{prerelease_str}")
-                print(f"    Status:   {status}")
-                print(f"    Asset:    {asset_info}")
-                print()
-
         except Exception as e:
             logger.error(f"Failed to check {app_id}: {e}")
-            result = {
-                "app": app_id,
-                "error": str(e),
-            }
-            results.append(result)
             if not parsed.json:
                 print(f"  {app_id}: Error - {e}\n")
+            else:
+                results.append({"app": app_id, "error": str(e)})
 
     # Check unmanaged apps
     if unmanaged_apps:
         check_history = state_manager.get_check_history()
         print(f"\nFound {len(unmanaged_apps)} unmanaged application(s) in system registry:\n")
         for sys_app in unmanaged_apps:
-            # Check history first
             history = check_history.get(sys_app.name.lower())
             if not parsed.all and history and history.user_choice in ("ignored", "managed"):
-                if history.user_choice == "ignored":
-                    print(f"  {sys_app.name} (v{sys_app.version}) - ignored by user (from history)")
-                elif history.user_choice == "managed":
-                    print(f"  {sys_app.name} (v{sys_app.version}) - already managed by ohub (from history)")
+                label = "ignored by user" if history.user_choice == "ignored" else "already managed by ohub"
+                print(f"  {sys_app.name} (v{sys_app.version}) - {label} (from history)")
                 continue
             elif not parsed.all and history and history.error:
                 print(f"  {sys_app.name} (v{sys_app.version}) - previous error: {history.error} (use --all to retry)")
                 continue
 
-            # Try to find GitHub repo for this app
             print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
             print("    Checking GitHub for matching repository...")
-            
-            # Search for the app on GitHub with retry
+
             search_result = None
             for attempt in range(3):
                 try:
@@ -644,157 +705,70 @@ def cmd_check(
                     )
                     if search_result.get("error") != "rate_limit":
                         break
-                    else:
-                        if not client.token:
-                            print(f"    [!] GitHub API rate limit exceeded (60 req/hr without token).")
-                            print(f"        Please set your GitHub token using: ohub config set github_token <your_token>")
-                            print(f"        This will increase your limit to 5000 req/hr.")
-                        if attempt < 2:
-                            print(f"    [!] Rate limited (attempt {attempt+1}/3), retrying in 10s...")
-                            time.sleep(10)
-                        continue
+                    if not client.token:
+                        print(f"    [!] GitHub API rate limit exceeded (60 req/hr without token).")
+                        print(f"        Please set your GitHub token using: ohub config set github_token <your_token>")
+                    if attempt < 2:
+                        print(f"    [!] Rate limited (attempt {attempt+1}/3), retrying in 10s...")
+                        time.sleep(10)
                 except Exception as e:
                     if attempt < 2:
                         print(f"    [!] Search failed (attempt {attempt+1}/3): {e}, retrying in 10s...")
                         time.sleep(10)
                     else:
-                        print(f"    [!] Search failed after 3 attempts: {e}")
                         search_result = {"error": str(e), "items": []}
-           
+
             if not search_result:
                 search_result = {"error": "timeout", "items": []}
 
             if search_result.get("error") == "rate_limit":
                 print("    [!] Rate limited - skipping")
-                entry = CheckHistoryEntry(
-                    app_name=sys_app.name,
-                    app_version=sys_app.version,
-                    user_choice="error",
-                    checked_at=int(datetime.now().timestamp()),
-                    error="rate_limit"
-                )
-                state_manager.add_check_history(entry)
-                state_manager.save()  # Save after each item
+                state_manager.add_check_history(CheckHistoryEntry(
+                    app_name=sys_app.name, app_version=sys_app.version,
+                    user_choice="error", checked_at=int(datetime.now().timestamp()), error="rate_limit"))
+                state_manager.save()
                 continue
             elif search_result.get("error"):
                 print(f"    [!] Search failed: {search_result['error']}")
-                entry = CheckHistoryEntry(
-                    app_name=sys_app.name,
-                    app_version=sys_app.version,
-                    user_choice="error",
-                    checked_at=int(datetime.now().timestamp()),
-                    error=search_result['error']
-                )
-                state_manager.add_check_history(entry)
-                state_manager.save()  # Save after each item
+                state_manager.add_check_history(CheckHistoryEntry(
+                    app_name=sys_app.name, app_version=sys_app.version,
+                    user_choice="error", checked_at=int(datetime.now().timestamp()), error=search_result['error']))
+                state_manager.save()
                 continue
-            
+
             search_results = search_result.get("items", [])
             if search_results:
-                # Try to find exact match
-                exact_match = None
-                for repo in search_results[:5]:
-                    if repo.get('name', '').lower() == sys_app.name.lower():
-                        exact_match = repo
-                        break
-                
+                # Exact name match first
+                exact_match = next((r for r in search_results[:10]
+                                    if r.get('name', '').lower() == sys_app.name.lower()), None)
+                # Otherwise list candidates and let user pick
+                candidates = search_results[:5]
                 if exact_match:
                     owner = exact_match['owner']['login']
                     repo_name = exact_match['name']
-                    print(f"    Found: {owner}/{repo_name}")
                     repo_id = f"{owner}/{repo_name}"
-                    if not parsed.yes:
-                        confirm = input(f"    Add {repo_id} to ohub management? [y/N]: ").strip().lower()
-                        if confirm == "y":
-                            # Add to state as managed app
-                            from obtainhub.core.state import InstalledApp
-                            app_state = InstalledApp(
-                                id=repo_id,
-                                name=repo_name,
-                                version=sys_app.version,
-                                installer_type="unknown",
-                                installer_path="",
-                                source_url=f"https://github.com/{owner}/{repo_name}",
-                                tag="",
-                                installed_at=int(datetime.now().timestamp()),
-                                updated_at=int(datetime.now().timestamp()),
-                                requires_manual_uninstall=False,
-                                architecture="x64"
-                            )
-                            state_manager.add_installed_app(app_state)
-                            print(f"    Added {repo_id} to ohub management")
-                            entry = CheckHistoryEntry(
-                                app_name=sys_app.name,
-                                app_version=sys_app.version,
-                                github_repo=repo_id,
-                                has_github_repo=True,
-                                user_choice="managed",
-                                checked_at=int(datetime.now().timestamp())
-                            )
-                            state_manager.add_check_history(entry)
-                            state_manager.save()  # Save after each item
-                        else:
-                            print(f"    Skipped - not adding to ohub")
-                            entry = CheckHistoryEntry(
-                                app_name=sys_app.name,
-                                app_version=sys_app.version,
-                                github_repo=repo_id,
-                                has_github_repo=True,
-                                user_choice="ignored",
-                                checked_at=int(datetime.now().timestamp())
-                            )
-                            state_manager.add_check_history(entry)
-                            state_manager.save()  # Save after each item
-                    else:
-                        # Auto-add with --yes
-                        from obtainhub.core.state import InstalledApp
-                        app_state = InstalledApp(
-                            id=repo_id,
-                            name=repo_name,
-                            version=sys_app.version,
-                            installer_type="unknown",
-                            installer_path="",
-                            source_url=f"https://github.com/{owner}/{repo_name}",
-                            tag="",
-                            installed_at=int(datetime.now().timestamp()),
-                            updated_at=int(datetime.now().timestamp()),
-                            requires_manual_uninstall=False,
-                            architecture="x64"
-                        )
-                        state_manager.add_installed_app(app_state)
-                        print(f"    Added {repo_id} to ohub management (auto)")
-                        entry = CheckHistoryEntry(
-                            app_name=sys_app.name,
-                            app_version=sys_app.version,
-                            github_repo=repo_id,
-                            has_github_repo=True,
-                            user_choice="managed",
-                            checked_at=int(datetime.now().timestamp())
-                        )
-                        state_manager.add_check_history(entry)
-                        state_manager.save()  # Save after each item
+                    print(f"    Found: {repo_id}")
+                    _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
                 else:
-                    print(f"    No exact match found on GitHub")
-                    entry = CheckHistoryEntry(
-                        app_name=sys_app.name,
-                        app_version=sys_app.version,
-                        has_github_repo=False,
-                        user_choice="ignored",
-                        checked_at=int(datetime.now().timestamp())
-                    )
-                    state_manager.add_check_history(entry)
-                    state_manager.save()  # Save after each item
+                    print(f"    No exact match. Candidates on GitHub:")
+                    for i, r in enumerate(candidates):
+                        print(f"      [{i+1}] {r['owner']['login']}/{r['name']} ({r.get('stargazers_count', 0)} stars)")
+                    try:
+                        choice = input(f"    Select repository to link [1-{len(candidates)}], or 0 to skip: ").strip()
+                        if choice.isdigit() and 1 <= int(choice) <= len(candidates):
+                            r = candidates[int(choice) - 1]
+                            repo_id = f"{r['owner']['login']}/{r['name']}"
+                            print(f"    Selected: {repo_id}")
+                            _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
+                        else:
+                            print(f"    Skipped - not linking to any repository")
+                            _check_record_ignored(state_manager, sys_app)
+                    except (EOFError, KeyboardInterrupt):
+                        print("\nCancelled.")
+                        return 1
             else:
                 print(f"    Not found on GitHub")
-                entry = CheckHistoryEntry(
-                    app_name=sys_app.name,
-                    app_version=sys_app.version,
-                    has_github_repo=False,
-                    user_choice="ignored",
-                    checked_at=int(datetime.now().timestamp())
-                )
-                state_manager.add_check_history(entry)
-                state_manager.save()  # Save after each item
+                _check_record_ignored(state_manager, sys_app)
 
     if parsed.json:
         import json

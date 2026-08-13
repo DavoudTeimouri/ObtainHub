@@ -5,6 +5,14 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0.11] - 2026-08-13
+
+### Fixed
+- `ohub check`: managed apps now only print when they have an update or available assets; up-to-date apps are silent unless `--all` or `--json` is used
+- `ohub check`: unmanaged apps with no exact GitHub match now list candidate repositories for the user to pick from, instead of silently giving up
+- `ohub check`: managed apps with no strict installer still list available assets to choose from
+- `ohub check`: `--all` re-checks unmanaged apps (ignored/managed/error history respected by default)
+
 ## [0.1.0.10] - 2026-08-13
 
 ### Added
