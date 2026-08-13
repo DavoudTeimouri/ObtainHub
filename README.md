@@ -91,7 +91,7 @@ ohub install owner/repo --yes              # Auto-confirm prompts
 If multiple installer assets are present, ObtainHub prompts you to choose (or picks the best match: EXE_SETUP > MSI > ZIP_INSTALLER). For repos that only ship a portable archive, the archive is downloaded, extracted to a folder, and tracked as a `zip` app.
 
 ### `ohub update [owner/repo]`
-Update installed applications. The target can be an exact id or a display name. Folder-managed apps are skipped (they have no remote update source).
+Update installed applications. The target can be an exact id or a display name. Folder-managed apps are skipped unless linked to a GitHub repo via `ohub add --repo`.
 
 ```cmd
 ohub update                          # Update all apps
@@ -99,8 +99,11 @@ ohub update owner/repo               # Update specific app
 ohub update v2rayN                   # Update by display name
 ohub update --prerelease             # Include prereleases
 ohub update --dry-run                # Show what would be updated
+ohub update --reset                  # Forget saved choices so prompts re-appear
 ohub update --yes                    # Auto-confirm prompts
 ```
+
+When no standard installer is found in a release, `ohub update` lists the available candidate assets and installs/extracts the chosen one (the choice is remembered for future updates).
 
 ### `ohub check [owner/repo]`
 Check for available updates without installing. The target can be an exact id or a display name.
@@ -110,13 +113,16 @@ ohub check                           # Check managed apps
 ohub check owner/repo                # Check specific app
 ohub check --prerelease              # Include prereleases
 ohub check --all                     # Also scan system-installed (unmanaged) apps
+ohub check --candidates              # For unmanaged apps w/o exact match, offer candidate repos to link
+ohub check --reset                   # Forget saved choices so prompts re-appear
 ohub check --json                    # Output as JSON
 ```
 
 - Managed apps are always checked for updates.
-- Unmanaged system apps are scanned only with `--all`; an unmanaged app is linked only to an **exact** GitHub repo name match (no candidate-repo lists).
-- When an app has no standard installer, `ohub check` lists the available assets and (interactively) lets you pick one; the chosen pattern is saved for future updates.
+- Unmanaged system apps are scanned only with `--all`; an unmanaged app is linked only to an **exact** GitHub repo name match, unless `--candidates` is given (then a list of candidate repos by name is offered).
+- When an app has no standard installer, `ohub check` lists the available assets and (interactively) lets you pick one; the chosen asset is downloaded/extracted if an update is available, and the pattern is saved for future updates.
 - Archived or inactive repositories print a warning.
+- Every interactive choice (asset, repo link) is remembered in state. Use `--reset` (or `ohub remove`) to clear them and be re-prompted.
 
 ### `ohub add <owner/repo>`
 Add a repository, archive, or local folder for management.
@@ -126,12 +132,14 @@ ohub add owner/repo                       # Track a GitHub repo (exact match)
 ohub add owner/repo --type zip             # Repo ships archives: download, extract, track
 ohub add owner/repo --type zip --location D:\Apps\MyApp
 ohub add "D:\MyFolder" --type folder      # Track apps in a local folder (root only, no recursion)
+ohub add "D:\MyFolder" --type folder --recursive   # Also scan one level into subfolders
+ohub add "D:\MyFolder" --type folder --repo owner/repo   # Link folder app to a GitHub repo for updates
 ohub add owner/repo --as-source            # Also register as a manifest source
 ```
 
 - `--type github` (default): track a GitHub repository by exact `owner/repo`.
 - `--type zip`: for repositories (including archived ones) that only ship ZIP/portable assets — the archive is downloaded, extracted to a folder, and tracked; updates re-use the saved asset pattern.
-- `--type folder`: scan a local folder's **root only** for applications. Drive roots such as `C:\` are refused. Quote the path if it contains spaces, e.g. `ohub add "D:\My Folder" --type folder`.
+- `--type folder`: scan a local folder for applications (root by default; `--recursive` also scans one level into subfolders). Drive roots such as `C:\` are refused. Quote the path if it contains spaces, e.g. `ohub add "D:\My Folder" --type folder`. Use `--repo owner/repo` to link the folder app to a GitHub repository so it can be checked/updated like a managed app.
 - During check/install/update/add, archived or inactive repositories print a warning.
 
 ### `ohub list`
@@ -160,6 +168,16 @@ Uninstall an application and remove from state.
 ohub uninstall owner/repo              # Uninstall with confirmation
 ohub uninstall owner/repo --yes        # Auto-confirm
 ohub uninstall owner/repo --keep-data  # Keep downloaded installer files
+```
+
+### `ohub remove <id|name>`
+Remove an app or folder from ohub management **without** uninstalling it (untrack only).
+
+```cmd
+ohub remove owner/repo                 # Remove from management (confirm)
+ohub remove v2rayN                     # Remove by display name
+ohub remove folder:MyApp               # Remove a folder-managed app
+ohub remove owner/repo --yes           # Auto-confirm
 ```
 
 ### `ohub source`

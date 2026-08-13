@@ -27,6 +27,7 @@ class InstalledApp:
     install_location: str = ""    # extracted folder for zip/folder apps
     asset_pattern: str = ""       # glob pattern to re-pick the same asset on update
     preferred_asset: str = ""     # selected asset name for zip/exe apps
+    github_repo: str = ""         # owner/repo linked to a folder app for updates
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -178,6 +179,11 @@ class StateManager:
     def add_check_history(self, entry: CheckHistoryEntry):
         """Add or update a check history entry."""
         self.data.setdefault("check_history", {})[entry.app_name] = entry.to_dict()
+        self.save()
+
+    def clear_check_history(self) -> None:
+        """Forget all unmanaged-app linking choices (used by --reset)."""
+        self.data["check_history"] = {}
         self.save()
 
 

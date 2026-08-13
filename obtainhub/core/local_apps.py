@@ -83,17 +83,19 @@ def _looks_like_app(path: Path) -> bool:
     return False
 
 
-def scan_root_for_apps(folder: Path) -> List[Dict[str, str]]:
-    """Scan the *root* of ``folder`` for applications.
+def scan_root_for_apps(folder: Path, recursive: bool = False) -> List[Dict[str, str]]:
+    """Scan ``folder`` for applications.
 
-    Only direct children are considered (no recursion). Returns a list of
-    ``{"name": str, "path": str, "kind": "exe"|"folder"}``.
+    When ``recursive`` is True, subfolders are scanned too (one level deep into
+    each subfolder). Otherwise only direct children are considered. Returns a
+    list of ``{"name": str, "path": str, "kind": "exe"|"folder"}``.
     """
     folder = Path(folder)
     if not folder.is_dir():
         return []
     found = []
-    for entry in sorted(folder.iterdir()):
+    entries = sorted(folder.iterdir())
+    for entry in entries:
         if entry.name.startswith("."):
             continue
         if entry.is_dir() and entry.name.lower() in _IGNORED_DIRS:
@@ -104,6 +106,19 @@ def scan_root_for_apps(folder: Path) -> List[Dict[str, str]]:
                 "path": str(entry),
                 "kind": "exe" if entry.is_file() else "folder",
             })
+        elif recursive and entry.is_dir():
+            # One level deeper into subfolders
+            for child in sorted(entry.iterdir()):
+                if child.name.startswith("."):
+                    continue
+                if child.is_dir() and child.name.lower() in _IGNORED_DIRS:
+                    continue
+                if _looks_like_app(child):
+                    found.append({
+                        "name": f"{entry.name}/{child.name}",
+                        "path": str(child),
+                        "kind": "exe" if child.is_file() else "folder",
+                    })
     return found
 
 
@@ -187,9 +202,11 @@ def add_zip_app(
     return app
 
 
-def add_folder_app(folder: Path, *, name: Optional[str] = None) -> List[InstalledApp]:
-    """Scan a folder and track every root-level application found.
+def add_folder_app(folder: Path, *, name: Optional[str] = None, recursive: bool = False, repo: str = "") -> List[InstalledApp]:
+    """Scan a folder and track every application found.
 
+    ``recursive`` also scans one level into subfolders. ``repo`` (owner/repo)
+    links the folder app to a GitHub repository so it can be checked/updated.
     Returns the list of registered/updated InstalledApp objects.
     """
     folder = Path(folder)
@@ -197,11 +214,11 @@ def add_folder_app(folder: Path, *, name: Optional[str] = None) -> List[Installe
         raise ValueError(f"Folder not found: {folder}")
     state = get_state_manager()
 
-    apps = scan_root_for_apps(folder)
+    apps = scan_root_for_apps(folder, recursive=recursive)
     if not apps:
         raise ValueError(
             f"No applications found in {folder}. "
-            "ObtainHub only scans the folder root (no recursion)."
+            "ObtainHub only scans the folder root (use --recursive for subfolders)."
         )
 
     result = []
@@ -212,7 +229,10 @@ def add_folder_app(folder: Path, *, name: Optional[str] = None) -> List[Installe
         app_id = f"folder:{base_id}/{entry['name']}" if len(apps) > 1 else f"folder:{base_id}"
         existing = state.get_app(app_id)
         if existing:
-            app = state.update_app(app_id, install_location=str(entry_path), app_type="folder")
+            app = state.update_app(
+                app_id, install_location=str(entry_path), app_type="folder",
+                github_repo=repo or existing.github_repo,
+            )
         else:
             app = InstalledApp(
                 id=app_id,
@@ -224,9 +244,12 @@ def add_folder_app(folder: Path, *, name: Optional[str] = None) -> List[Installe
                 tag="",
                 install_location=str(entry_path),
                 app_type="folder",
+                github_repo=repo,
             )
             state.add_installed_app(app)
         result.append(app)
+    if repo:
+        print(f"Linked folder apps to GitHub repo: {repo}")
     print(f"Added {len(result)} app(s) from folder: {folder}")
     return result
 

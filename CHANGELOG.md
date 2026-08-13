@@ -5,6 +5,25 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0.0] - 2026-08-13
+
+### Added
+- `ohub update` now checks candidate assets the same way `ohub check` does — when no standard installer is found it lists available assets and installs/extracts the chosen one (portable archives are downloaded and extracted).
+- `ohub check` candidate-asset selection now actually installs/extracts the chosen asset when an update is available (not just saves the pattern).
+- `ohub check --candidates`: for unmanaged apps with no exact repo match, offer a list of candidate GitHub repositories by name and link the chosen one.
+- `ohub remove <id|name>`: remove an app or folder from ohub management without uninstalling it (distinct from `ohub uninstall`).
+- `ohub add --type folder --recursive`: scan one level into subfolders for applications.
+- `ohub add --type folder --repo owner/repo`: link a folder app to a GitHub repository so it can be checked/updated like a managed app.
+- Choice memory + reset switch: selections (asset patterns, repo links, unmanaged linking) are remembered in state; `--reset` (on `check`/`update`/`install`) or `ohub remove` forgets them so prompts re-appear.
+- `--reset` on `check`/`update`/`install` clears saved choices for re-prompting.
+
+### Fixed
+- `ohub update` for apps with only portable/archive assets now offers candidates instead of silently doing nothing.
+- Folder apps linked to a GitHub repo (`--repo`) are now checked/updated against that repo.
+
+### Changed
+- `InstalledApp` gains a `github_repo` field used to link folder apps to a source repository.
+
 ## [0.1.0.14] - 2026-08-13
 
 ### Fixed
