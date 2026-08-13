@@ -287,6 +287,23 @@ class AssetMatcher:
             matches.sort(key=lambda m: priority.get(m.installer_type, 99))
             return matches[0]
 
+    def get_installer_options(self, assets: List[dict]) -> List[AssetMatch]:
+        """Get all installer-type assets (EXE_SETUP, MSI, ZIP_INSTALLER) for user selection.
+        
+        Returns list sorted by installer priority: EXE_SETUP > MSI > ZIP_INSTALLER
+        """
+        matches = self.match_assets(assets)
+        
+        installer_priority = {
+            InstallerType.EXE_SETUP: 0,
+            InstallerType.MSI: 1,
+            InstallerType.ZIP_INSTALLER: 2,
+        }
+        
+        installer_matches = [m for m in matches if m.installer_type in installer_priority]
+        installer_matches.sort(key=lambda m: installer_priority.get(m.installer_type, 99))
+        return installer_matches
+
 
 def get_asset_matcher(**kwargs) -> AssetMatcher:
     """Factory function to create AssetMatcher with defaults."""

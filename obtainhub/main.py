@@ -51,7 +51,10 @@ def main(args: Optional[List[str]] = None) -> int:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0.9"
+        "--version", action="version",
+        version="ObtainHub v0.1.0.9 - GitHub-based Package Updater and Manager for Windows x64\n"
+                "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
+                "License: MIT"
     )
     parser.add_argument(
         "--skip-self-update", action="store_true", help="Skip self-update check on startup"
@@ -308,6 +311,25 @@ def cmd_install(
         print(f"Error: No suitable asset found for {app_id}", file=sys.stderr)
         return 1
 
+    # If there are multiple installer options, let user choose
+    if not parsed.yes and not parsed.download_only:
+        installer_options = matcher.get_installer_options(release.get('assets', []))
+        if len(installer_options) > 1:
+            print(f"Multiple installer assets found for {app_id}:")
+            for i, opt in enumerate(installer_options):
+                print(f"  [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
+            print(f"  [0] Use default: {match.name} ({match.architecture.value}, {match.installer_type.name})")
+            try:
+                choice = input(f"Select installer [0-{len(installer_options)}]: ").strip()
+                if choice.isdigit() and 1 <= int(choice) <= len(installer_options):
+                    match = installer_options[int(choice) - 1]
+                    print(f"Selected: {match.name} ({match.installer_type.name})")
+                else:
+                    print(f"Using default: {match.name} ({match.installer_type.name})")
+            except (EOFError, KeyboardInterrupt):
+                print("\nCancelled.")
+                return 1
+
     print(f"Found: {match.name} ({match.architecture.value}, {match.installer_type.name})")
 
     # Download
@@ -407,6 +429,25 @@ def cmd_update(
             if not match:
                 print(f"  {app.name} ({app_id}): No suitable asset")
                 continue
+
+            # If there are multiple installer options, let user choose
+            if not parsed.yes:
+                installer_options = matcher.get_installer_options(release.get('assets', []))
+                if len(installer_options) > 1:
+                    print(f"  Multiple installer assets found for {app_id}:")
+                    for i, opt in enumerate(installer_options):
+                        print(f"    [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
+                    print(f"    [0] Use default: {match.name} ({match.architecture.value}, {match.installer_type.name})")
+                    try:
+                        choice = input(f"  Select installer [0-{len(installer_options)}]: ").strip()
+                        if choice.isdigit() and 1 <= int(choice) <= len(installer_options):
+                            match = installer_options[int(choice) - 1]
+                            print(f"  Selected: {match.name} ({match.installer_type.name})")
+                        else:
+                            print(f"  Using default: {match.name} ({match.installer_type.name})")
+                    except (EOFError, KeyboardInterrupt):
+                        print("\nCancelled.")
+                        return 1
 
             print(f"  {app.name} ({app_id}): {current_version} -> {latest_version}")
             print(f"    Downloading {match.name}...")
@@ -564,8 +605,9 @@ def cmd_check(
                         break
                     else:
                         if not client.token:
-                            print(f"    [!] GitHub API rate limit (60 req/hr without token)")
-                            print(f"    Set GITHUB_TOKEN env var for 5000 req/hr: $env:GITHUB_TOKEN='your_token'")
+                            print(f"    [!] GitHub API rate limit reached (60 req/hr for unauthenticated users).")
+                            print(f"        Tip: Set your GitHub token via 'ohub config set github_token <token>'")
+                            print(f"        or environment variable GITHUB_TOKEN to get 5000 req/hr.")
                         if attempt < 2:
                             print(f"    [!] Rate limited (attempt {attempt+1}/3), retrying in 10s...")
                             time.sleep(10)
@@ -890,7 +932,9 @@ def cmd_search(
     )
     
     if result.get("error") == "rate_limit":
-        print("[!] GitHub API rate limit exceeded. Set GITHUB_TOKEN env var to increase limit.")
+        print("[!] GitHub API rate limit reached (60 req/hr for unauthenticated users).")
+        print("    Tip: Set your GitHub token via 'ohub config set github_token <token>'")
+        print("    or environment variable GITHUB_TOKEN to get 5000 req/hr.")
         return 1
     elif result.get("error"):
         print(f"[!] Search failed: {result['error']}")

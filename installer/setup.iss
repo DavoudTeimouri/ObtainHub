@@ -69,3 +69,28 @@ begin
     AppendToPath(ExpandConstant('{app}'));
   end;
 end;
+
+function Uninstallexe: Integer;
+var
+  ResultCode: Integer;
+  Msg: String;
+begin
+  // Ask user if they want to remove configuration files
+  if MsgBox('Do you want to remove ObtainHub configuration files?', mbConfirmation, MB_YESNO) = IDYES then
+  begin
+    Msg := 'Removing configuration files...';
+    // Delete configuration files
+    if DirExists(ExpandConstant('{localappdata}\ObtainHub')) then
+      if not DeleteFile(ExpandConstant('{localappdata}\ObtainHub\state.json')) then
+        Msg := Msg + 'Failed to remove state.json' + #13#10;
+      if not DeleteFile(ExpandConstant('{localappdata}\ObtainHub\config.json')) then
+        Msg := Msg + 'Failed to remove config.json' + #13#10;
+      // Try to remove directory if empty
+      RemoveDir(ExpandConstant('{localappdata}\ObtainHub'));
+  end
+  else
+    Msg := 'Configuration files preserved as requested.';
+  
+  MsgBox(Msg, mbInformation, MB_OK);
+  Result := 0;
+end;
