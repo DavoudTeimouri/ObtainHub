@@ -135,3 +135,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial CLI structure
 - GitHub client with token authentication
 - Release fetching and asset matching
+
