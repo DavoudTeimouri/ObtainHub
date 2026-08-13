@@ -1,0 +1,23 @@
+name: Sync Release Notes
+
+on:
+  release:
+    types: [published]
+  push:
+    paths:
+      - 'CHANGELOG.md'
+      - '.github/workflows/sync-release-notes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync CHANGELOG.md to release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python .github/scripts/sync_release_notes.py
