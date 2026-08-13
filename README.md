@@ -6,16 +6,23 @@ ObtainHub (`ohub`) is a CLI tool for managing Windows x64 applications that are 
 
 ## Features
 
-- **Windows x64 only** — optimized for `.msi`, `.exe` (Inno/NSIS/InstallShield), and `.zip` assets
+- **Windows x64 only** — optimized for `.msi`, `.exe` (Inno/NSIS/InstallShield), `.zip` installer, and portable archives
 - **Silent installation** — `msiexec /qn` for MSI, auto-detected flags for EXE
-- **Smart asset selection** — prefers x64 > ARM64 > x86, MSI > Setup.exe > ZIP
+- **Smart asset selection** — prefers x64 > ARM64 > x86, EXE_SETUP (Inno) > MSI > ZIP_INSTALLER; portable archives are extracted and tracked
+- **GitHub repo management** — track a repo by exact `owner/repo` and keep it updated
+- **Archive (zip) repos** — for repos (incl. archived) that only ship ZIP/portable assets: download, extract to a folder, and track for updates
+- **Local folder management** — `ohub add --type folder` scans a folder's root for apps and tracks them (no recursion; drive roots refused)
+- **Exact-match check** — `ohub check` links unmanaged apps only to an EXACT GitHub repo match (no noisy candidate lists)
+- **Candidate asset selection** — when no standard installer exists, lists available assets and lets you pick one; the chosen pattern is saved for future updates
+- **Archived / inactive warnings** — flagged during check, install, update, and add
 - **Self-update** — updates itself via GitHub Releases
-- **State tracking** — records installed apps, versions, and installer paths in `state.json`
+- **State tracking** — records installed apps, versions, type, and installer paths in `state.json`
 - **Prerelease support** — opt-in with `--prerelease` flag
 - **Download-only mode** — fetch installers without executing them
 - **Custom sources** — add custom GitHub or manifest sources
-- **System app detection** — scan Windows Registry for installed applications
-- **GitHub token support** — higher rate limits with `GITHUB_TOKEN` environment variable
+- **System app detection** — scan Windows Registry for installed applications (with `ohub list --all` / `ohub check --all`)
+- **GitHub token support** — higher rate limits with `ohub config set github_token`
+- **Single-source versioning** — `obtainhub/__init__.py` is the one version of truth; the installer/manifest files are synced automatically at build time
 
 ## Installation
 
@@ -39,6 +46,11 @@ Download `ohub.exe` from [GitHub Releases](https://github.com/DavoudTeimouri/Obt
 ```cmd
 # Install an app from GitHub Releases
 ohub install owner/repo
+
+# Add a repo / archive / local folder for management
+ohub add owner/repo
+ohub add owner/repo --type zip            # repo ships archives: download, extract, track
+ohub add "D:\My Folder" --type folder     # track apps in a local folder
 
 # Check for updates (don't install)
 ohub check
@@ -65,7 +77,7 @@ ohub search "text editor" --min-stars 100
 ## Commands Reference
 
 ### `ohub install <owner/repo>`
-Install an application from GitHub Releases.
+Install an application from GitHub Releases. The app can be given by exact id (`owner/repo`) or by display name.
 
 ```cmd
 ohub install owner/repo                    # Latest stable release
@@ -76,26 +88,35 @@ ohub install owner/repo --force            # Force reinstall
 ohub install owner/repo --yes              # Auto-confirm prompts
 ```
 
+If multiple installer assets are present, ObtainHub prompts you to choose (or picks the best match: EXE_SETUP > MSI > ZIP_INSTALLER). For repos that only ship a portable archive, the archive is downloaded, extracted to a folder, and tracked as a `zip` app.
+
 ### `ohub update [owner/repo]`
-Update installed applications.
+Update installed applications. The target can be an exact id or a display name. Folder-managed apps are skipped (they have no remote update source).
 
 ```cmd
 ohub update                          # Update all apps
 ohub update owner/repo               # Update specific app
+ohub update v2rayN                   # Update by display name
 ohub update --prerelease             # Include prereleases
 ohub update --dry-run                # Show what would be updated
 ohub update --yes                    # Auto-confirm prompts
 ```
 
 ### `ohub check [owner/repo]`
-Check for available updates without installing.
+Check for available updates without installing. The target can be an exact id or a display name.
 
 ```cmd
-ohub check                           # Check all apps
+ohub check                           # Check managed apps
 ohub check owner/repo                # Check specific app
 ohub check --prerelease              # Include prereleases
+ohub check --all                     # Also scan system-installed (unmanaged) apps
 ohub check --json                    # Output as JSON
 ```
+
+- Managed apps are always checked for updates.
+- Unmanaged system apps are scanned only with `--all`; an unmanaged app is linked only to an **exact** GitHub repo name match (no candidate-repo lists).
+- When an app has no standard installer, `ohub check` lists the available assets and (interactively) lets you pick one; the chosen pattern is saved for future updates.
+- Archived or inactive repositories print a warning.
 
 ### `ohub add <owner/repo>`
 Add a repository, archive, or local folder for management.
@@ -110,7 +131,7 @@ ohub add owner/repo --as-source            # Also register as a manifest source
 
 - `--type github` (default): track a GitHub repository by exact `owner/repo`.
 - `--type zip`: for repositories (including archived ones) that only ship ZIP/portable assets — the archive is downloaded, extracted to a folder, and tracked; updates re-use the saved asset pattern.
-- `--type folder`: scan a local folder's **root only** for applications. Drive roots such as `C:\` are refused.
+- `--type folder`: scan a local folder's **root only** for applications. Drive roots such as `C:\` are refused. Quote the path if it contains spaces, e.g. `ohub add "D:\My Folder" --type folder`.
 - During check/install/update/add, archived or inactive repositories print a warning.
 
 ### `ohub list`
@@ -124,11 +145,13 @@ ohub list --all                      # Include system-installed apps from Window
 
 **Output format:**
 ```
-Name                      Version          ID                              Type
+Name                      Version          Type                  Source
 --------------------------------------------------------------------------------
-MyApp                     1.2.3            owner/repo                      msi
-AnotherApp                2.0.0-beta       owner/another                   exe
+MyApp                     1.2.3            github                ohub
+AnotherApp                2.0.0-beta       zip @ C:\Apps\Another  ohub
+PortableTool             -               folder @ D:\Tools      ohub
 ```
+The `Type` column shows `github`, `zip`, or `folder`, and (for zip/folder) the install location.
 
 ### `ohub uninstall <owner/repo>`
 Uninstall an application and remove from state.
@@ -252,13 +275,33 @@ Installed apps are tracked in `%APPDATA%\ObtainHub\state.json` (Windows) or `~/.
       "installer_path": "C:\\Users\\<user>\\Downloads\\ObtainHub\\app.msi",
       "source_url": "https://github.com/owner/repo/releases/tag/v1.2.3",
       "tag": "v1.2.3",
+      "app_type": "github",
+      "install_location": "",
+      "asset_pattern": "",
+      "preferred_asset": "",
       "installed_at": 1700000000,
       "updated_at": 1700000000,
       "requires_manual_uninstall": false
+    },
+    "folder:v2rayN": {
+      "id": "folder:v2rayN",
+      "name": "v2rayN",
+      "version": "",
+      "installer_type": "folder",
+      "installer_path": "D:\\Tools\\v2rayN",
+      "source_url": "",
+      "tag": "",
+      "app_type": "folder",
+      "install_location": "D:\\Tools\\v2rayN",
+      "asset_pattern": "",
+      "preferred_asset": ""
     }
-  }
+  },
+  "check_history": {}
 }
 ```
+
+`app_type` is one of `github`, `zip`, or `folder`. `zip`/`folder` apps record `install_location`; `zip` apps also record `asset_pattern` (saved candidate pattern) and `preferred_asset`.
 
 ## System Application Detection
 
@@ -275,9 +318,14 @@ This enables `ohub check` to match system-installed apps against GitHub reposito
 When multiple assets exist in a release, ObtainHub selects the best match:
 
 1. **Architecture priority**: x64 > ARM64 > x86 (ARM64/x86 only if explicitly allowed)
-2. **Installer priority**: MSI > Setup.exe > ZIP
-3. **Exclusions**: Checksums (`.sha256`, `.asc`), signatures, non-Windows packages (`.deb`, `.rpm`, `.dmg`, `.tar.gz`), source archives
-4. **Download-only**: ZIP files are never auto-installed
+2. **Installer priority**: EXE_SETUP (Inno Setup) > MSI > ZIP_INSTALLER
+3. **Portable archives**: a bare `.zip`/`.exe` standalone asset is downloaded and, for `zip` apps, extracted to a folder and tracked (not executed)
+4. **Exclusions**: Checksums (`.sha256`, `.asc`), signatures, non-Windows packages (`.deb`, `.rpm`, `.dmg`, `.tar.gz`), source archives
+5. **Candidate selection**: if no strict installer is found, `ohub install`/`update`/`check` list the available assets and let you pick one; the choice is saved as an asset pattern for future updates
+
+## Candidate Assets & Patterns
+
+For repositories that ship only portable archives (common with archived projects), ObtainHub records the chosen asset's pattern (e.g. `*x64*.zip`). On the next `update`, it re-matches the newest release against that pattern automatically — so you only pick once.
 
 ## Manual Uninstall Handling
 
@@ -331,13 +379,14 @@ python build_dist.py --clean
 
 ## GitHub Actions
 
-Automated builds on tag push (e.g., `git tag v0.1.0 && git push origin v0.1.0`):
+Automated builds on tag push (e.g., `git tag v0.1.0.14 && git push origin v0.1.0.14`):
 
 - Builds on `windows-latest`
+- Runs `tools/sync_versions.py` so the Inno Setup, WiX MSI, and PyPI metadata all carry the version from `obtainhub/__init__.py` (no more desynced installers)
 - Creates `ohub.exe`, `ObtainHub-Setup.exe`, and `ObtainHub.msi`
-- Publishes to GitHub Releases as prerelease or stable
+- Syncs `CHANGELOG.md` into the release notes automatically
 
-Workflow: `.github/workflows/release.yml`
+Workflows: `.github/workflows/release.yml`, `.github/workflows/sync-release-notes.yml`
 
 **Note:** Release tags with `beta` or `alpha` are published as pre-releases. Assets are generated for each tag pushed.
 
