@@ -212,6 +212,31 @@ A manifest is a JSON list of apps:
 ```
 `installer_type` is one of `exe_setup`, `msi`, `zip`, `exe_standalone` (auto-detected from the URL when omitted).
 
+**How to add a custom source and use it**
+
+```cmd
+# 1) Add a GitHub repo as a source (validated: must expose releases/assets)
+ohub source add myapp https://github.com/owner/repo
+
+# 2) Or add a JSON manifest hosted anywhere (non-GitHub)
+ohub source add mylist https://example.com/manifest.json --type manifest
+
+# 3) List / remove sources
+ohub source list
+ohub source remove myapp
+
+# 4) Install from a source: same command as GitHub; ohub falls back to sources
+ohub install owner/repo            # resolves via the source when not on github.com
+
+# 5) Update apps installed from sources
+ohub update                        # checks each source for a newer version
+
+# 6) Discover unmanaged system apps that live in a source
+ohub check --all                  # matches registry apps to source entries
+```
+
+A source with no manifest (a plain GitHub repo URL) still works — ohub reads its releases directly. You do **not** need a separate manifest file; `--type github` sources use the repo's own releases. Use `--type manifest` only when you host your own JSON list on a non-GitHub host.
+
 ### `ohub search <query>`
 Search GitHub repositories for applications with releases.
 
@@ -266,6 +291,7 @@ Config file: `%USERPROFILE%\.config\obtainhub\config.json`
 ```json
 {
   "github_token": "",
+  "self_update_enabled": true,
   "install_dir": "C:\\Users\\<user>\\Applications\\ObtainHub",
   "download_dir": "C:\\Users\\<user>\\Downloads\\ObtainHub",
   "config_dir": "C:\\Users\\<user>\\.config\\obtainhub",
@@ -276,13 +302,37 @@ Config file: `%USERPROFILE%\.config\obtainhub\config.json`
   "prefer_x64": true,
   "allow_x86_fallback": false,
   "auto_attempt_uninstall": false,
-  "self_update_enabled": true,
-  "sources": []
+  "manifest_sources": []
 }
 ```
 
 ### Global vs per-user settings
-On a multi-user machine, settings in `%ProgramData%\ObtainHub\config.json` (Windows) or `/etc/obtainhub/config.json` (Linux/macOS) apply to **all** users. Each user's own `~/.config/obtainhub/config.json` is overlaid on top, so a user can override any value - most importantly their own `github_token` (which is always per-user and **never** read from the global file). Point `OBTAINHUB_GLOBAL_CONFIG` at a custom path to use a different shared config.
+On a multi-user Windows machine, a config in `%ProgramData%\ObtainHub\config.json` applies to **all** users. Each user's own `%USERPROFILE%\.config\obtainhub\config.json` is overlaid on top, so a user can override any value — most importantly their own `github_token` (always per-user, never read from the global file). The global directory is created automatically on first run if missing. Set `OBTAINHUB_GLOBAL_CONFIG` to point at a custom shared-config path.
+
+### Configuration items
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `github_token` | str | `""` | GitHub PAT; raises API limit 60→5000/hr. Always per-user. |
+| `self_update_enabled` | bool | `true` | Allow `ohub self-update`. |
+| `install_dir` | str | `...\Applications\ObtainHub` | Root for installed/portable apps. |
+| `download_dir` | str | `...\Downloads\ObtainHub` | Where installers are downloaded (reuse prompt applies). |
+| `config_dir` | str | `%USERPROFILE%\.config\obtainhub` | Config file location. |
+| `state_dir` | str | `%USERPROFILE%\.local\share\obtainhub` | `state.json` location. |
+| `update_interval_hours` | int | `24` | Reserved for scheduler cadence. |
+| `auto_update` | bool | `true` | Reserved. |
+| `allow_prerelease` | bool | `false` | Include prereleases in install/update. |
+| `prefer_x64` | bool | `true` | Prefer x64 assets. |
+| `allow_x86_fallback` | bool | `false` | Fall back to x86 if no x64 asset. |
+| `auto_attempt_uninstall` | bool | `false` | Try to run the uninstaller on remove. |
+| `manifest_sources` | list | `[]` | Custom sources (see below). Each: `{"name","url","enabled","type":"github"\|"manifest"}`. |
+| `proxy` | str | `""` | HTTP(S) proxy URL. |
+| `timeout_seconds` | int | `30` | Network timeout. |
+| `check_timeout_seconds` | int | `20` | Per-app check timeout (10–60). |
+| `check_timeout_retries` | int | `3` | Check retries (1–5). |
+| `max_parallel_downloads` | int | `3` | Reserved. |
+| `log_level` | str | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. |
+| `log_file` | str | `""` | Log destination (empty = stderr). |
 
 ### GitHub Token (Optional)
 Set a GitHub Personal Access Token to avoid rate limits (60/hr → 5000/hr):

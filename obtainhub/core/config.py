@@ -49,31 +49,25 @@ class Config:
     # Manual uninstall handling
     auto_attempt_uninstall: bool = False
 
-    # Custom sources
+    # Custom sources (legacy top-level key, migrated to manifest_sources)
     sources: List[ManifestSource] = field(default_factory=list)
-    
+
     # Network
     proxy: str = ""
     timeout_seconds: int = 30
     check_timeout_seconds: int = 20
     check_timeout_retries: int = 3
     max_parallel_downloads: int = 3
-    
+
     # Logging
     log_level: str = "INFO"
     log_file: str = ""
-    
-    # Manifest sources
-    manifest_sources: List[ManifestSource] = field(default_factory=lambda: [
-        ManifestSource(
-            name="default",
-            url="https://raw.githubusercontent.com/DavoudTeimouri/ObtainHub/main/manifest.json",
-            enabled=True
-        )
-    ])
-    
+
+    # Manifest sources (custom GitHub repos or JSON manifests)
+    manifest_sources: List[ManifestSource] = field(default_factory=list)
+
     # Version
-    schema_version: int = 1
+    schema_version: int = 2
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for serialization."""
@@ -151,6 +145,7 @@ class ConfigManager:
         """
         # Start from global (machine-wide) config if present
         global_file = self._global_config_file()
+        base = Config()
         if global_file and global_file.exists():
             try:
                 with open(global_file, "r", encoding="utf-8") as f:
@@ -159,7 +154,13 @@ class ConfigManager:
             except Exception:
                 base = Config()
         else:
-            base = Config()
+            # Ensure the machine-wide config directory exists so admins can drop
+            # a shared config there (issue: %ProgramData%\ObtainHub was missing).
+            try:
+                if global_file:
+                    global_file.parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
 
         if not self.config_file.exists():
             self.save(base)
@@ -204,15 +205,28 @@ class ConfigManager:
     def _migrate(self, data: Dict[str, Any]) -> Config:
         """Migrate config from older schema versions."""
         schema_version = data.get("schema_version", 1)
-        
+
         # Add defaults for new fields if missing
         if schema_version < 2:
             data.setdefault("prefer_x64", True)
             data.setdefault("allow_x86_fallback", False)
             data.setdefault("auto_attempt_uninstall", False)
             data["schema_version"] = 2
-        
-        return Config.from_dict(data)
+
+        # Legacy top-level "sources" -> "manifest_sources" (issue: user config used `sources`)
+        legacy = data.get("sources")
+        if legacy and isinstance(legacy, list) and not data.get("manifest_sources"):
+            data["manifest_sources"] = legacy
+            data.pop("sources", None)
+
+        config = Config.from_dict(data)
+
+        # Ensure every manifest source carries a type; default "github"
+        for ms in config.manifest_sources:
+            if not getattr(ms, "type", ""):
+                ms.type = "github"
+
+        return config
 
     def save(self, config: Optional[Config] = None) -> None:
         """Save configuration to file."""
@@ -255,12 +269,14 @@ class ConfigManager:
         setattr(self.config, key, value)
         self.save()
 
-    def add_manifest_source(self, name: str, url: str, enabled: bool = True, headers: Optional[Dict[str, str]] = None) -> None:
-        """Add a manifest source."""
+    def add_manifest_source(self, name: str, url: str, enabled: bool = True, headers: Optional[Dict[str, str]] = None, src_type: str = "github") -> None:
+        """Add a manifest source (type: github | manifest)."""
         # Remove existing with same name
         self.config.manifest_sources = [ms for ms in self.config.manifest_sources if ms.name != name]
         # Add new
-        self.config.manifest_sources.append(ManifestSource(name=name, url=url, enabled=enabled, headers=headers or {}))
+        self.config.manifest_sources.append(ManifestSource(
+            name=name, url=url, enabled=enabled, headers=headers or {}, type=src_type,
+        ))
         self.save()
 
     def remove_manifest_source(self, name: str) -> bool:

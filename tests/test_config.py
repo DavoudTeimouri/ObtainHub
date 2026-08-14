@@ -22,8 +22,8 @@ class TestConfig:
         assert config.auto_update is True
         assert config.log_level == "INFO"
         assert config.max_parallel_downloads == 3
-        assert len(config.manifest_sources) == 1
-        assert config.manifest_sources[0].name == "default"
+        # No hardcoded default source
+        assert len(config.manifest_sources) == 0
         assert config.prefer_x64 is True
         assert config.allow_x86_fallback is False
         assert config.auto_attempt_uninstall is False
@@ -37,7 +37,8 @@ class TestConfig:
         assert "github_token" in data
         assert "manifest_sources" in data
         assert isinstance(data["manifest_sources"], list)
-        assert data["manifest_sources"][0]["name"] == "default"
+        # No hardcoded default source; users add their own
+        assert all(ms.get("type") for ms in data["manifest_sources"])
 
     def test_config_from_dict(self):
         """Test config deserialization."""
@@ -177,8 +178,9 @@ class TestConfigManager:
         """Test adding manifest source."""
         config_manager.add_manifest_source("test", "https://test.com/manifest.json")
         config = config_manager.load()
-        assert len(config.manifest_sources) == 2  # default + test
+        assert len(config.manifest_sources) == 1  # only the added source (no hardcoded default)
         assert any(ms.name == "test" for ms in config.manifest_sources)
+        assert config.manifest_sources[0].type == "github"
 
     def test_remove_manifest_source(self, config_manager):
         """Test removing manifest source."""
@@ -191,7 +193,7 @@ class TestConfigManager:
         config_manager.add_manifest_source("disabled", "https://disabled.com", enabled=False)
         config_manager.add_manifest_source("enabled", "https://enabled.com", enabled=True)
         sources = config_manager.get_enabled_manifest_sources()
-        assert len(sources) == 2  # default + enabled
+        assert len(sources) == 1  # only the enabled source (no hardcoded default)
         assert all(s.enabled for s in sources)
 
     def test_validation_errors(self, config_manager):

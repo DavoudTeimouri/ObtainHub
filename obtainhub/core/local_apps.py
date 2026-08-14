@@ -187,7 +187,7 @@ def add_zip_app(
         extract_archive(downloaded, install_location)
     except PermissionError as e:
         print(f"Extraction failed (permission denied): {e}", file=sys.stderr)
-        print("Run ohub as administrator, or choose a destination you own (not Program Files / System32).", file=sys.stderr)
+        print("The app may be running - close it and retry. Or run ohub as administrator and choose a folder you own (not Program Files / System32).", file=sys.stderr)
         raise
 
     app_id = repo_id

@@ -60,7 +60,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.1.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.2.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -458,6 +458,12 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
                 return False, f"Could not clear destination: {e}"
         try:
             extract_archive(downloaded_path, dest)
+        except PermissionError as e:
+            return False, (
+                f"Extraction failed (permission denied): {e}. "
+                f"The app may be running - close it and retry, or run ohub as administrator "
+                f"and choose a folder you own (not Program Files / System32)."
+            )
         except Exception as e:
             return False, f"Extraction failed: {e}"
         state_manager.update_app(
@@ -528,19 +534,21 @@ def _select_from_options(opts, prompt, allow_default=False, allow_skip=False):
         return None
     try:
         if allow_skip:
-            choice = input(prompt + f" [0-{len(opts)}]: ").strip()
+            choice = input(prompt + f" [0-{len(opts)}, 0=Skip]: ").strip()
             if choice == "0":
                 return None
             if choice.isdigit() and 1 <= int(choice) <= len(opts):
                 return opts[int(choice) - 1]
         elif allow_default:
-            choice = input(prompt + f" [0-{len(opts)}]: ").strip()
+            choice = input(prompt + f" [0-{len(opts)}, 0=Default]: ").strip()
             if choice == "" or choice == "0":
                 return opts[0]
             if choice.isdigit() and 1 <= int(choice) <= len(opts):
                 return opts[int(choice) - 1]
         else:
-            choice = input(prompt + f" [1-{len(opts)}]: ").strip()
+            choice = input(prompt + f" [1-{len(opts)}, 0=Cancel]: ").strip()
+            if choice == "0":
+                return None
             if choice.isdigit() and 1 <= int(choice) <= len(opts):
                 return opts[int(choice) - 1]
     except (EOFError, KeyboardInterrupt):
@@ -708,6 +716,7 @@ def cmd_install(
 ) -> int:
     app_id = _resolve_app_id(state_manager, parsed.app)
     logger.info(f"Installing {app_id}")
+    print(f"[*] Resolving {app_id} ...")
 
     # Parse owner/repo
     if "/" not in app_id:
@@ -982,6 +991,7 @@ def cmd_update(
     logger,
 ) -> int:
     """Handle update command."""
+    print(f"[*] Checking updates for installed apps ...")
     token = config_manager.load().github_token
     client = GitHubClient(token=token)
     matcher = AssetMatcher(allow_arm64=False, allow_x86_fallback=False, require_installer=True)
@@ -1193,7 +1203,7 @@ def cmd_check(
                     apps_to_check = [menu[int(choice) - 1][0]]
                 else:
                     selected_unmanaged = menu[int(choice) - 1][0]
-                    apps_to_check = [app.id for app in managed]
+                    apps_to_check = []  # check only the selected unmanaged app below
             else:
                 print("Invalid selection - checking managed apps.")
                 apps_to_check = [app.id for app in managed]
@@ -1232,13 +1242,16 @@ def cmd_check(
                 continue
 
             if app.app_type == "folder":
-                if app.github_repo:
+                if app.github_repo and "/" in app.github_repo:
                     owner, repo = app.github_repo.split("/", 1)
                 else:
                     print(f"  {app.name} ({app_id}): folder-managed, no remote check")
                     continue
+            elif "/" in app_id:
+                owner, repo = app_id.split("/", 1)
             else:
-                owner, repo = app_id.split("/")
+                print(f"  {app.name} ({app_id}): cannot resolve remote (no owner/repo)")
+                continue
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
             if not release:
@@ -1619,8 +1632,8 @@ def cmd_source(
         except Exception as e:
             print(f"Error: could not validate source '{url}': {e}", file=sys.stderr)
             return 1
-        config_manager.add_manifest_source(parsed.name, url, enabled=True, headers={})
-        print(f"Added source: {parsed.name} ({url})")
+        config_manager.add_manifest_source(parsed.name, url, enabled=True, headers={}, src_type=src_type)
+        print(f"Added source: {parsed.name} ({src_type}) -> {url}")
         return 0
 
     elif parsed.source_action == "remove":

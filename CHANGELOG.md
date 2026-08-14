@@ -5,6 +5,21 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2.0] - 2026-08-13
+
+### Fixed
+- Extraction `PermissionError` now tells the user to **close the running app** and retry (or run as admin / pick an owned folder).
+- `ohub check` no longer crashes on folder-managed apps whose id has no `owner/repo` (`not enough values to unpack`).
+- `ohub check --all` no longer re-checks every app after you select a single unmanaged app.
+- Custom sources in the legacy top-level `sources` key are now migrated into `manifest_sources` (they were previously ignored). The bogus built-in `default` manifest source was removed.
+- `ohub source add --type` is now stored; sources without installable content (no releases/assets, or non-JSON) are rejected.
+- Global config directory (`%ProgramData%\ObtainHub`) is created automatically if missing.
+
+### Changed
+- Every interactive selection now offers a numbered **Cancel/Skip** option.
+- Commands print a `[*]` progress line so background runs stay informative.
+- README: config table added, custom-source how-to expanded, non-Windows samples removed (Windows x64 only).
+
 ## [0.7.1.0] - 2026-08-13
 
 ### Added
