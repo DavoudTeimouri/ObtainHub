@@ -79,7 +79,7 @@ class AssetMatcher:
 
         # Installer type detection
         self.installer_regexes = {
-            InstallerType.EXE_SETUP: re.compile(r'-Setup\.exe$|-setup\.exe$|Setup\.exe$|-Install\.exe$|-install\.exe$|Install\.exe$', re.IGNORECASE),
+            InstallerType.EXE_SETUP: re.compile(r'(setup|install).*\.exe$|.*[-_]setup\.exe$|.*[-_]install\.exe$', re.IGNORECASE),
             InstallerType.MSI: re.compile(r'\.msi$', re.IGNORECASE),
             InstallerType.ZIP_INSTALLER: re.compile(r'\.zip$', re.IGNORECASE),  # Will be further filtered
             InstallerType.ZIP: re.compile(r'\.zip$', re.IGNORECASE),

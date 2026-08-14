@@ -5,6 +5,19 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0.0] - 2026-08-13
+
+### Changed
+- **Self-update removed from all commands.** `ohub` no longer phones home on every command. Run `ohub self-update` manually when you want to upgrade. The `--skip-self-update` flag was removed.
+
+### Fixed
+- `ohub uninstall` no longer fails with "No uninstall method available" for apps that were added (not installed) or tracked as portable EXEs - they are now cleanly removed from ohub management. Real MSI/EXE installs still invoke the system uninstaller, and permission errors suggest running as administrator.
+- Setup EXEs that don't end in exactly `Setup.exe` (e.g. `OnionHop-Setup-v3.exe`) are now correctly detected as installers and actually installed, then tracked as a managed app.
+- `ohub check` now always prints a result for a selected managed app (previously "up to date" apps with a normal installer printed nothing).
+- `ohub add --type folder` no longer scans the folder for EXEs. It tracks a single app from the mandatory `--name` and the mandatory `--repo owner/repo`; the name + repo are the only source of truth. Folder apps resolve updates via their linked repo.
+- `ohub source` with no subcommand now prints its usage/flags instead of silently doing nothing.
+- `ohub check --all` now offers a selectable list that includes both managed and system (unmanaged) apps; choosing one unmanaged app checks just that app.
+
 ## [0.4.0.0] - 2026-08-13
 
 ### Fixed

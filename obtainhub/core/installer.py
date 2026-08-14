@@ -259,11 +259,9 @@ class SilentInstaller:
         if app and app.installer_type in (InstallerType.EXE_SETUP.value, InstallerType.EXE_STANDALONE.value) and app.installer_path:
             return self._uninstall_exe(app)
 
-        # Portable / zip / archive apps: delete the extracted folder (or installer dir)
+        # Portable / zip / archive apps: delete the extracted folder.
         if app:
             target = app.install_location
-            if not target and app.installer_path:
-                target = str(Path(app.installer_path).parent)
             if target:
                 try:
                     import shutil

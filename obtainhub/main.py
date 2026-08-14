@@ -60,12 +60,9 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.4.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.5.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
-    )
-    parser.add_argument(
-        "--skip-self-update", action="store_true", help="Skip self-update check on startup"
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
@@ -256,20 +253,6 @@ def main(args: Optional[List[str]] = None) -> int:
     try:
         config_manager = get_config_manager()
         state_manager = get_state_manager()
-
-        # Self-update check (unless skipped)
-        if not parsed.skip_self_update and parsed.command != "self-update":
-            config = config_manager.load()
-            if config.self_update_enabled:
-                try:
-                    from obtainhub import __version__
-                    updater = SelfUpdater(config_manager, state_manager, current_version=__version__)
-                    result = updater.check_and_update(parsed.prerelease if hasattr(parsed, 'prerelease') else False, False)
-                    if result:
-                        print(f"Self-updated to {result}. Please re-run command.")
-                        return 0
-                except Exception:
-                    logger.debug("Self-update check failed, continuing")
 
         if parsed.command == "install":
             return cmd_install(
@@ -968,35 +951,45 @@ def cmd_check(
     client = GitHubClient(token=token)
     matcher = AssetMatcher(allow_arm64=False, allow_x86_fallback=False, require_installer=True)
 
+    # Unmanaged system apps for --all
+    system_apps = get_installed_system_apps()
+    ohub_app_names = {app.name.lower() for app in state_manager.get_all_apps()}
+    unmanaged_apps = [sa for sa in system_apps if sa.name.lower() not in ohub_app_names]
+
     apps_to_check = []
+    selected_unmanaged = None
     if parsed.app:
         apps_to_check = [parsed.app]
     elif sys.stdin.isatty():
-        apps = state_manager.get_all_apps()
-        if apps:
+        managed = state_manager.get_all_apps()
+        menu = [(app.id, f"{app.name} ({app.id})", "managed") for app in managed]
+        if parsed.all:
+            menu += [(sa.name, f"{sa.name} (system)", "unmanaged") for sa in unmanaged_apps]
+        if menu:
             print("Select app(s) to check:")
-            for i, app in enumerate(apps):
-                print(f"  [{i+1}] {app.name} ({app.id})")
-            print(f"  [0] All ({len(apps)})")
+            for i, (_, label, _) in enumerate(menu):
+                print(f"  [{i+1}] {label}")
+            print(f"  [0] All ({len(menu)})")
             try:
-                choice = input("Check > [0-{0}]: ".format(len(apps))).strip()
+                choice = input("Check > [0-{0}]: ".format(len(menu))).strip()
             except (EOFError, KeyboardInterrupt):
                 choice = "0"
             if choice == "0" or choice == "":
-                apps_to_check = [app.id for app in apps]
-            elif choice.isdigit() and 1 <= int(choice) <= len(apps):
-                apps_to_check = [apps[int(choice) - 1].id]
+                apps_to_check = [app.id for app in managed]
+            elif choice.isdigit() and 1 <= int(choice) <= len(menu):
+                kind = menu[int(choice) - 1][2]
+                if kind == "managed":
+                    apps_to_check = [menu[int(choice) - 1][0]]
+                else:
+                    selected_unmanaged = menu[int(choice) - 1][0]
+                    apps_to_check = [app.id for app in managed]
             else:
-                print("Invalid selection - checking all.")
-                apps_to_check = [app.id for app in apps]
+                print("Invalid selection - checking managed apps.")
+                apps_to_check = [app.id for app in managed]
         else:
             apps_to_check = []
     else:
-        apps = state_manager.get_all_apps()
-        apps_to_check = [app.id for app in apps]
-
-    # Unmanaged system apps - only scanned with --all (avoid re-scanning everything)
-    system_apps = get_installed_system_apps()
+        apps_to_check = [app.id for app in state_manager.get_all_apps()]
     ohub_app_names = {app.name.lower() for app in state_manager.get_all_apps()}
     unmanaged_apps = [sa for sa in system_apps if sa.name.lower() not in ohub_app_names]
 
@@ -1077,18 +1070,16 @@ def cmd_check(
                             print(f"    Applied: {message}")
                     print()
                 else:
+                    print(f"  {app.name} ({app_id})")
+                    print(f"    Current:  {current_version}")
+                    print(f"    Latest:   {latest_version}")
+                    print(f"    Status:   Up to date")
                     if not strict and candidates:
-                        print(f"  {app.name} ({app_id})")
-                        print(f"    Current:  {current_version}")
-                        print(f"    Latest:   {latest_version}")
-                        print(f"    Status:   Up to date")
-                        print(f"    No installer package - available assets:")
+                        print(f"    No strict installer package - available assets:")
                         for i, opt in enumerate(candidates):
                             print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
                         _pick_candidate(candidates, app_id, state_manager, parsed)
-                        print()
-                    elif parsed.all:
-                        print(f"  {app.name} ({app_id}): Up to date ({current_version})")
+                    print()
 
             results.append({
                 "app": app_id,
@@ -1116,6 +1107,8 @@ def cmd_check(
         check_history = state_manager.get_check_history()
         print(f"\nFound {len(unmanaged_apps)} unmanaged application(s) in system registry:\n")
         for sys_app in unmanaged_apps:
+            if selected_unmanaged and sys_app.name != selected_unmanaged:
+                continue
             history = check_history.get(sys_app.name.lower())
             if not parsed.all and history and history.user_choice in ("ignored", "managed"):
                 label = "ignored by user" if history.user_choice == "ignored" else "already managed by ohub"
@@ -1265,31 +1258,13 @@ def cmd_uninstall(
         print(f"App not found in state: {app_id}", file=sys.stderr)
         return 1
 
-    # Non-installer apps (zip/folder/portable) have no MSI/EXE to run
-    if app.app_type in ("zip", "folder") or app.installer_type in ("zip", "exe_standalone"):
-        print(f"Removing tracked app: {app.name} ({app.app_type})")
-        if app.install_location and not parsed.keep_data:
-            try:
-                import shutil
-                shutil.rmtree(app.install_location, ignore_errors=True)
-                print(f"Removed files at: {app.install_location}")
-            except Exception as e:
-                print(f"Could not remove files at {app.install_location}: {e}")
-                print("You may need administrator permission to delete it manually.")
-        _remove_app_source(config_manager, app_id, app)
-        state_manager.remove_app(app_id)
-        print(f"Removed {app.name} from ohub management.")
-        return 0
-
     installer = SilentInstaller()
     success, message = installer.uninstall(app_id)
 
     if success:
         print(f"Success: {message}")
-        # Remove from state
         state_manager.remove_app(app_id)
         _remove_app_source(config_manager, app_id, app)
-        # Optionally remove installer file
         if not parsed.keep_data and app.installer_path:
             try:
                 Path(app.installer_path).unlink(missing_ok=True)
@@ -1297,13 +1272,21 @@ def cmd_uninstall(
                 pass
         print(f"Removed {app.name} from ohub management.")
         return 0
+
+    # Uninstall produced no automatic method.
+    print(f"Uninstall failed: {message}")
+    if app.app_type == "github" and not app.install_location:
+        # Never installed by ohub (added but no system uninstaller recorded),
+        # or a portable EXE tracked only by ohub. Drop from management.
+        state_manager.remove_app(app_id)
+        _remove_app_source(config_manager, app_id, app)
+        print(f"Removed {app.name} from ohub management (no system uninstaller was recorded).")
+        return 0
+    if "permission" in message.lower() or "access is denied" in message.lower():
+        print("This looks like a permission issue - try running ohub as administrator.")
     else:
-        print(f"Uninstall failed: {message}")
-        if "permission" in message.lower() or "access is denied" in message.lower():
-            print("This looks like a permission issue - try running ohub as administrator.")
-        else:
-            print("Manual uninstall may be required. Use --keep-data to keep installer files.")
-        return 1
+        print("Manual uninstall may be required. Use --keep-data to keep installer files.")
+    return 1
 
 
 def cmd_remove(
@@ -1358,6 +1341,11 @@ def cmd_source(
             print(f"Source not found: {parsed.name}")
         return 0
 
+    else:
+        print("Usage: ohub source <command> [options]")
+        print("  list                 List configured sources")
+        print("  add <name> <url>     Add a custom source (--type github|manifest)")
+        print("  remove <name>        Remove a source")
     return 0
 
 
@@ -1395,7 +1383,6 @@ def cmd_add(
             add_folder_app(
                 folder,
                 name=parsed.name,
-                recursive=parsed.recursive,
                 repo=parsed.repo_arg or "",
             )
         except ValueError as e:

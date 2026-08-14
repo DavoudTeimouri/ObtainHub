@@ -202,56 +202,49 @@ def add_zip_app(
     return app
 
 
-def add_folder_app(folder: Path, *, name: Optional[str] = None, recursive: bool = False, repo: str = "") -> List[InstalledApp]:
-    """Scan a folder and track every application found.
+def add_folder_app(folder: Path, *, name: Optional[str] = None, repo: str = "") -> List[InstalledApp]:
+    """Track a local folder as an app managed by its linked GitHub repo.
 
-    ``recursive`` also scans one level into subfolders. ``repo`` (owner/repo)
-    links the folder app to a GitHub repository so it can be checked/updated.
-    Returns the list of registered/updated InstalledApp objects.
+    The app is identified by ``name`` (mandatory, the real application name) and
+    must be linked to a GitHub ``repo`` (owner/repo) so it can be checked/updated.
+    The folder is NOT scanned for executables - the user-supplied name and repo
+    are the single source of truth.
+
+    Returns the list of registered/updated InstalledApp objects (one entry).
     """
     folder = Path(folder)
     if not folder.is_dir():
         raise ValueError(f"Folder not found: {folder}")
+    if not name:
+        raise ValueError("A application name (--name) is required for folder mode.")
+    if not repo:
+        raise ValueError("A GitHub repository (--repo owner/repo) is required for folder mode.")
     state = get_state_manager()
 
-    apps = scan_root_for_apps(folder, recursive=recursive)
-    if not apps:
-        raise ValueError(
-            f"No applications found in {folder}. "
-            "ObtainHub only scans the folder root (use --recursive for subfolders)."
+    base_id = name
+    app_id = f"folder:{base_id}"
+    existing = state.get_app(app_id)
+    if existing:
+        app = state.update_app(
+            app_id, install_location=str(folder), app_type="folder",
+            name=name, github_repo=repo,
         )
-
-    result = []
-    base_id = name or folder.name
-    for i, entry in enumerate(apps):
-        entry_path = Path(entry["path"])
-        # Stable id derived from folder + entry name
-        app_id = f"folder:{base_id}/{entry['name']}" if len(apps) > 1 else f"folder:{base_id}"
-        existing = state.get_app(app_id)
-        if existing:
-            app = state.update_app(
-                app_id, install_location=str(entry_path), app_type="folder",
-                github_repo=repo or existing.github_repo,
-            )
-        else:
-            app = InstalledApp(
-                id=app_id,
-                name=entry["name"],
-                version="",
-                installer_type="folder",
-                installer_path=str(entry_path),
-                source_url="",
-                tag="",
-                install_location=str(entry_path),
-                app_type="folder",
-                github_repo=repo,
-            )
-            state.add_installed_app(app)
-        result.append(app)
-    if repo:
-        print(f"Linked folder apps to GitHub repo: {repo}")
-    print(f"Added {len(result)} app(s) from folder: {folder}")
-    return result
+    else:
+        app = InstalledApp(
+            id=app_id,
+            name=name,
+            version="",
+            installer_type="folder",
+            installer_path="",
+            source_url="",
+            tag="",
+            install_location=str(folder),
+            app_type="folder",
+            github_repo=repo,
+        )
+        state.add_installed_app(app)
+    print(f"Linked folder app '{name}' ({folder}) to GitHub repo: {repo}")
+    return [app]
 
 
 def is_restricted_folder(folder: Path) -> bool:
