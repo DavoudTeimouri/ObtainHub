@@ -5,6 +5,12 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4.2] - 2026-08-13
+
+### Fixed
+- **`ohub check --all --candidates` now works.** The candidate list is always shown when repositories are found (the exact-match fast path no longer skipped it). The exact match is marked with `<=` in the list.
+- **Version numbers in app names no longer block matching.** The exact-match comparison now uses the version-stripped name (e.g. "v2rayN 6.0" matches repo `v2rayN`). A fallback search with the raw name runs when the stripped query finds nothing.
+
 ## [0.7.4.1] - 2026-08-13
 
 ### Fixed

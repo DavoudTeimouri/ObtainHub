@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.4.1 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.4.2 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -1402,13 +1402,19 @@ def cmd_check(
             print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
             print("    Searching GitHub for repository match...")
 
-            # Exclude version numbers from the query (e.g. "App 1.2.3" -> "App")
+            # Strip version numbers for the query (e.g. "App 1.2.3" -> "App")
             import re as _re
             query = _re.sub(r"[\s]*[vV]?\d+(\.\d+)*\s*$", "", sys_app.name).strip() or sys_app.name
             search_result = _search_with_timeout(
                 client, timeout, retries,
                 query=query, min_stars=0, ignore_case=True, active_only=False,
             )
+            # Fallback: if the stripped query found nothing, search the raw name
+            if not search_result.get("items"):
+                search_result = _search_with_timeout(
+                    client, timeout, retries,
+                    query=sys_app.name, min_stars=0, ignore_case=True, active_only=False,
+                )
             if search_result.get("error") == "rate_limit":
                 print("    [!] Rate limited - set a token with: ohub config set github_token <token>")
                 state_manager.add_check_history(CheckHistoryEntry(
@@ -1428,48 +1434,55 @@ def cmd_check(
                 state_manager.save()
                 continue
 
-            # Exact full_name match only
+            # Exact match on the version-stripped name (repo name or owner/repo)
+            q = query.lower()
             exact = next((r for r in search_result.get("items", [])
-                          if r.get("name", "").lower() == sys_app.name.lower()
-                          or r.get("full_name", "").lower().endswith("/" + sys_app.name.lower())), None)
+                          if r.get("name", "").lower() == q
+                          or r.get("full_name", "").lower().endswith("/" + q)), None)
             if exact:
                 repo_id = exact["full_name"]
                 print(f"    Found exact match: {repo_id}")
                 _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
             else:
                 items = search_result.get("items", [])
-                if items:
-                    # Best candidate = most stars (closest to an exact match)
-                    best = max(items, key=lambda r: r.get("stargazers_count", 0))
-                    if parsed.candidates:
-                        print(f"    No exact match. Candidate repositories:")
-                        for i, r in enumerate(items[:10]):
-                            print(f"      [{i+1}] {r['full_name']} (★{r.get('stargazers_count', 0)})")
-                        print(f"      [0] Skip - do not link")
-                        sel = items[0] if parsed.yes else _select_from_options(items, "  Select repository to link", allow_skip=True)
-                        if sel:
-                            repo_id = sel["full_name"]
-                            print(f"    Linking to: {repo_id}")
-                            _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
-                            continue
-                        else:
-                            print(f"    Skipped linking for '{sys_app.name}'.")
+                if items and parsed.candidates:
+                    # --candidates: always show the list so the user picks
+                    print(f"    Candidate repositories:")
+                    for i, r in enumerate(items[:10]):
+                        mark = " <=" if r is exact else ""
+                        print(f"      [{i+1}] {r['full_name']} (★{r.get('stargazers_count', 0)}){mark}")
+                    print(f"      [0] Skip - do not link")
+                    sel = items[0] if parsed.yes else _select_from_options(items, "  Select repository to link", allow_skip=True)
+                    if sel:
+                        repo_id = sel["full_name"]
+                        print(f"    Linking to: {repo_id}")
+                        _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
+                        continue
                     else:
-                        # No --candidates: suggest the best-starred repo as the match
-                        repo_id = best["full_name"]
-                        print(f"    Best match by stars: {repo_id} (★{best.get('stargazers_count', 0)})")
-                        confirm = "y" if parsed.yes else input(
-                            f"    Link to {repo_id}? [y/N]: "
-                        ).strip().lower()
-                        if confirm == "y":
-                            _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
-                            continue
-                        print(f"    Not linked.")
-                print(f"    No suitable GitHub repository found for '{sys_app.name}'.")
-                # Fall back to custom (non-GitHub) sources
-                if not _check_source_match(parsed, state_manager, sys_app):
-                    print(f"    To manage it, add manually: ohub add <owner/{sys_app.name}>")
-                    _check_record_ignored(state_manager, sys_app)
+                        print(f"    Skipped linking for '{sys_app.name}'.")
+                        _check_record_ignored(state_manager, sys_app)
+                elif exact:
+                    repo_id = exact["full_name"]
+                    print(f"    Found exact match: {repo_id}")
+                    _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
+                elif items:
+                    # No --candidates: suggest the best-starred repo as the match
+                    best = max(items, key=lambda r: r.get("stargazers_count", 0))
+                    repo_id = best["full_name"]
+                    print(f"    Best match by stars: {repo_id} (★{best.get('stargazers_count', 0)})")
+                    confirm = "y" if parsed.yes else input(
+                        f"    Link to {repo_id}? [y/N]: "
+                    ).strip().lower()
+                    if confirm == "y":
+                        _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
+                        continue
+                    print(f"    Not linked.")
+                else:
+                    print(f"    No suitable GitHub repository found for '{sys_app.name}'.")
+                    # Fall back to custom (non-GitHub) sources
+                    if not _check_source_match(parsed, state_manager, sys_app):
+                        print(f"    To manage it, add manually: ohub add <owner/{sys_app.name}>")
+                        _check_record_ignored(state_manager, sys_app)
 
     if parsed.json:
         import json
