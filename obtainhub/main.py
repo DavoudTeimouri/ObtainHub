@@ -21,6 +21,7 @@ from obtainhub.core.local_apps import (
     add_folder_app,
     extract_archive,
     is_restricted_folder,
+    scan_root_for_apps,
 )
 from obtainhub.core.system_scanner import get_installed_system_apps
 from obtainhub.core.exceptions import (
@@ -33,7 +34,7 @@ from obtainhub.core.exceptions import (
     ManualUninstallRequired,
 )
 from obtainhub.utils.helpers import get_architecture as get_system_architecture
-from obtainhub.utils.helpers import is_newer
+from obtainhub.utils.helpers import is_newer, is_windows_x64
 
 # Global flag for graceful shutdown
 _shutdown_requested = False
@@ -60,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.3.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.4.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -256,6 +257,23 @@ def main(args: Optional[List[str]] = None) -> int:
     try:
         config_manager = get_config_manager()
         state_manager = get_state_manager()
+
+        # Keep ObtainHub itself managed: register its own repo so it shows in
+        # list/check/update and self-update stays consistent (issue: "ohub not in list").
+        if is_windows_x64():
+            _SELF_REPO = "DavoudTeimouri/ObtainHub"
+            if not state_manager.get_app(_SELF_REPO):
+                from obtainhub import __version__
+                state_manager.add_installed_app({
+                    "id": _SELF_REPO,
+                    "name": "ObtainHub",
+                    "version": __version__,
+                    "installer_type": "github",
+                    "installer_path": "",
+                    "source_url": "https://github.com/DavoudTeimouri/ObtainHub",
+                    "tag": "",
+                    "app_type": "github",
+                })
 
         if parsed.command == "install":
             return cmd_install(
@@ -851,10 +869,12 @@ def cmd_install(
             for i, opt in enumerate(installer_options):
                 mark = " <=" if opt is match else ""
                 print(f"  [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes){mark}")
-            print(f"  [0] Use current selection: {match.name}")
-            sel = _select_from_options(installer_options, "Select installer", allow_default=True)
-            if sel:
-                match = sel
+            print(f"  [0] Cancel")
+            sel = _select_from_options(installer_options, "Select installer", allow_skip=True)
+            if sel is None:
+                print("Cancelled.")
+                return 1
+            match = sel
 
     print(f"Found: {match.name} ({match.architecture.value}, {match.installer_type.name})")
 
@@ -1075,10 +1095,12 @@ def cmd_update(
                     print(f"  Multiple installer assets found for {app_id}:")
                     for i, opt in enumerate(installer_options):
                         print(f"    [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
-                    print(f"    [0] Use default: {match.name} ({match.architecture.value}, {match.installer_type.name})")
-                    sel = _select_from_options(installer_options, "  Select installer", allow_default=True)
-                    if sel:
-                        match = sel
+                    print(f"    [0] Cancel")
+                    sel = _select_from_options(installer_options, "  Select installer", allow_skip=True)
+                    if sel is None:
+                        print(f"    Skipped {app.name} ({app_id}) - cancelled by user.")
+                        continue
+                    match = sel
 
             print(f"  {app.name} ({app_id}): {current_version or '-'} -> {latest_version}")
             if parsed.dry_run:
@@ -1176,8 +1198,8 @@ def cmd_check(
     # Unmanaged system apps for --all
     system_apps = get_installed_system_apps()
     ohub_apps = state_manager.get_all_apps()
-    ohub_app_names = {app.name.lower() for app in ohub_apps}
-    ohub_locations = {str(app.install_location or "").lower(), str(app.installer_path or "").lower()}
+    ohub_app_names = {a.name.lower() for a in ohub_apps}
+    ohub_locations = {str(a.install_location or "").lower(), str(a.installer_path or "").lower()}
     ohub_locations.discard("")
     unmanaged_apps = [
         sa for sa in system_apps
@@ -1191,7 +1213,7 @@ def cmd_check(
         apps_to_check = [parsed.app]
     elif sys.stdin.isatty():
         managed = state_manager.get_all_apps()
-        menu = [(app.id, f"{app.name} ({app.id})", "managed") for app in managed]
+        menu = [(m.id, f"{m.name} ({m.id})", "managed") for m in managed]
         if parsed.all:
             menu += [(sa.name, f"{sa.name} (system)", "unmanaged") for sa in unmanaged_apps]
         if menu:
@@ -1219,8 +1241,8 @@ def cmd_check(
             apps_to_check = []
     else:
         apps_to_check = [app.id for app in state_manager.get_all_apps()]
-    ohub_app_names = {app.name.lower() for app in state_manager.get_all_apps()}
-    ohub_locations = {str(app.install_location or "").lower(), str(app.installer_path or "").lower()}
+    ohub_app_names = {a.name.lower() for a in state_manager.get_all_apps()}
+    ohub_locations = {str(a.install_location or "").lower(), str(a.installer_path or "").lower()}
     ohub_locations.discard("")
     unmanaged_apps = [
         sa for sa in system_apps
@@ -1718,6 +1740,11 @@ def cmd_add(
         if is_restricted_folder(folder):
             print(f"Error: refusing to scan '{folder}' - it is a filesystem root (e.g. C:\\).", file=sys.stderr)
             print("       ObtainHub only scans the folder root, never recursive child files/folders.", file=sys.stderr)
+            return 1
+        # Require the folder to actually contain a runnable app before tracking it
+        if not scan_root_for_apps(folder):
+            print(f"Error: '{folder}' does not contain an application yet (no .exe found).", file=sys.stderr)
+            print("       Finish installing the application, then run 'ohub add' again.", file=sys.stderr)
             return 1
         try:
             add_folder_app(

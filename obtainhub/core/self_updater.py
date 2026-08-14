@@ -335,7 +335,11 @@ class SelfUpdater:
                     logger.error(f"Self-update check failed: {e}")
                 return None
             except Exception as e:
-                logger.error(f"Unexpected error during self-update check: {e}")
+                msg = str(e)
+                if "403" in msg or "rate limit" in msg.lower():
+                    logger.debug(f"Self-update check skipped (API limited, set a token): {e}")
+                else:
+                    logger.error(f"Unexpected error during self-update check: {e}")
                 return None
 
             # Update is available - perform it

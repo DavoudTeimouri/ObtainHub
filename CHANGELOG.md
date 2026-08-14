@@ -5,6 +5,15 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4.0] - 2026-08-13
+
+### Fixed
+- **Ohub now appears in the managed list.** Its own repo (`DavoudTeimouri/ObtainHub`) is registered as a managed app on startup, so `ohub list` / `ohub check` / `ohub update` include it and self-update stays consistent.
+- **`ohub check` crash** ("cannot access local variable 'app'") fixed — renamed the leaked comprehension variable that shadowed the managed-app loop variable.
+- **Cancel now aborts.** In `ohub update` and `ohub install`, selecting cancel (0) at the installer-choice prompt stops that app instead of continuing with a default.
+- **`ohub add --type folder` requires a finished install.** It now refuses to track a folder that contains no runnable app (no `.exe`), telling the user to finish installing first.
+- **`ohub self-update` 403** is no longer logged as an error when running without a token — it's treated as a skipped/rate-limited check (set a token for self-update to work unauthenticated-limited).
+
 ## [0.7.3.0] - 2026-08-13
 
 ### Fixed
