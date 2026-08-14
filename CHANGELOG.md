@@ -5,6 +5,11 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1.0] - 2026-08-13
+
+### Added
+- `ohub check` now also discovers unmanaged system apps in **custom sources** (non-GitHub). When a registry app's name matches a source entry, ohub offers to install/update it from that source; the match is recorded so future checks skip it.
+
 ## [0.7.0.0] - 2026-08-13
 
 ### Added

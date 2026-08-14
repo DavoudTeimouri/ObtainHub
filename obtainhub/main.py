@@ -60,7 +60,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.1.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -1380,14 +1380,59 @@ def cmd_check(
                         else:
                             print(f"    Skipped linking for '{sys_app.name}'.")
                 print(f"    No exact GitHub repository found for '{sys_app.name}'.")
-                print(f"    To manage it, add manually: ohub add <owner/{sys_app.name}>")
-                _check_record_ignored(state_manager, sys_app)
+                # Fall back to custom (non-GitHub) sources
+                if not _check_source_match(parsed, state_manager, sys_app):
+                    print(f"    To manage it, add manually: ohub add <owner/{sys_app.name}>")
+                    _check_record_ignored(state_manager, sys_app)
 
     if parsed.json:
         import json
         print(json.dumps(results, indent=2))
 
     return 0
+
+
+def _check_source_match(parsed, state_manager, sys_app) -> bool:
+    """During `ohub check`, see if an unmanaged app matches a custom source entry.
+
+    Returns True if a source match was found (and acted on / recorded).
+    """
+    from obtainhub.core.sources import fetch_source_entries, entries_for_source
+
+    try:
+        config = get_config_manager().load()
+        entries = fetch_source_entries(config)
+    except Exception:
+        return False
+    if not entries:
+        return False
+
+    matches = [e for e in entries if e.name.lower() == sys_app.name.lower()]
+    if not matches:
+        return False
+
+    # Group by source
+    by_src: dict = {}
+    for e in matches:
+        by_src.setdefault(e.source_name, []).append(e)
+
+    print(f"    Found in custom source(s): {', '.join(sorted(by_src))}")
+    for src_name, src_entries in by_src.items():
+        entry = src_entries[0]
+        confirm = "y" if parsed.yes else input(
+            f"    Install/update {entry.name} v{entry.version} from source '{src_name}'? [y/N]: "
+        ).strip().lower()
+        if confirm != "y":
+            continue
+        rc = _install_from_source(entry, src_name, parsed, get_config_manager(), state_manager)
+        if rc == 0:
+            state_manager.add_check_history(CheckHistoryEntry(
+                app_name=sys_app.name, app_version=sys_app.version,
+                github_repo=entry.repo_id, has_github_repo=bool(entry.repo_id),
+                user_choice="managed", checked_at=int(datetime.now().timestamp())))
+            state_manager.save()
+            return True
+    return True  # matched a source; don't fall through to "add manually"
 
 
 def cmd_list(parsed: argparse.Namespace, state_manager: StateManager) -> int:
