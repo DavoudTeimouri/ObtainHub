@@ -142,32 +142,63 @@ class ConfigManager:
         return self._config
 
     def load(self) -> Config:
-        """Load configuration from file."""
+        """Load configuration from file.
+
+        A shared global config (same for every user on the machine) is read
+        first, then the per-user config is overlaid on top of it so individual
+        users can override settings. The GitHub token stays per-user only.
+        """
+        # Start from global (machine-wide) config if present
+        global_file = self._global_config_file()
+        if global_file and global_file.exists():
+            try:
+                with open(global_file, "r", encoding="utf-8") as f:
+                    gdata = json.load(f)
+                base = self._migrate(gdata)
+            except Exception:
+                base = Config()
+        else:
+            base = Config()
+
         if not self.config_file.exists():
-            # Create default config
-            config = Config()
-            self.save(config)
-            return config
-        
+            self.save(base)
+            return base
+
         try:
             with open(self.config_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
-            # Migrate if needed
+
+            # Treat any user-set value as an override; token is always per-user.
             config = self._migrate(data)
-            
-            # Validate
+            # Overlay user values onto the global base (None fields keep global)
+            merged = base.to_dict()
+            for k, v in config.to_dict().items():
+                if v is not None:
+                    merged[k] = v
+            config = Config.from_dict(merged)
+
             errors = config.validate()
             if errors:
                 raise ValueError(f"Config validation failed: {errors}")
-            
+
             self._config = config
             return config
-            
+
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in config file: {e}")
         except Exception as e:
             raise ValueError(f"Failed to load config: {e}")
+
+    def _global_config_file(self) -> Optional[Path]:
+        """Machine-wide config shared by all users (token is NOT read from here)."""
+        env = os.environ.get("OBTAINHUB_GLOBAL_CONFIG")
+        if env:
+            return Path(env)
+        if os.name == "nt":
+            base = os.environ.get("ProgramData")
+            if base := (base or r"C:\ProgramData"):
+                return Path(base) / "ObtainHub" / self.DEFAULT_CONFIG_FILENAME
+        return Path("/etc/obtainhub") / self.DEFAULT_CONFIG_FILENAME
 
     def _migrate(self, data: Dict[str, Any]) -> Config:
         """Migrate config from older schema versions."""

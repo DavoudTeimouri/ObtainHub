@@ -82,6 +82,7 @@ Install an application from GitHub Releases. The app can be given by exact id (`
 ```cmd
 ohub install owner/repo                    # Latest stable release
 ohub install owner/repo --tag v1.2.3       # Specific tag
+ohub install owner/repo --version 1.2.3    # Install a specific (older) version
 ohub install owner/repo --prerelease       # Include prereleases
 ohub install owner/repo --download-only    # Download only, don't install
 ohub install owner/repo --force            # Force reinstall
@@ -96,7 +97,7 @@ Update installed applications. The target can be an exact id or a display name. 
 ```cmd
 ohub update                          # Update all apps
 ohub update owner/repo               # Update specific app
-ohub update v2rayN                   # Update by display name
+ohub update qbittorrent                # Update by display name
 ohub update --prerelease             # Include prereleases
 ohub update --dry-run                # Show what would be updated
 ohub update --reset                  # Forget saved choices so prompts re-appear
@@ -175,7 +176,7 @@ Remove an app or folder from ohub management **without** uninstalling it (untrac
 
 ```cmd
 ohub remove owner/repo                 # Remove from management (confirm)
-ohub remove v2rayN                     # Remove by display name
+ohub remove qbittorrent                 # Remove by display name
 ohub remove folder:MyApp               # Remove a folder-managed app
 ohub remove owner/repo --yes           # Auto-confirm
 ```
@@ -259,6 +260,9 @@ Config file: `%USERPROFILE%\.config\obtainhub\config.json`
 }
 ```
 
+### Global vs per-user settings
+On a multi-user machine, settings in `%ProgramData%\ObtainHub\config.json` (Windows) or `/etc/obtainhub/config.json` (Linux/macOS) apply to **all** users. Each user's own `~/.config/obtainhub/config.json` is overlaid on top, so a user can override any value - most importantly their own `github_token` (which is always per-user and **never** read from the global file). Point `OBTAINHUB_GLOBAL_CONFIG` at a custom path to use a different shared config.
+
 ### GitHub Token (Optional)
 Set a GitHub Personal Access Token to avoid rate limits (60/hr → 5000/hr):
 
@@ -300,16 +304,16 @@ Installed apps are tracked in `%APPDATA%\ObtainHub\state.json` (Windows) or `~/.
       "updated_at": 1700000000,
       "requires_manual_uninstall": false
     },
-    "folder:v2rayN": {
-      "id": "folder:v2rayN",
-      "name": "v2rayN",
+    "folder:qimgv": {
+      "id": "folder:qimgv",
+      "name": "qimgv",
       "version": "",
       "installer_type": "folder",
-      "installer_path": "D:\\Tools\\v2rayN",
+      "installer_path": "D:\\Tools\\qimgv",
       "source_url": "",
       "tag": "",
       "app_type": "folder",
-      "install_location": "D:\\Tools\\v2rayN",
+      "install_location": "D:\\Tools\\qimgv",
       "asset_pattern": "",
       "preferred_asset": ""
     }

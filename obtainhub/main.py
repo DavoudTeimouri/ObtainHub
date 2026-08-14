@@ -60,7 +60,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.5.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.6.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -71,6 +71,9 @@ def main(args: Optional[List[str]] = None) -> int:
     install_parser = subparsers.add_parser("install", help="Install an app")
     install_parser.add_argument("app", help="App identifier (owner/repo)")
     install_parser.add_argument("--tag", help="Specific release tag")
+    install_parser.add_argument(
+        "--version", dest="version_arg", help="Install a specific older version (e.g. 1.2.3)"
+    )
     install_parser.add_argument(
         "--prerelease", action="store_true", help="Allow prerelease versions"
     )
@@ -413,7 +416,10 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
     from obtainhub.core.local_apps import extract_archive
 
     print(f"    Downloading {match.name}...")
-    downloaded_path = download_file(match.url, filename=match.name)
+    downloaded_path = download_file(
+        match.url, filename=match.name, expected_size=getattr(match, "size", None),
+        reuse_callback=_reuse_prompt,
+    )
     pattern = AssetMatcher.derive_asset_pattern(match)
 
     itype = match.installer_type
@@ -499,6 +505,16 @@ def _reset_choices(state_manager: StateManager, app_id: Optional[str] = None) ->
         state_manager.clear_check_history()
     state_manager.save()
 
+
+
+def _reuse_prompt(path: Path, size: int) -> bool:
+    """Ask the user whether to reuse an existing download instead of re-downloading."""
+    mb = size / (1024 * 1024)
+    try:
+        resp = input(f"    File already downloaded: {path.name} ({mb:.1f} MB). Reuse it? [Y/n]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return True
+    return resp != "n"
 
 
 def _select_from_options(opts, prompt, allow_default=False, allow_skip=False):
@@ -624,11 +640,42 @@ def cmd_install(
     client = GitHubClient(token=token)
 
     # Fetch release
-    if parsed.tag:
+    if parsed.version_arg:
+        tag = f"v{parsed.version_arg}" if not parsed.version_arg.startswith("v") else parsed.version_arg
+        release = client.get_release_by_tag(owner, repo, tag)
+        if not release:
+            print(f"Error: version {parsed.version_arg} not found for {app_id}", file=sys.stderr)
+            return 1
+        print(f"Installing older version {release.get('tag_name')} (may be unstable - use at your own risk).")
+    elif parsed.tag:
         release = client.get_release_by_tag(owner, repo, parsed.tag)
     else:
-        release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
-    
+        # Offer recent versions (max 3) for selection when interactive
+        if sys.stdin.isatty() and not parsed.yes:
+            try:
+                recent = client.get_releases(owner, repo, per_page=10) or []
+                recent = [r for r in recent if r.get("prerelease") == parsed.prerelease or (parsed.prerelease and True)]
+                if recent:
+                    print("Recent versions:")
+                    for i, r in enumerate(recent[:3]):
+                        print(f"  [{i+1}] {r.get('tag_name')}")
+                    print(f"  [0] Latest ({'include prerelease' if parsed.prerelease else 'stable'})")
+                    try:
+                        choice = input("Select version [0-3] (0 = latest): ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        choice = "0"
+                    if choice.isdigit() and 1 <= int(choice) <= len(recent[:3]):
+                        release = recent[int(choice) - 1]
+                        print(f"Installing {release.get('tag_name')} (older version - may be unstable).")
+                    else:
+                        release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
+                else:
+                    release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
+            except Exception:
+                release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
+        else:
+            release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
+
     if not release:
         print(f"Error: No release found for {app_id}", file=sys.stderr)
         return 1
@@ -728,6 +775,8 @@ def cmd_install(
             match.url,
             filename=match.name,
             expected_sha256=None,
+            expected_size=getattr(match, "size", None),
+            reuse_callback=_reuse_prompt,
         )
     except Exception as e:
         print(f"Download failed: {e}", file=sys.stderr)
@@ -1330,8 +1379,41 @@ def cmd_source(
         return 0
 
     elif parsed.source_action == "add":
-        config_manager.add_manifest_source(parsed.name, parsed.url, enabled=True, headers={})
-        print(f"Added source: {parsed.name}")
+        url = parsed.url.rstrip("/")
+        src_type = getattr(parsed, "type", "github")
+        # Validate the source actually serves installable content
+        try:
+            if src_type == "github":
+                # Accept either a repo URL or a releases API URL
+                if "/releases" in url and "api.github.com" in url:
+                    api_url = url
+                elif "github.com" in url and url.count("/") >= 4:
+                    api_url = url.replace("https://github.com/", "https://api.github.com/repos/") + "/releases"
+                else:
+                    api_url = f"https://api.github.com/repos/{url}/releases"
+                import requests
+                resp = requests.get(api_url, timeout=20, headers={"Accept": "application/vnd.github.v3+json"})
+                if resp.status_code == 404:
+                    print(f"Error: GitHub repository not found: {url}", file=sys.stderr)
+                    return 1
+                resp.raise_for_status()
+                releases = resp.json()
+                if not isinstance(releases, list) or not releases or not releases[0].get("assets"):
+                    print(f"Error: {url} has no releases/assets to install from.", file=sys.stderr)
+                    return 1
+            elif src_type == "manifest":
+                import requests, json as _json
+                resp = requests.get(url, timeout=20)
+                resp.raise_for_status()
+                data = resp.json()
+                if not isinstance(data, list):
+                    print(f"Error: manifest source must be a JSON list of apps.", file=sys.stderr)
+                    return 1
+        except Exception as e:
+            print(f"Error: could not validate source '{url}': {e}", file=sys.stderr)
+            return 1
+        config_manager.add_manifest_source(parsed.name, url, enabled=True, headers={})
+        print(f"Added source: {parsed.name} ({url})")
         return 0
 
     elif parsed.source_action == "remove":

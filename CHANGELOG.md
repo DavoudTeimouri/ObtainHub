@@ -5,6 +5,19 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0.0] - 2026-08-13
+
+### Added
+- **Install older versions**: `ohub install owner/repo --version 1.2.3` installs a specific version; without `--version`/`--tag` an interactive menu offers the 3 most recent versions (older versions warn they may be unstable). Versions older than the offered 3 fall back to a download you install manually.
+- **Download reuse**: if the installer already exists in the download folder with a matching size, ohub reuses it and asks before re-downloading.
+- **`ohub source add` validates the URL**: GitHub repo URLs are checked for releases/assets; manifest URLs must be a JSON list. Invalid sources are rejected.
+- **Global + per-user config**: machine-wide settings (in `%ProgramData%\ObtainHub\config.json` on Windows or `/etc/obtainhub/config.json`) apply to all users; each user's `github_token` and any explicit override win. Set `OBTAINHUB_GLOBAL_CONFIG` to point elsewhere.
+
+### Fixed
+- `ohub install` ZIP/archive path hardened so a non-suitable installer no longer crashes with an attribute error.
+- Archive extraction now asks for a **destination folder** when none exists, and a **permission-denied** extraction prints a clear fix (run as administrator or pick a folder you own).
+- Download retries now also recover from dropped connections (`RemoteDisconnected`/connection resets) instead of failing.
+
 ## [0.5.0.0] - 2026-08-13
 
 ### Changed

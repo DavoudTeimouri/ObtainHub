@@ -63,6 +63,7 @@ class Downloader:
             backoff_factor=1,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["HEAD", "GET", "OPTIONS"],
+            raise_on_status=False,
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("http://", adapter)
@@ -99,15 +100,20 @@ class Downloader:
         filename: Optional[str] = None,
         expected_sha256: Optional[str] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        expected_size: Optional[int] = None,
+        force: bool = False,
+        reuse_callback: Optional[Callable[[Path, int], bool]] = None,
     ) -> Path:
-        """
-        Download file from URL.
+        """Download file from URL.
 
         Args:
             url: Download URL
             filename: Local filename (auto-detected if None)
             expected_sha256: Expected SHA256 checksum
             progress_callback: Optional callback(bytes_downloaded, total_bytes)
+            expected_size: Expected file size in bytes (used to reuse an existing file)
+            force: Always re-download, ignoring any existing file
+            reuse_callback: Optional callable(path, size) -> bool to decide reuse
 
         Returns:
             Path to downloaded file
@@ -122,6 +128,14 @@ class Downloader:
 
         temp_path = self._get_temp_path(filename)
         final_path = self._get_final_path(filename)
+
+        # Reuse an existing file when size matches (issue: avoid re-download)
+        if not force and final_path.exists() and final_path.stat().st_size > 0:
+            size_ok = expected_size is None or final_path.stat().st_size == expected_size
+            if size_ok:
+                if reuse_callback is None or reuse_callback(final_path, final_path.stat().st_size):
+                    logger.info(f"Reusing existing file: {final_path}")
+                    return final_path
 
         logger.info(f"Downloading {url} -> {final_path}")
 
@@ -293,6 +307,9 @@ def download_file(
     filename: Optional[str] = None,
     expected_sha256: Optional[str] = None,
     show_progress: bool = True,
+    expected_size: Optional[int] = None,
+    force: bool = False,
+    reuse_callback: Optional[Callable[[Path, int], bool]] = None,
 ) -> Path:
     """
     Convenience function to download a file.
@@ -303,9 +320,15 @@ def download_file(
         filename: Local filename
         expected_sha256: Expected SHA256 checksum
         show_progress: Show progress bar
+        expected_size: Expected file size in bytes (reuse existing file when matching)
+        force: Always re-download
+        reuse_callback: Optional callable(path, size) -> bool to decide reuse
 
     Returns:
         Path to downloaded file
     """
     downloader = Downloader(download_dir=download_dir, show_progress=show_progress)
-    return downloader.download(url, filename, expected_sha256)
+    return downloader.download(
+        url, filename, expected_sha256,
+        expected_size=expected_size, force=force, reuse_callback=reuse_callback,
+    )

@@ -9,6 +9,7 @@ Supports two non-installer workflows for ObtainHub:
 
 import os
 import zipfile
+import sys
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -154,7 +155,9 @@ def add_zip_app(
 
     matcher = AssetMatcher(allow_arm64=False, allow_x86_fallback=False, require_installer=False)
     assets = release.get("assets", [])
-    match = prefer_asset or _pick_zip_asset(matcher, assets, pattern=state.get_app(repo_id).asset_pattern if state.get_app(repo_id) else "")
+    existing_app = state.get_app(repo_id)
+    pattern = getattr(existing_app, "asset_pattern", "") if existing_app else ""
+    match = prefer_asset if getattr(prefer_asset, "url", None) else _pick_zip_asset(matcher, assets, pattern=pattern)
 
     if not match:
         raise ValueError(f"No archive asset found for {repo_id}")
@@ -162,12 +165,30 @@ def add_zip_app(
     if location:
         install_location = Path(location) / name
     else:
-        install_location = Path(config.install_dir) / "portable" / name
+        existing = state.get_app(repo_id)
+        if existing and existing.install_location:
+            install_location = Path(existing.install_location)
+        else:
+            default = Path(config.install_dir) / "portable" / name
+            if sys.stdin.isatty():
+                resp = input(f"Extract destination [{default}]: ").strip()
+                install_location = Path(resp) / name if resp else default
+            else:
+                install_location = default
     install_location.mkdir(parents=True, exist_ok=True)
 
     print(f"Downloading archive: {match.name}")
-    downloaded = Downloader().download(match.url, filename=match.name)
-    extract_archive(downloaded, install_location)
+    from obtainhub.main import _reuse_prompt
+    downloaded = Downloader().download(
+        match.url, filename=match.name, expected_size=getattr(match, "size", None),
+        reuse_callback=_reuse_prompt,
+    )
+    try:
+        extract_archive(downloaded, install_location)
+    except PermissionError as e:
+        print(f"Extraction failed (permission denied): {e}", file=sys.stderr)
+        print("Run ohub as administrator, or choose a destination you own (not Program Files / System32).", file=sys.stderr)
+        raise
 
     app_id = repo_id
     existing = state.get_app(app_id)
