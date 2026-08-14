@@ -1,8 +1,8 @@
 # ObtainHub
 
-**Windows x64 app manager via GitHub Releases**
+**Windows x64 app manager via GitHub Releases — and custom sources**
 
-ObtainHub (`ohub`) is a CLI tool for managing Windows x64 applications that are distributed via GitHub Releases. It handles downloading, silent installation, updates, and state tracking — all from the command line.
+ObtainHub (`ohub`) is a CLI tool for installing, updating, and tracking Windows x64 applications distributed via **GitHub Releases** or **custom sources** (any GitHub repo, or a JSON manifest hosted anywhere — including non-GitHub hosts). It handles downloading, silent installation, updates, and state tracking — all from the command line.
 
 ## Features
 
@@ -10,18 +10,22 @@ ObtainHub (`ohub`) is a CLI tool for managing Windows x64 applications that are 
 - **Silent installation** — `msiexec /qn` for MSI, auto-detected flags for EXE
 - **Smart asset selection** — prefers x64 > ARM64 > x86, EXE_SETUP (Inno) > MSI > ZIP_INSTALLER; portable archives are extracted and tracked
 - **GitHub repo management** — track a repo by exact `owner/repo` and keep it updated
+- **Older-version install** — `ohub install owner/repo --version 1.2.3`, or pick from the 3 most recent releases interactively
 - **Archive (zip) repos** — for repos (incl. archived) that only ship ZIP/portable assets: download, extract to a folder, and track for updates
-- **Local folder management** — `ohub add --type folder` scans a folder's root for apps and tracks them (no recursion; drive roots refused)
-- **Exact-match check** — `ohub check` links unmanaged apps only to an EXACT GitHub repo match (no noisy candidate lists)
+- **Local folder management** — `ohub add --type folder --name MyApp --repo owner/repo` tracks a folder app linked to a GitHub repo for updates
+- **Custom sources (non-GitHub)** — `ohub source add` registers a GitHub repo or a JSON manifest; `install`/`update`/`check` fall back to these sources when an `owner/repo` is not on GitHub. Manifest format supports `exe_setup`/`msi`/`zip`/`exe_standalone` assets on any host.
+- **Download reuse** — reuses an existing installer in the download folder when the size matches, and asks before re-downloading
+- **Source validation** — `ohub source add` verifies the URL serves installable content before accepting it
+- **Exact-match check** — `ohub check` links unmanaged apps only to an EXACT GitHub repo (or custom-source) match; `--candidates` offers a list when no exact match
 - **Candidate asset selection** — when no standard installer exists, lists available assets and lets you pick one; the chosen pattern is saved for future updates
 - **Archived / inactive warnings** — flagged during check, install, update, and add
-- **Self-update** — updates itself via GitHub Releases
-- **State tracking** — records installed apps, versions, type, and installer paths in `state.json`
+- **Self-update (manual)** — `ohub self-update` upgrades ohub itself on demand (no longer runs automatically on every command)
+- **State tracking** — records installed apps, versions, type, installer paths, and source in `state.json`
 - **Prerelease support** — opt-in with `--prerelease` flag
 - **Download-only mode** — fetch installers without executing them
-- **Custom sources** — add custom GitHub or manifest sources
 - **System app detection** — scan Windows Registry for installed applications (with `ohub list --all` / `ohub check --all`)
 - **GitHub token support** — higher rate limits with `ohub config set github_token`
+- **Global + per-user config** — machine-wide settings apply to all users; each user's token and explicit overrides win
 - **Single-source versioning** — `obtainhub/__init__.py` is the one version of truth; the installer/manifest files are synced automatically at build time
 
 ## Installation
@@ -46,11 +50,17 @@ Download `ohub.exe` from [GitHub Releases](https://github.com/DavoudTeimouri/Obt
 ```cmd
 # Install an app from GitHub Releases
 ohub install owner/repo
+ohub install owner/repo --version 1.2.3     # or pick from recent releases
+
+# Install / update from a custom (non-GitHub) source
+ohub source add myapp https://github.com/owner/repo
+ohub source add mymanifest https://example.com/manifest.json --type manifest
+ohub install owner/repo                    # falls back to sources when not on GitHub
 
 # Add a repo / archive / local folder for management
 ohub add owner/repo
 ohub add owner/repo --type zip            # repo ships archives: download, extract, track
-ohub add "D:\My Folder" --type folder --name MyApp     # track folder app (name required)
+ohub add "D:\My Folder" --type folder --name MyApp --repo owner/repo     # track folder app (name + repo required)
 
 # Check for updates (don't install)
 ohub check
