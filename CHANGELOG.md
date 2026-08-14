@@ -5,6 +5,12 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4.3] - 2026-08-13
+
+### Fixed
+- **`ohub check --all` no longer lists ohub itself.** The unmanaged-app filter now excludes any registry entry whose name starts with a managed app's name (so "ObtainHub 0.7.4.3" is hidden even though the managed name is "ObtainHub").
+- **Apps with messy names are now found.** `ohub check` cleans the registry name before searching GitHub — stripping all version-like tokens (e.g. "OnionHop V3 version 3.7.10" -> "OnionHop") — and falls back through progressively shorter queries, then the raw name, until a repository is found. Names that mix letters and digits (e.g. "v2rayN") are kept.
+
 ## [0.7.4.2] - 2026-08-13
 
 ### Fixed

@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.4.2 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.4.3 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -403,6 +403,39 @@ def _search_with_timeout(client, timeout, retries, **kwargs):
             except Exception as e:
                 return {"error": str(e), "items": []}
     return {"error": "timeout", "items": []}
+
+
+def _clean_app_query(name: str) -> str:
+    """Strip version-like tokens from an app/registry name for GitHub search.
+
+    "OnionHop V3 version 3.7.10" -> "OnionHop"; "v2rayN 6.0" -> "v2rayN"
+    (names that mix letters and digits, e.g. "v2rayN", are kept).
+    """
+    import re as _re
+    toks = name.split()
+    kept = []
+    for t in toks:
+        if _re.fullmatch(r"[vV]?\d+(\.\d+)*", t):        # V3 / 3.7.10
+            continue
+        if _re.fullmatch(r"version", t, _re.IGNORECASE):  # "version"
+            continue
+        if not _re.search(r"[A-Za-z]", t):                # pure version/punctuation, no letters
+            continue
+        kept.append(t)
+    return " ".join(kept).strip() or name
+
+
+def _progressive_queries(name: str) -> List[str]:
+    """Search queries from cleanest to raw: drop trailing words until empty, then raw name."""
+    base = _clean_app_query(name) or name
+    out: List[str] = []
+    cur = base
+    while cur and cur not in out:
+        out.append(cur)
+        cur = " ".join(cur.split()[:-1])
+    if name not in out:
+        out.append(name)
+    return out
 
 
 def _pick_candidate(candidates, app_id, state_manager, parsed):
@@ -1209,7 +1242,7 @@ def cmd_check(
     ohub_locations.discard("")
     unmanaged_apps = [
         sa for sa in system_apps
-        if sa.name.lower() not in ohub_app_names
+        if not any(sa.name.lower().startswith(n) for n in ohub_app_names)
         and sa.install_location.lower() not in ohub_locations
     ]
 
@@ -1259,7 +1292,7 @@ def cmd_check(
     ohub_locations.discard("")
     unmanaged_apps = [
         sa for sa in system_apps
-        if sa.name.lower() not in ohub_app_names
+        if not any(sa.name.lower().startswith(n) for n in ohub_app_names)
         and sa.install_location.lower() not in ohub_locations
     ]
 
@@ -1402,19 +1435,19 @@ def cmd_check(
             print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
             print("    Searching GitHub for repository match...")
 
-            # Strip version numbers for the query (e.g. "App 1.2.3" -> "App")
-            import re as _re
-            query = _re.sub(r"[\s]*[vV]?\d+(\.\d+)*\s*$", "", sys_app.name).strip() or sys_app.name
-            search_result = _search_with_timeout(
-                client, timeout, retries,
-                query=query, min_stars=0, ignore_case=True, active_only=False,
-            )
-            # Fallback: if the stripped query found nothing, search the raw name
-            if not search_result.get("items"):
+            # Build a clean search query by removing ALL version-like tokens
+            # (e.g. "OnionHop V3 version 3.7.10" -> "OnionHop"), then try
+            # progressively shorter queries and finally the raw name.
+            queries = _progressive_queries(sys_app.name)
+            search_result: dict = {"items": []}
+            for q in queries:
                 search_result = _search_with_timeout(
                     client, timeout, retries,
-                    query=sys_app.name, min_stars=0, ignore_case=True, active_only=False,
+                    query=q, min_stars=0, ignore_case=True, active_only=False,
                 )
+                if search_result.get("items") or search_result.get("error"):
+                    break
+            query = _clean_app_query(sys_app.name) or sys_app.name
             if search_result.get("error") == "rate_limit":
                 print("    [!] Rate limited - set a token with: ohub config set github_token <token>")
                 state_manager.add_check_history(CheckHistoryEntry(
