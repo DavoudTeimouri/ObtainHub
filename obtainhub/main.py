@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.4.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.4.1 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -1199,7 +1199,13 @@ def cmd_check(
     system_apps = get_installed_system_apps()
     ohub_apps = state_manager.get_all_apps()
     ohub_app_names = {a.name.lower() for a in ohub_apps}
-    ohub_locations = {str(a.install_location or "").lower(), str(a.installer_path or "").lower()}
+    ohub_locations = {
+        str(getattr(a, "install_location", "") or "").lower()
+        for a in ohub_apps
+    } | {
+        str(getattr(a, "installer_path", "") or "").lower()
+        for a in ohub_apps
+    }
     ohub_locations.discard("")
     unmanaged_apps = [
         sa for sa in system_apps
@@ -1242,7 +1248,14 @@ def cmd_check(
     else:
         apps_to_check = [app.id for app in state_manager.get_all_apps()]
     ohub_app_names = {a.name.lower() for a in state_manager.get_all_apps()}
-    ohub_locations = {str(a.install_location or "").lower(), str(a.installer_path or "").lower()}
+    ohub_apps2 = state_manager.get_all_apps()
+    ohub_locations = {
+        str(getattr(a, "install_location", "") or "").lower()
+        for a in ohub_apps2
+    } | {
+        str(getattr(a, "installer_path", "") or "").lower()
+        for a in ohub_apps2
+    }
     ohub_locations.discard("")
     unmanaged_apps = [
         sa for sa in system_apps
