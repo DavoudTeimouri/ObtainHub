@@ -251,13 +251,26 @@ class SilentInstaller:
         if not app and not force:
             return False, f"App not found in state: {app_id}"
 
-        # Try MSI uninstall first if we have the product code
+        # MSI uninstall (via product code / cached installer)
         if app and app.installer_type == InstallerType.MSI.value and app.install_path:
             return self._uninstall_msi(app)
 
-        # Try EXE uninstall
+        # EXE setup uninstall (via cached installer)
         if app and app.installer_type in (InstallerType.EXE_SETUP.value, InstallerType.EXE_STANDALONE.value) and app.installer_path:
             return self._uninstall_exe(app)
+
+        # Portable / zip / archive apps: delete the extracted folder (or installer dir)
+        if app:
+            target = app.install_location
+            if not target and app.installer_path:
+                target = str(Path(app.installer_path).parent)
+            if target:
+                try:
+                    import shutil
+                    shutil.rmtree(target, ignore_errors=True)
+                    return True, f"Removed portable app files at {target}"
+                except Exception as e:
+                    return False, f"Could not remove files at {target}: {e} (manual removal required)"
 
         return False, "No uninstall method available (manual uninstall required)"
 

@@ -88,7 +88,7 @@ ohub install owner/repo --force            # Force reinstall
 ohub install owner/repo --yes              # Auto-confirm prompts
 ```
 
-If multiple installer assets are present, ObtainHub prompts you to choose (or picks the best match: EXE_SETUP > MSI > ZIP_INSTALLER). For repos that only ship a portable archive, the archive is downloaded, extracted to a folder, and tracked as a `zip` app.
+Installing also registers the repo as a manifest source. If the app is already managed by ohub and up to date, install is skipped; if a newer version exists, it installs as an update. For portable/archive installs, ohub prompts before overwriting an existing folder (back up your config first).
 
 ### `ohub update [owner/repo]`
 Update installed applications. The target can be an exact id or a display name. Folder-managed apps are skipped unless linked to a GitHub repo via `ohub add --repo`.
@@ -113,10 +113,12 @@ ohub check                           # Check managed apps
 ohub check owner/repo                # Check specific app
 ohub check --prerelease              # Include prereleases
 ohub check --all                     # Also scan system-installed (unmanaged) apps
-ohub check --candidates              # For unmanaged apps w/o exact match, offer candidate repos to link
+ohub check --candidates              # For unmanaged apps w/o exact match, offer candidate repos to link ([0] skips)
+ohub check --timeout 30              # Per-repo search timeout (10-60s; default 20, retries 3)
 ohub check --reset                   # Forget saved choices so prompts re-appear
 ohub check --json                    # Output as JSON
 ```
+Running `ohub check` with no app on an interactive terminal shows a numbered list of managed apps so you can check one or all. Apps that were manually uninstalled are detected and dropped from ohub automatically.
 
 - Managed apps are always checked for updates.
 - Unmanaged system apps are scanned only with `--all`; an unmanaged app is linked only to an **exact** GitHub repo name match, unless `--candidates` is given (then a list of candidate repos by name is offered).
@@ -162,7 +164,7 @@ PortableTool             -               folder @ D:\Tools      ohub
 The `Type` column shows `github`, `zip`, or `folder`, and (for zip/folder) the install location.
 
 ### `ohub uninstall <owner/repo>`
-Uninstall an application and remove from state.
+Uninstall an application from the system and remove it from ohub (state + any registered manifest source). For MSI/EXE installs the real uninstaller is invoked; for portable/zip apps the extracted folder is removed. Permission failures suggest running as administrator.
 
 ```cmd
 ohub uninstall owner/repo              # Uninstall with confirmation

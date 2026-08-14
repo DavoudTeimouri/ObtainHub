@@ -5,6 +5,22 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0.0] - 2026-08-13
+
+### Fixed
+- `ohub uninstall` now handles portable / zip / exe_standalone apps (deletes the extracted folder or installer dir) instead of failing with "No uninstall method available". Permission failures now suggest running as administrator. On success the app is fully removed from ohub state **and** any manifest source registered for it.
+- `ohub update` / `ohub check` version comparison is now semantic (`1.10` > `1.2`), so apps are no longer wrongly reported "up to date".
+- `ohub check --candidates` now offers `[0] Skip` to decline linking, and the search is timeout-bounded (see below) so a slow lookup cannot hang the whole scan.
+- Self-update 403 / rate-limit errors are now logged at debug level (no scary ERROR) when no token is set.
+- Repo links with wrong casing (e.g. `2dust/v2rayn` vs `v2rayN`) are auto-corrected via search, so folder apps linked with a typo can now find their release.
+- Managed apps whose install location / uninstaller has been manually removed are now detected and dropped from ohub automatically (with a notice) during `check` and `update`.
+
+### Added
+- `ohub install` now also registers the repo as a manifest source, and refuses to reinstall an app already managed by ohub (acts as an update only when a newer version exists).
+- Zip/archive install prompts before overwriting an existing folder, reminding the user to back up config first.
+- `ohub check` timeout control: `--timeout SECONDS` (clamped 10-60, default 20) plus `check_timeout_seconds` and `check_timeout_retries` (default 3) in config. A per-repo search that exceeds the timeout is skipped and the next app is processed.
+- Interactive app selection: running `ohub check` with no app on a TTY shows a numbered list of managed apps to check one or all.
+
 ## [0.3.0.0] - 2026-08-13
 
 ### Fixed

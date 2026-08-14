@@ -33,6 +33,7 @@ from obtainhub.core.exceptions import (
     ManualUninstallRequired,
 )
 from obtainhub.utils.helpers import get_architecture as get_system_architecture
+from obtainhub.utils.helpers import is_newer
 
 # Global flag for graceful shutdown
 _shutdown_requested = False
@@ -59,7 +60,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.3.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.4.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -129,6 +130,10 @@ def main(args: Optional[List[str]] = None) -> int:
     check_parser.add_argument(
         "--reset", action="store_true",
         help="Forget saved asset/repo choices so prompts re-appear",
+    )
+    check_parser.add_argument(
+        "--timeout", type=int, default=None,
+        help="Per-repo search timeout in seconds (10-60; default from config)",
     )
 
     # list
@@ -346,6 +351,56 @@ def _resolve_app_id(state_manager: StateManager, token: str) -> str:
     return token
 
 
+def _remove_app_source(config_manager, app_id: str, app) -> None:
+    """Remove a manifest source that was registered for this app (if any)."""
+    name = app_id.split("/")[-1] if "/" in app_id else app_id
+    try:
+        config_manager.remove_manifest_source(name)
+    except Exception:
+        pass
+
+
+def _detect_manual_removal(state_manager, app) -> bool:
+    """If a managed app's install location is gone, treat it as manually uninstalled.
+
+    Removes the app from ohub state and returns True.
+    """
+    loc = app.install_location
+    if app.app_type in ("zip", "folder") and loc:
+        if not Path(loc).exists():
+            print(f"  {app.name} ({app.id}): install location missing - assumed manually removed. Removing from ohub.")
+            state_manager.remove_app(app.id)
+            return True
+    elif app.app_type == "github" and app.installer_path:
+        if not Path(app.installer_path).exists():
+            print(f"  {app.name} ({app.id}): uninstaller missing - assumed manually uninstalled. Removing from ohub.")
+            state_manager.remove_app(app.id)
+            return True
+    return False
+
+
+def _search_with_timeout(client, timeout, retries, **kwargs):
+    """Run a GitHub search in a worker thread, aborting after ``timeout`` seconds.
+
+    Retries up to ``retries`` times on timeout. Returns the search result dict,
+    or ``{"error": "timeout", "items": []}`` if it never completed in time.
+    """
+    import concurrent.futures
+    for attempt in range(max(1, retries)):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(lambda: client.search_repositories(**kwargs))
+            try:
+                return fut.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                fut.cancel()
+                if attempt < max(1, retries) - 1:
+                    continue
+                return {"error": "timeout", "items": []}
+            except Exception as e:
+                return {"error": str(e), "items": []}
+    return {"error": "timeout", "items": []}
+
+
 def _pick_candidate(candidates, app_id, state_manager, parsed):
     """Choose a candidate asset for an app that has no strict installer.
 
@@ -401,6 +456,17 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
     # Portable archive (zip / exe standalone) -> extract to install location
     if itype == InstallerType.ZIP:
         dest = Path(app.install_location) if app.install_location else (Path(downloaded_path).parent / app.name)
+        if dest.exists() and not parsed.yes:
+            print(f"    Destination exists: {dest}")
+            print(f"    Installation is just extracting the archive. Back up any config you want to keep first.")
+            resp = input("    Delete the existing folder and re-extract? [y/N]: ").strip().lower()
+            if resp != "y":
+                return False, "Cancelled: existing installation kept"
+            try:
+                import shutil
+                shutil.rmtree(dest, ignore_errors=True)
+            except Exception as e:
+                return False, f"Could not clear destination: {e}"
         try:
             extract_archive(downloaded_path, dest)
         except Exception as e:
@@ -452,16 +518,23 @@ def _reset_choices(state_manager: StateManager, app_id: Optional[str] = None) ->
 
 
 
-def _select_from_options(opts, prompt, allow_default=False):
-    """Prompt user to pick from a list of AssetMatch options.
+def _select_from_options(opts, prompt, allow_default=False, allow_skip=False):
+    """Prompt user to pick from a list. Returns the chosen item, or None.
 
-    Returns the chosen AssetMatch, or None to cancel. If ``allow_default`` is
-    set, choice 0 selects ``opts[0]`` (the recommended default).
+    - ``allow_default``: choice 0 (or empty) picks ``opts[0]`` (recommended).
+    - ``allow_skip``: choice 0 returns None (explicit skip) without picking.
+    With neither, only 1..len(opts) are valid.
     """
     if not opts:
         return None
     try:
-        if allow_default:
+        if allow_skip:
+            choice = input(prompt + f" [0-{len(opts)}]: ").strip()
+            if choice == "0":
+                return None
+            if choice.isdigit() and 1 <= int(choice) <= len(opts):
+                return opts[int(choice) - 1]
+        elif allow_default:
             choice = input(prompt + f" [0-{len(opts)}]: ").strip()
             if choice == "" or choice == "0":
                 return opts[0]
@@ -488,7 +561,20 @@ def _resolve_repo_for_app(client, app, state_manager, parsed):
     """
     if app.app_type == "github" or app.github_repo:
         repo_id = app.id if app.app_type == "github" else app.github_repo
-        return repo_id.split("/", 1)
+        owner, repo = repo_id.split("/", 1)
+        # Verify the repo resolves (fixes case typos like 2dust/v2rayn vs v2rayN)
+        release = None
+        try:
+            release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease if hasattr(parsed, "prerelease") else False)
+        except Exception:
+            release = None
+        if not release:
+            fixed = _fix_repo_casing(client, owner, repo)
+            if fixed:
+                owner, repo = fixed
+                if app.github_repo:
+                    state_manager.update_app(app.id, github_repo=f"{owner}/{repo}")
+        return owner, repo
 
     # Folder/zip app: try to find a repo by the app's display name
     print(f"  {app.name}: looking up GitHub repository by name '{app.name}'...")
@@ -516,6 +602,19 @@ def _resolve_repo_for_app(client, app, state_manager, parsed):
     return repo_id.split("/", 1)
 
 
+def _fix_repo_casing(client, owner, repo):
+    """Try to resolve a repo name that may have wrong casing via search."""
+    try:
+        result = client.search_repositories(query=repo, min_stars=0, ignore_case=True, active_only=False)
+    except Exception:
+        return None
+    if result.get("error") or not result.get("items"):
+        return None
+    match = next((r for r in result["items"]
+                  if r.get("full_name", "").lower() == f"{owner}/{repo}".lower()), None)
+    return match["full_name"].split("/", 1) if match else None
+
+
 def cmd_install(
     parsed: argparse.Namespace,
     config_manager: ConfigManager,
@@ -530,6 +629,12 @@ def cmd_install(
         print(f"Error: App must be in format 'owner/repo'", file=sys.stderr)
         return 1
     owner, repo = app_id.split("/", 1)
+
+    # Register the repo as a manifest source for future checks
+    try:
+        config_manager.add_manifest_source(repo, f"https://api.github.com/repos/{owner}/{repo}/releases")
+    except Exception:
+        pass
 
     # Get GitHub client
     token = config_manager.load().github_token
@@ -715,6 +820,8 @@ def cmd_update(
             if not app:
                 print(f"Skipping {app_id}: not found in state")
                 continue
+            if _detect_manual_removal(state_manager, app):
+                continue
 
             owner, repo = _resolve_repo_for_app(client, app, state_manager, parsed)
             if not owner:
@@ -731,7 +838,7 @@ def cmd_update(
 
             current_version = app.version
             latest_version = release.get('tag_name', '').lstrip("v")
-            has_update = latest_version > current_version
+            has_update = is_newer(latest_version, current_version)
 
             match = matcher.get_best_match(release.get('assets', []))
             if app.app_type == "zip" and not match:
@@ -854,8 +961,8 @@ def cmd_check(
 
     - Managed apps: check exact GitHub repo, warn if archived/inactive, and if no
       strict installer is found, list candidate assets for install/upgrade.
-    - Unmanaged apps: try to find the EXACT matching GitHub repo; candidates list
-      removed by design - only an exact match is offered for linking.
+    - Unmanaged apps: try to find the EXACT matching GitHub repo; with --candidates a
+      list of candidate repositories is offered for linking.
     """
     token = config_manager.load().github_token
     client = GitHubClient(token=token)
@@ -864,6 +971,26 @@ def cmd_check(
     apps_to_check = []
     if parsed.app:
         apps_to_check = [parsed.app]
+    elif sys.stdin.isatty():
+        apps = state_manager.get_all_apps()
+        if apps:
+            print("Select app(s) to check:")
+            for i, app in enumerate(apps):
+                print(f"  [{i+1}] {app.name} ({app.id})")
+            print(f"  [0] All ({len(apps)})")
+            try:
+                choice = input("Check > [0-{0}]: ".format(len(apps))).strip()
+            except (EOFError, KeyboardInterrupt):
+                choice = "0"
+            if choice == "0" or choice == "":
+                apps_to_check = [app.id for app in apps]
+            elif choice.isdigit() and 1 <= int(choice) <= len(apps):
+                apps_to_check = [apps[int(choice) - 1].id]
+            else:
+                print("Invalid selection - checking all.")
+                apps_to_check = [app.id for app in apps]
+        else:
+            apps_to_check = []
     else:
         apps = state_manager.get_all_apps()
         apps_to_check = [app.id for app in apps]
@@ -897,6 +1024,8 @@ def cmd_check(
             if not app:
                 print(f"Skipping {app_id}: not found in state")
                 continue
+            if _detect_manual_removal(state_manager, app):
+                continue
 
             if app.app_type == "folder":
                 if app.github_repo:
@@ -914,7 +1043,7 @@ def cmd_check(
 
             current_version = app.version
             latest_version = release.get('tag_name', '').lstrip("v")
-            has_update = latest_version > current_version
+            has_update = is_newer(latest_version, current_version)
 
             _warn_repo_status(client, app_id)
 
@@ -980,6 +1109,10 @@ def cmd_check(
 
     # Unmanaged apps: exact GitHub repo match only (no candidate list)
     if unmanaged_apps:
+        cfg = config_manager.load()
+        timeout = parsed.timeout if parsed.timeout is not None else cfg.check_timeout_seconds
+        timeout = max(10, min(60, int(timeout)))
+        retries = max(1, min(5, int(cfg.check_timeout_retries)))
         check_history = state_manager.get_check_history()
         print(f"\nFound {len(unmanaged_apps)} unmanaged application(s) in system registry:\n")
         for sys_app in unmanaged_apps:
@@ -995,7 +1128,8 @@ def cmd_check(
             print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
             print("    Searching GitHub for EXACT repository match...")
 
-            search_result = client.search_repositories(
+            search_result = _search_with_timeout(
+                client, timeout, retries,
                 query=sys_app.name, min_stars=0, ignore_case=True, active_only=False,
             )
             if search_result.get("error") == "rate_limit":
@@ -1003,6 +1137,10 @@ def cmd_check(
                 state_manager.add_check_history(CheckHistoryEntry(
                     app_name=sys_app.name, app_version=sys_app.version,
                     user_choice="error", checked_at=int(datetime.now().timestamp()), error="rate_limit"))
+                state_manager.save()
+                continue
+            if search_result.get("error") == "timeout":
+                print(f"    Search timed out after {timeout}s (x{retries}) - skipping to next app.")
                 state_manager.save()
                 continue
             elif search_result.get("error"):
@@ -1028,12 +1166,15 @@ def cmd_check(
                         print(f"    No exact match. Candidate repositories:")
                         for i, r in enumerate(items[:10]):
                             print(f"      [{i+1}] {r['full_name']} (★{r.get('stargazers_count', 0)})")
-                        sel = items[0] if parsed.yes else (_select_from_options(items, "  Select repository to link") or items[0])
+                        print(f"      [0] Skip - do not link")
+                        sel = items[0] if parsed.yes else _select_from_options(items, "  Select repository to link", allow_skip=True)
                         if sel:
                             repo_id = sel["full_name"]
                             print(f"    Linking to: {repo_id}")
                             _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
                             continue
+                        else:
+                            print(f"    Skipped linking for '{sys_app.name}'.")
                 print(f"    No exact GitHub repository found for '{sys_app.name}'.")
                 print(f"    To manage it, add manually: ohub add <owner/{sys_app.name}>")
                 _check_record_ignored(state_manager, sys_app)
@@ -1124,8 +1265,8 @@ def cmd_uninstall(
         print(f"App not found in state: {app_id}", file=sys.stderr)
         return 1
 
-    # Non-installer apps (zip/folder) have no MSI/EXE to remove
-    if app.app_type in ("zip", "folder"):
+    # Non-installer apps (zip/folder/portable) have no MSI/EXE to run
+    if app.app_type in ("zip", "folder") or app.installer_type in ("zip", "exe_standalone"):
         print(f"Removing tracked app: {app.name} ({app.app_type})")
         if app.install_location and not parsed.keep_data:
             try:
@@ -1134,7 +1275,10 @@ def cmd_uninstall(
                 print(f"Removed files at: {app.install_location}")
             except Exception as e:
                 print(f"Could not remove files at {app.install_location}: {e}")
+                print("You may need administrator permission to delete it manually.")
+        _remove_app_source(config_manager, app_id, app)
         state_manager.remove_app(app_id)
+        print(f"Removed {app.name} from ohub management.")
         return 0
 
     installer = SilentInstaller()
@@ -1144,16 +1288,21 @@ def cmd_uninstall(
         print(f"Success: {message}")
         # Remove from state
         state_manager.remove_app(app_id)
+        _remove_app_source(config_manager, app_id, app)
         # Optionally remove installer file
         if not parsed.keep_data and app.installer_path:
             try:
                 Path(app.installer_path).unlink(missing_ok=True)
             except Exception:
                 pass
+        print(f"Removed {app.name} from ohub management.")
         return 0
     else:
         print(f"Uninstall failed: {message}")
-        print("Manual uninstall required. Use --keep-data to keep installer files.")
+        if "permission" in message.lower() or "access is denied" in message.lower():
+            print("This looks like a permission issue - try running ohub as administrator.")
+        else:
+            print("Manual uninstall may be required. Use --keep-data to keep installer files.")
         return 1
 
 

@@ -133,6 +133,39 @@ def parse_owner_repo(repo_str: str) -> Tuple[str, str]:
     return parts[0], parts[1]
 
 
+def parse_version(version: str) -> tuple:
+    """Parse a version string into a comparable tuple of ints.
+
+    Handles optional leading 'v', and dotted/numeric segments plus a trailing
+    prerelease tag (e.g. ``1.2.0-beta1`` -> ``(1, 2, 0, 'beta1')``). Non-numeric
+    segments sort after numeric ones. Missing segments compare as 0.
+    """
+    if version is None:
+        return (0,)
+    v = str(version).lstrip("vV").strip()
+    if not v:
+        return (0,)
+    # Split off prerelease on first '-' or '+'
+    main = v.split("-", 1)[0].split("+", 1)[0]
+    parts = []
+    for seg in main.split("."):
+        num = ""
+        for ch in seg:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        parts.append(int(num) if num else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+def is_newer(latest: str, current: str) -> bool:
+    """Return True if ``latest`` is strictly newer than ``current``."""
+    return parse_version(latest) > parse_version(current)
+
+
 def format_size(size_bytes: int) -> str:
     """Format bytes as human-readable string."""
     for unit in ['B', 'KB', 'MB', 'GB']:
