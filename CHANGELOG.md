@@ -5,6 +5,16 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3.0] - 2026-08-13
+
+### Fixed
+- **Self-managed apps no longer re-detected as unmanaged.** In `ohub check --all`, apps ohub already manages (by name or install location) are excluded from the system scan.
+- **`Found N unmanaged` header** prints once, and when you pick a single unmanaged app it no longer shows the full count / scans all 68.
+- **`ohub check` now handles folder/portable apps** like `ohub update` does — it searches GitHub by the app's name when no `owner/repo` is linked, instead of reporting "cannot resolve remote".
+- **`ohub check` candidate fallback:** search query now strips version numbers (e.g. "App 1.2.3" → "App"). Without `--candidates`, the best-starred repo is offered as the match; with `--candidates` a numbered list is shown.
+- **Background `[*]` progress** now prints immediately (flushed) for `check`, `install`, and `update`.
+- README: added a worked example for keeping an app from a non-manifest (plain GitHub) source.
+
 ## [0.7.2.0] - 2026-08-13
 
 ### Fixed

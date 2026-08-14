@@ -237,6 +237,19 @@ ohub check --all                  # matches registry apps to source entries
 
 A source with no manifest (a plain GitHub repo URL) still works — ohub reads its releases directly. You do **not** need a separate manifest file; `--type github` sources use the repo's own releases. Use `--type manifest` only when you host your own JSON list on a non-GitHub host.
 
+**Example — keep an app from a source without writing a manifest**
+
+```cmd
+# Point ohub at the GitHub repo that ships the app's releases:
+ohub source add qbittorrent https://github.com/qbittorrent/qBittorrent
+
+# Install / update it exactly like a normal GitHub app:
+ohub install qbittorrent/qBittorrent
+ohub update
+```
+
+No manifest JSON required — ohub uses the repo's published releases. Only choose `--type manifest` when the app lives on a non-GitHub host and you provide your own JSON list.
+
 ### `ohub search <query>`
 Search GitHub repositories for applications with releases.
 

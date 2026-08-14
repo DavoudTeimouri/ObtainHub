@@ -60,7 +60,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.2.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.3.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -716,7 +716,7 @@ def cmd_install(
 ) -> int:
     app_id = _resolve_app_id(state_manager, parsed.app)
     logger.info(f"Installing {app_id}")
-    print(f"[*] Resolving {app_id} ...")
+    print(f"[*] Resolving {app_id} ...", flush=True)
 
     # Parse owner/repo
     if "/" not in app_id:
@@ -991,7 +991,7 @@ def cmd_update(
     logger,
 ) -> int:
     """Handle update command."""
-    print(f"[*] Checking updates for installed apps ...")
+    print(f"[*] Checking updates for installed apps ...", flush=True)
     token = config_manager.load().github_token
     client = GitHubClient(token=token)
     matcher = AssetMatcher(allow_arm64=False, allow_x86_fallback=False, require_installer=True)
@@ -1168,14 +1168,22 @@ def cmd_check(
     - Unmanaged apps: try to find the EXACT matching GitHub repo; with --candidates a
       list of candidate repositories is offered for linking.
     """
+    print(f"[*] Scanning for updates ...", flush=True)
     token = config_manager.load().github_token
     client = GitHubClient(token=token)
     matcher = AssetMatcher(allow_arm64=False, allow_x86_fallback=False, require_installer=True)
 
     # Unmanaged system apps for --all
     system_apps = get_installed_system_apps()
-    ohub_app_names = {app.name.lower() for app in state_manager.get_all_apps()}
-    unmanaged_apps = [sa for sa in system_apps if sa.name.lower() not in ohub_app_names]
+    ohub_apps = state_manager.get_all_apps()
+    ohub_app_names = {app.name.lower() for app in ohub_apps}
+    ohub_locations = {str(app.install_location or "").lower(), str(app.installer_path or "").lower()}
+    ohub_locations.discard("")
+    unmanaged_apps = [
+        sa for sa in system_apps
+        if sa.name.lower() not in ohub_app_names
+        and sa.install_location.lower() not in ohub_locations
+    ]
 
     apps_to_check = []
     selected_unmanaged = None
@@ -1212,7 +1220,13 @@ def cmd_check(
     else:
         apps_to_check = [app.id for app in state_manager.get_all_apps()]
     ohub_app_names = {app.name.lower() for app in state_manager.get_all_apps()}
-    unmanaged_apps = [sa for sa in system_apps if sa.name.lower() not in ohub_app_names]
+    ohub_locations = {str(app.install_location or "").lower(), str(app.installer_path or "").lower()}
+    ohub_locations.discard("")
+    unmanaged_apps = [
+        sa for sa in system_apps
+        if sa.name.lower() not in ohub_app_names
+        and sa.install_location.lower() not in ohub_locations
+    ]
 
     if parsed.all:
         if not apps_to_check and not unmanaged_apps:
@@ -1241,12 +1255,17 @@ def cmd_check(
             if _detect_manual_removal(state_manager, app):
                 continue
 
-            if app.app_type == "folder":
+            if app.app_type in ("folder", "zip"):
+                # GitHub-linked folder/zip apps use their repo; otherwise search by name
                 if app.github_repo and "/" in app.github_repo:
                     owner, repo = app.github_repo.split("/", 1)
                 else:
-                    print(f"  {app.name} ({app_id}): folder-managed, no remote check")
-                    continue
+                    print(f"  {app.name} ({app_id}): looking up GitHub repo by name...")
+                    resolved = _resolve_repo_for_app(client, app, state_manager, parsed)
+                    if not resolved[0]:
+                        print(f"  {app.name} ({app_id}): folder/portable app, no remote match - skipping")
+                        continue
+                    owner, repo = resolved
             elif "/" in app_id:
                 owner, repo = app_id.split("/", 1)
             else:
@@ -1329,7 +1348,10 @@ def cmd_check(
         timeout = max(10, min(60, int(timeout)))
         retries = max(1, min(5, int(cfg.check_timeout_retries)))
         check_history = state_manager.get_check_history()
-        print(f"\nFound {len(unmanaged_apps)} unmanaged application(s) in system registry:\n")
+        if selected_unmanaged:
+            print(f"\nChecking unmanaged application: {selected_unmanaged}\n")
+        else:
+            print(f"\nFound {len(unmanaged_apps)} unmanaged application(s) in system registry:\n")
         for sys_app in unmanaged_apps:
             if selected_unmanaged and sys_app.name != selected_unmanaged:
                 continue
@@ -1343,11 +1365,14 @@ def cmd_check(
                 continue
 
             print(f"  {sys_app.name} (v{sys_app.version}) - not managed by ohub")
-            print("    Searching GitHub for EXACT repository match...")
+            print("    Searching GitHub for repository match...")
 
+            # Exclude version numbers from the query (e.g. "App 1.2.3" -> "App")
+            import re as _re
+            query = _re.sub(r"[\s]*[vV]?\d+(\.\d+)*\s*$", "", sys_app.name).strip() or sys_app.name
             search_result = _search_with_timeout(
                 client, timeout, retries,
-                query=sys_app.name, min_stars=0, ignore_case=True, active_only=False,
+                query=query, min_stars=0, ignore_case=True, active_only=False,
             )
             if search_result.get("error") == "rate_limit":
                 print("    [!] Rate limited - set a token with: ohub config set github_token <token>")
@@ -1377,9 +1402,11 @@ def cmd_check(
                 print(f"    Found exact match: {repo_id}")
                 _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
             else:
-                if parsed.candidates:
-                    items = search_result.get("items", [])
-                    if items:
+                items = search_result.get("items", [])
+                if items:
+                    # Best candidate = most stars (closest to an exact match)
+                    best = max(items, key=lambda r: r.get("stargazers_count", 0))
+                    if parsed.candidates:
                         print(f"    No exact match. Candidate repositories:")
                         for i, r in enumerate(items[:10]):
                             print(f"      [{i+1}] {r['full_name']} (★{r.get('stargazers_count', 0)})")
@@ -1392,7 +1419,18 @@ def cmd_check(
                             continue
                         else:
                             print(f"    Skipped linking for '{sys_app.name}'.")
-                print(f"    No exact GitHub repository found for '{sys_app.name}'.")
+                    else:
+                        # No --candidates: suggest the best-starred repo as the match
+                        repo_id = best["full_name"]
+                        print(f"    Best match by stars: {repo_id} (★{best.get('stargazers_count', 0)})")
+                        confirm = "y" if parsed.yes else input(
+                            f"    Link to {repo_id}? [y/N]: "
+                        ).strip().lower()
+                        if confirm == "y":
+                            _check_add_or_ignore(parsed, state_manager, sys_app, repo_id)
+                            continue
+                        print(f"    Not linked.")
+                print(f"    No suitable GitHub repository found for '{sys_app.name}'.")
                 # Fall back to custom (non-GitHub) sources
                 if not _check_source_match(parsed, state_manager, sys_app):
                     print(f"    To manage it, add manually: ohub add <owner/{sys_app.name}>")
