@@ -14,6 +14,7 @@ class ManifestSource:
     url: str
     enabled: bool = True
     headers: Dict[str, str] = field(default_factory=dict)
+    type: str = "github"         # "github" | "manifest"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

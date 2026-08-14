@@ -28,6 +28,7 @@ class InstalledApp:
     asset_pattern: str = ""       # glob pattern to re-pick the same asset on update
     preferred_asset: str = ""     # selected asset name for zip/exe apps
     github_repo: str = ""         # owner/repo linked to a folder app for updates
+    source: str = ""              # name of the custom manifest/github source this app came from (empty = none)
 
     def to_dict(self) -> dict:
         return asdict(self)

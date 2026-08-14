@@ -182,14 +182,25 @@ ohub remove owner/repo --yes           # Auto-confirm
 ```
 
 ### `ohub source`
-Manage custom sources (GitHub repos or manifest URLs).
+Manage custom sources (GitHub repos or manifest URLs). Sources let you install and update apps that are **not** on the default GitHub repo, including non-GitHub hosts.
 
 ```cmd
 ohub source list                       # List configured sources
-ohub source add my-source https://api.github.com/repos/owner/repo
+ohub source add my-source https://github.com/owner/repo
+ohub source add my-repo-api https://api.github.com/repos/owner/repo/releases
 ohub source add my-manifest https://example.com/manifest.json --type manifest
 ohub source remove my-source
 ```
+
+`ohub source add` validates the URL before accepting it (a GitHub source must expose releases/assets; a manifest source must be a JSON list). Once added, `ohub install <name>` and `ohub update` fall back to these sources when an `owner/repo` is not found on GitHub. Apps installed from a source are tracked by source name; `ohub update` checks them for newer versions, and `ohub uninstall`/`ohub remove` drops them from ohub (the shared source stays).
+
+A manifest is a JSON list of apps:
+```json
+[
+  {"name": "AppName", "version": "1.2.3", "url": "https://host/AppName-1.2.3-setup.exe", "installer_type": "exe_setup", "sha256": "", "size": 0}
+]
+```
+`installer_type` is one of `exe_setup`, `msi`, `zip`, `exe_standalone` (auto-detected from the URL when omitted).
 
 ### `ohub search <query>`
 Search GitHub repositories for applications with releases.

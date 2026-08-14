@@ -5,6 +5,17 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0.0] - 2026-08-13
+
+### Added
+- **Install/update from custom sources (non-GitHub).** `ohub source add <name> <url> --type github|manifest` registers a source; `ohub install` / `ohub update` now fall back to these sources when a `owner/repo` is not found on GitHub.
+  - `--type github` sources read releases/assets from any GitHub repo URL or `.../releases` API.
+  - `--type manifest` sources read a JSON list of apps (`[{"name","version","url","installer_type","sha256?","size?"}]`) served over HTTP.
+- Apps installed from a source are recorded with their `source` name; `ohub update` checks them against the source for newer versions. `ohub uninstall`/`ohub remove` drops them from ohub (the shared source stays).
+
+### Changed
+- `ohub source add` now stores the source `type` and validates reachability/contents before accepting it.
+
 ## [0.6.0.0] - 2026-08-13
 
 ### Added

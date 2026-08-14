@@ -60,7 +60,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.6.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -614,6 +614,92 @@ def _fix_repo_casing(client, owner, repo):
     return match["full_name"].split("/", 1) if match else None
 
 
+def _install_from_source(entry, source_name, parsed, config_manager, state_manager):
+    """Install an app resolved from a custom (non-GitHub) source entry."""
+    from obtainhub.core.sources import SourceAppEntry
+    from obtainhub.core.local_apps import add_zip_app, extract_archive
+    from obtainhub.core.asset_matcher import InstallerType
+
+    app_id = entry.repo_id or f"source:{source_name}/{entry.name}"
+    print(f"Installing {entry.name} v{entry.version} from source '{source_name}'")
+    if _detect_source_version_warning(entry.version):
+        print("Warning: installing a non-latest / older version - may be unstable.")
+
+    existing = state_manager.get_app(app_id)
+    if existing and not parsed.force:
+        if not (entry.version or "") > (existing.version or ""):
+            print(f"{app_id} is already managed by ohub and up to date ({existing.version}).")
+            return 0
+
+    target = None
+    if entry.installer_type in ("zip", "zip_installer"):
+        target = _download_entry(entry, config_manager, state_manager)
+        if target is None:
+            return 1
+        location = parsed.location or (Path(config_manager.load().install_dir) / "portable" / entry.name)
+        Path(location).mkdir(parents=True, exist_ok=True)
+        try:
+            extract_archive(target, Path(location))
+        except PermissionError as e:
+            print(f"Extraction failed (permission denied): {e}", file=sys.stderr)
+            print("Run ohub as administrator, or choose a folder you own.", file=sys.stderr)
+            return 1
+        _record_source_app(app_id, entry, source_name, str(location), state_manager, app_type="zip")
+        print(f"Installed portable app {entry.name} v{entry.version} at {location}")
+        return 0
+
+    # exe_setup / msi / exe_standalone -> download + install
+    target = _download_entry(entry, config_manager, state_manager)
+    if target is None:
+        return 1
+    if parsed.download_only or entry.installer_type == "exe_standalone":
+        print(f"Download-only mode: {target}")
+        _record_source_app(app_id, entry, source_name, str(target), state_manager)
+        return 0
+    installer = SilentInstaller()
+    itype = InstallerType.EXE_SETUP if entry.installer_type == "exe_setup" else (
+        InstallerType.MSI if entry.installer_type == "msi" else InstallerType.EXE_STANDALONE)
+    result, message = installer.install(target, itype, app_id, force=True)
+    if result == InstallResult.SUCCESS:
+        _record_source_app(app_id, entry, source_name, str(target), state_manager)
+        print(f"Success: {message}")
+        return 0
+    print(f"Install failed: {message}")
+    return 1
+
+
+def _download_entry(entry, config_manager, state_manager):
+    from obtainhub.core.downloader import download_file
+    try:
+        return download_file(
+            entry.url, filename=entry.name, expected_sha256=entry.sha256 or None,
+            expected_size=entry.size or None, reuse_callback=_reuse_prompt,
+        )
+    except Exception as e:
+        print(f"Download failed: {e}", file=sys.stderr)
+        return None
+
+
+def _record_source_app(app_id, entry, source_name, path, state_manager, app_type="source"):
+    state_manager.add_installed_app({
+        "id": app_id,
+        "name": entry.name,
+        "version": entry.version,
+        "installer_type": entry.installer_type,
+        "installer_path": path,
+        "source_url": entry.url,
+        "tag": entry.version,
+        "app_type": app_type,
+        "source": source_name,
+        "github_repo": entry.repo_id,
+    })
+
+
+def _detect_source_version_warning(version: str) -> bool:
+    # crude: treat anything the user explicitly requested as potentially non-latest
+    return False
+
+
 def cmd_install(
     parsed: argparse.Namespace,
     config_manager: ConfigManager,
@@ -677,6 +763,16 @@ def cmd_install(
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
 
     if not release:
+        # Fall back to custom (non-GitHub) sources
+        from obtainhub.core.sources import fetch_source_entries, find_in_sources
+        try:
+            entries = fetch_source_entries(config_manager.load())
+        except Exception:
+            entries = []
+        found = find_in_sources(entries, app_id) if entries else None
+        if found:
+            entry, source_name = found
+            return _install_from_source(entry, source_name, parsed, config_manager, state_manager)
         print(f"Error: No release found for {app_id}", file=sys.stderr)
         return 1
 
@@ -816,6 +912,69 @@ def cmd_install(
     return 0
 
 
+def _update_from_source(app, parsed, state_manager, config_manager):
+    """Update an app that was installed from a custom source."""
+    from obtainhub.core.sources import fetch_source_entries, entries_for_source
+
+    try:
+        entries = fetch_source_entries(config_manager.load())
+    except Exception as e:
+        print(f"  {app.name}: could not read sources: {e}")
+        return
+    src_entries = entries_for_source(entries, app.source)
+    if not src_entries:
+        print(f"  {app.name} ({app.id}): not found in source '{app.source}'")
+        return
+    if len(src_entries) == 1:
+        entry = src_entries[0]
+    else:
+        # multiple assets for the same app: keep the current asset name if present
+        entry = next((e for e in src_entries if e.name == app.preferred_asset), src_entries[0])
+
+    if not is_newer(entry.version, app.version or ""):
+        print(f"  {app.name} ({app.id}): Up to date ({app.version}) [source: {app.source}]")
+        return
+    print(f"  {app.name} ({app.id}): {app.version or '-'} -> {entry.version} [source: {app.source}]")
+    if parsed.dry_run:
+        return
+    # Reuse install logic but keep the same app_id
+    saved_app_id = app.id
+    app_id_arg = parsed.app  # unused; we call internals directly
+    # Download + apply using the same flow as install
+    target = _download_entry(entry, config_manager, state_manager)
+    if target is None:
+        return
+    from obtainhub.core.local_apps import extract_archive
+    from obtainhub.core.asset_matcher import InstallerType
+    if entry.installer_type in ("zip", "zip_installer"):
+        location = app.install_location or (Path(config_manager.load().install_dir) / "portable" / entry.name)
+        Path(location).mkdir(parents=True, exist_ok=True)
+        try:
+            extract_archive(target, Path(location))
+        except Exception as e:
+            print(f"  Failed: {e}")
+            return
+        state_manager.update_app(saved_app_id, version=entry.version, install_location=str(location),
+                                 preferred_asset=entry.name, source_url=entry.url, tag=entry.version,
+                                 app_type="zip", source=app.source)
+        print(f"  Success: extracted to {location}")
+    elif parsed.download_only or entry.installer_type == "exe_standalone":
+        print(f"  Download-only mode: {target}")
+        state_manager.update_app(saved_app_id, version=entry.version, installer_path=str(target),
+                                 source_url=entry.url, tag=entry.version, source=app.source)
+    else:
+        installer = SilentInstaller()
+        itype = InstallerType.EXE_SETUP if entry.installer_type == "exe_setup" else (
+            InstallerType.MSI if entry.installer_type == "msi" else InstallerType.EXE_STANDALONE)
+        result, message = installer.install(target, itype, saved_app_id, force=True)
+        if result == InstallResult.SUCCESS:
+            state_manager.update_app(saved_app_id, version=entry.version, installer_path=str(target),
+                                     source_url=entry.url, tag=entry.version, source=app.source)
+            print(f"  Success: {message}")
+        else:
+            print(f"  Failed: {message}")
+
+
 def cmd_update(
     parsed: argparse.Namespace,
     config_manager: ConfigManager,
@@ -857,6 +1016,9 @@ def cmd_update(
 
             owner, repo = _resolve_repo_for_app(client, app, state_manager, parsed)
             if not owner:
+                # Try custom (non-GitHub) sources for apps that came from one
+                if app.source:
+                    _update_from_source(app, parsed, state_manager, config_manager)
                 continue
 
             release = client.get_latest_release(owner, repo, include_prerelease=parsed.prerelease)
