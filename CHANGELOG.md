@@ -5,6 +5,12 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4.4] - 2026-08-13
+
+### Fixed
+- **Apps with messy names reliably found (issue 2, hardening).** `search_repositories` no longer drops GitHub-matched results when the strict case-insensitive substring filter would leave zero hits — it now trusts GitHub's relevance ranking instead of nuking valid matches. `ohub check`'s progressive-query fallback also no longer aborts on a transient non-rate-limit error, so it keeps trying cleaner/shorter/raw-name queries.
+- Verified end-to-end: `OnionHop V3 version 3.7.10` -> cleaned `onionhop` -> exact match `center2055/OnionHop` -> linked.
+
 ## [0.7.4.3] - 2026-08-13
 
 ### Fixed

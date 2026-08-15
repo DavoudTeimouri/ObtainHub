@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.4.3 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.4.4 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -1445,8 +1445,13 @@ def cmd_check(
                     client, timeout, retries,
                     query=q, min_stars=0, ignore_case=True, active_only=False,
                 )
-                if search_result.get("items") or search_result.get("error"):
+                if search_result.get("items"):
                     break
+                if search_result.get("error") == "rate_limit":
+                    # Unauthenticated searches are tightly rate-limited; further
+                    # queries in this pass will also fail, so stop here.
+                    break
+
             query = _clean_app_query(sys_app.name) or sys_app.name
             if search_result.get("error") == "rate_limit":
                 print("    [!] Rate limited - set a token with: ohub config set github_token <token>")

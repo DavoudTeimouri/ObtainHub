@@ -53,8 +53,15 @@ class GitHubClient:
             
                     if ignore_case:
                         query_lower = query.lower()
-                        items = [item for item in items if query_lower in item["full_name"].lower() or (item.get("description") and query_lower in item["description"].lower())]
-           
+                        filtered = [
+                            item for item in items
+                            if query_lower in item["full_name"].lower()
+                            or (item.get("description") and query_lower in item["description"].lower())
+                        ]
+                        # Soft filter: only keep the stricter set if it leaves results;
+                        # otherwise trust GitHub's relevance-ranked matches.
+                        if filtered:
+                            items = filtered
                     # Add latest release info to each repo
                     for item in items:
                         owner = item.get("owner", {}).get("login", "")
