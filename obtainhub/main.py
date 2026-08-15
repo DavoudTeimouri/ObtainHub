@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.5.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.5.1 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -1990,7 +1990,10 @@ def cmd_self_update(
     updater = SelfUpdater(config_manager, state_manager, current_version=__version__)
     result = updater.check_and_update(parsed.prerelease, parsed.force)
     if result:
-        print(f"Updated to {result}")
+        print(f"Update to {result} started. ohub will now exit so the installer can replace it.")
+        print("Restart ohub after the update finishes.")
+        # Return so main() exits and the detached installer can replace ohub.exe.
+        return 0
     else:
         print("Already at latest version")
     return 0

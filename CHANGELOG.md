@@ -5,6 +5,11 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5.1] - 2026-08-13
+
+### Fixed
+- **`ohub self-update` no longer hangs.** The update installer is now launched **detached** (non-blocking) and `ohub` exits immediately afterward, so the installer can replace the running `ohub.exe` (which it couldn't while ohub was still running). Previously `ohub` waited on the installer, which waited on `ohub` to exit — a deadlock. The command now prints "Update started — ohub will exit" and you restart ohub once the install finishes.
+
 ## [0.7.5.0] - 2026-08-13
 
 ### Fixed

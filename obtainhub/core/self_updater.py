@@ -288,7 +288,15 @@ class SelfUpdater:
         return install_exe(exe_path, silent_args=silent_args)
 
     def perform_self_update(self, release: ReleaseInfo, allow_prerelease: bool = False) -> bool:
-        """Perform self-update using the release."""
+        """Perform self-update using the release.
+
+        The installer is launched detached (non-blocking) because it must replace
+        the running ohub.exe - which can only happen once this process exits.
+        We start it and return immediately so the caller can exit ohub.
+        """
+        import subprocess
+        import sys
+
         installer = self.find_windows_x64_installer(release, allow_prerelease)
         if not installer:
             raise InstallerNotFoundError("No suitable Windows x64 installer found")
@@ -298,24 +306,31 @@ class SelfUpdater:
         # Download installer
         installer_path = self.download_installer(installer)
 
-        try:
-            # Install based on type
-            if installer.installer_type == InstallerType.MSI:
-                success = self.install_msi(installer_path)
-            elif installer.installer_type == InstallerType.EXE:
-                success = self.install_exe(installer_path)
-            else:
-                raise InstallerUnsupportedTypeError(f"Unsupported installer type: {installer.installer_type}")
+        # Build the silent install command
+        if installer.installer_type == InstallerType.MSI:
+            cmd = ["msiexec", "/i", str(installer_path), "/quiet", "/norestart"]
+        else:  # EXE setup
+            cmd = [str(installer_path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"]
 
-            if success:
-                logger.info("Self-update completed successfully")
-                return True
+        logger.info(f"Launching self-update installer (detached): {cmd}")
+        try:
+            if sys.platform == "win32":
+                # DETACHED_PROCESS + new console so it survives ohub exiting
+                CREATE_NEW_PROCESS_GROUP = 0x00000200
+                DETACHED_PROCESS = 0x00000008
+                subprocess.Popen(
+                    cmd,
+                    creationflags=CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS,
+                    close_fds=True,
+                )
             else:
-                raise InstallerExecutionError("Installer returned non-zero exit code")
-        finally:
-            # Cleanup downloaded installer
-            if installer_path.exists():
-                installer_path.unlink(missing_ok=True)
+                subprocess.Popen(cmd, start_new_session=True, close_fds=True)
+        except Exception as e:
+            logger.error(f"Failed to launch self-update installer: {e}")
+            return False
+
+        logger.info("Self-update installer launched; ohub will exit so the update can complete.")
+        return True
 
     def check_and_update(self, allow_prerelease: bool = False, force: bool = False) -> Optional[str]:
             """Check for updates and perform self-update if available."""
