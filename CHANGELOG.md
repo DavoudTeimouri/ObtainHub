@@ -5,6 +5,14 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5.0] - 2026-08-13
+
+### Fixed
+- **Manual removal of managed apps is now detected.** `ohub check` checks each managed app's install location (any type) and, for GitHub apps, also cross-checks the system registry (Programs & Features). A managed app that's gone is removed from ohub state with a clear message instead of being silently kept / erroring.
+- **`ohub check --all` single-select no longer scans everything.** Picking one managed app now checks only that app; the full unmanaged scan only runs when you choose "All" (or a single unmanaged app). This also fixes `--candidates` appearing to hang/timeout (it was scanning all 68 apps).
+- **`ohub install` detects an already-installed app.** If the app is already in the system (installed by the user, not ohub), `ohub install` now says so and tells the user to run `ohub check` to let ohub manage it — instead of reinstalling and reporting false success. Use `ohub install owner/repo --force` to reinstall anyway.
+- **`ohub uninstall` verifies completion.** After the uninstaller runs, ohub re-checks the system registry; if the app is still present it reports "still present / permission issue - run as administrator" and keeps it in ohub management so you can retry, instead of claiming success.
+
 ## [0.7.4.4] - 2026-08-13
 
 ### Fixed

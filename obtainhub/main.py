@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.4.4 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.5.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -365,19 +365,26 @@ def _remove_app_source(config_manager, app_id: str, app) -> None:
 
 
 def _detect_manual_removal(state_manager, app) -> bool:
-    """If a managed app's install location is gone, treat it as manually uninstalled.
+    """If a managed app is gone from the system, treat it as manually uninstalled.
 
-    Removes the app from ohub state and returns True.
+    Checks the recorded install location (for any app type) and, for GitHub apps,
+    also cross-checks the system registry (Programs & Features). Removes the app
+    from ohub state and returns True when it appears manually removed.
     """
-    loc = app.install_location
-    if app.app_type in ("zip", "folder") and loc:
-        if not Path(loc).exists():
-            print(f"  {app.name} ({app.id}): install location missing - assumed manually removed. Removing from ohub.")
-            state_manager.remove_app(app.id)
-            return True
-    elif app.app_type == "github" and app.installer_path:
-        if not Path(app.installer_path).exists():
-            print(f"  {app.name} ({app.id}): uninstaller missing - assumed manually uninstalled. Removing from ohub.")
+    # Any app with a recorded install location that no longer exists
+    if app.install_location and not Path(app.install_location).exists():
+        print(f"  {app.name} ({app.id}): install location missing - assumed manually removed. Removing from ohub.")
+        state_manager.remove_app(app.id)
+        return True
+    # GitHub app whose cached installer is gone AND not present in the registry
+    if app.app_type == "github":
+        reg_present = any(
+            sa.name.lower() == app.name.lower()
+            for sa in get_installed_system_apps()
+        )
+        installer_gone = bool(app.installer_path) and not Path(app.installer_path).exists()
+        if installer_gone and not reg_present:
+            print(f"  {app.name} ({app.id}): not in system registry and installer missing - assumed manually removed. Removing from ohub.")
             state_manager.remove_app(app.id)
             return True
     return False
@@ -774,6 +781,20 @@ def cmd_install(
         print(f"Error: App must be in format 'owner/repo'", file=sys.stderr)
         return 1
     owner, repo = app_id.split("/", 1)
+
+    # If the app is already installed on this system (by the user, not ohub),
+    # don't reinstall - tell the user to let ohub take it over via `ohub check`.
+    if not parsed.force:
+        sys_installed = [
+            sa for sa in get_installed_system_apps()
+            if sa.name.lower() == repo.lower()
+        ]
+        if sys_installed and not state_manager.get_app(app_id):
+            loc = sys_installed[0].install_location or "system"
+            print(f"{app_id} appears already installed on this system (at {loc}).")
+            print("Run 'ohub check' so ohub can detect and manage it (no reinstall needed).")
+            print("Use 'ohub install {0} --force' to reinstall anyway.".format(app_id))
+            return 0
 
     # Register the repo as a manifest source for future checks
     try:
@@ -1270,6 +1291,7 @@ def cmd_check(
                 kind = menu[int(choice) - 1][2]
                 if kind == "managed":
                     apps_to_check = [menu[int(choice) - 1][0]]
+                    unmanaged_apps = []  # a single managed app was chosen; skip the unmanaged scan
                 else:
                     selected_unmanaged = menu[int(choice) - 1][0]
                     apps_to_check = []  # check only the selected unmanaged app below
@@ -1655,6 +1677,16 @@ def cmd_uninstall(
     success, message = installer.uninstall(app_id)
 
     if success:
+        # Verify the app is actually gone from the system (EXE uninstallers may
+        # return before finishing, and permission failures can surface late).
+        still_present = any(
+            sa.name.lower() == app.name.lower()
+            for sa in get_installed_system_apps()
+        )
+        if still_present:
+            print(f"Uninstall reported success but {app.name} is still present in the system.")
+            print("It may still be running, or this is a permission issue - try running ohub as administrator.")
+            return 1
         print(f"Success: {message}")
         state_manager.remove_app(app_id)
         _remove_app_source(config_manager, app_id, app)
