@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.6.0 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.6.1 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -1421,7 +1421,6 @@ def cmd_check(
                 match = matcher.match_by_pattern(release.get('assets', []), app.asset_pattern)
 
             candidates = matcher.get_installable_candidates(release.get('assets', []))
-            strict = [m for m in candidates if m.installer_type in (InstallerType.EXE_SETUP, InstallerType.MSI, InstallerType.ZIP_INSTALLER)]
 
             if not parsed.json:
                 if has_update:
@@ -1449,11 +1448,6 @@ def cmd_check(
                     print(f"    Current:  {current_version}")
                     print(f"    Latest:   {latest_version}")
                     print(f"    Status:   Up to date")
-                    if not strict and candidates:
-                        print(f"    No strict installer package - available assets:")
-                        for i, opt in enumerate(candidates):
-                            print(f"      [{i+1}] {opt.name} ({opt.architecture.value}, {opt.installer_type.name}, {opt.size} bytes)")
-                        _pick_candidate(candidates, app_id, state_manager, parsed)
                     print()
 
             results.append({

@@ -5,6 +5,14 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6.1] - 2026-08-13
+
+### Fixed
+- **Folder/zip apps no longer prompt for an asset when already up to date.** `ohub check` was listing available ZIP assets and asking the user to pick one even when the app was already at the latest version (e.g. `v2rayN` showing "Up to date" yet prompting `Select asset to track`). The asset picker now only appears when an update is actually available.
+
+### Docs
+- README: added two concrete custom-source examples (a GitHub repo source like `2dust/v2rayN`, and a non-GitHub JSON manifest source).
+
 ## [0.7.6.0] - 2026-08-13
 
 ### Added

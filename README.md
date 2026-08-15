@@ -258,6 +258,29 @@ ohub update
 
 No manifest JSON required — ohub uses the repo's published releases. Only choose `--type manifest` when the app lives on a non-GitHub host and you provide your own JSON list.
 
+**Custom source examples**
+
+*Example 1 — a GitHub repo as a source (no manifest needed):*
+```cmd
+# v2rayN releases live on GitHub; register the repo so ohub can install/update it
+ohub source add v2rayN https://github.com/2dust/v2rayN
+# Install (ohub resolves via the source), then update later
+ohub install 2dust/v2rayN
+ohub update
+```
+
+*Example 2 — a manifest on a non-GitHub host (JSON list you host yourself):*
+```cmd
+# Your own server serves a JSON list of apps anywhere on the internet
+ohub source add mylist https://my-intranet.example.com/apps/manifest.json --type manifest
+# The manifest lists each app's name, version, and asset URLs:
+# [
+#   {"name":"MyApp","version":"1.4.2","url":"https://files.example.com/MyApp-1.4.2.zip","type":"zip"},
+#   {"name":"Helper","version":"0.9","url":"https://files.example.com/Helper-0.9.exe","type":"exe_setup"}
+# ]
+ohub install MyApp
+```
+
 ### `ohub search <query>`
 Search GitHub repositories for applications with releases.
 
