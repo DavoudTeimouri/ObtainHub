@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.5.2 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.5.3 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -388,6 +388,34 @@ def _detect_manual_removal(state_manager, app) -> bool:
             state_manager.remove_app(app.id)
             return True
     return False
+
+
+def _refresh_installed_version(state_manager, app) -> None:
+    """Update ``app.version`` (and install location) from the system registry.
+
+    If the user updated the app outside ohub (or it self-updated), the recorded
+    version in ohub state is stale. Re-reading the real installed version lets
+    `ohub check` report correctly instead of comparing against an old value.
+    """
+    installed = [
+        sa for sa in get_installed_system_apps()
+        if sa.name.lower() == app.name.lower()
+        or app.name.lower() in sa.name.lower()
+    ]
+    if not installed:
+        return
+    sys_app = installed[0]
+    changed = False
+    if sys_app.version and sys_app.version != app.version:
+        app.version = sys_app.version
+        changed = True
+    if sys_app.install_location and sys_app.install_location != app.install_location:
+        app.install_location = sys_app.install_location
+        changed = True
+    if changed:
+        state_manager.add_installed_app(app)
+        state_manager.save()
+        print(f"  {app.name} ({app.id}): detected installed version {sys_app.version} (was {app.version})")
 
 
 def _search_with_timeout(client, timeout, retries, **kwargs):
@@ -1330,6 +1358,11 @@ def cmd_check(
                 continue
             if _detect_manual_removal(state_manager, app):
                 continue
+
+            # Re-read the actually-installed version from the system registry so
+            # that updates performed OUTSIDE ohub (or a self-update) are detected.
+            # Without this, ohub compares against its own stale stored version.
+            _refresh_installed_version(state_manager, app)
 
             if app.app_type in ("folder", "zip"):
                 # GitHub-linked folder/zip apps use their repo; otherwise search by name
