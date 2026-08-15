@@ -514,5 +514,25 @@ class TestCheckAndUpdate:
             assert result is True
 
 
+class TestSelfUpdateForce:
+    """Regression: --force must reinstall even when already at the latest version."""
+
+    @patch('obtainhub.core.self_updater.is_windows_x64', return_value=True)
+    def test_force_reinstall_when_already_latest(self, mock_is_windows):
+        from obtainhub.core.self_updater import SelfUpdater, SelfUpdateNotNeededError
+
+        updater = SelfUpdater(current_version="1.0.0")
+        release = Mock()
+        release.version = "1.0.0"
+        # check_for_update raises "already latest"; fetch_latest_release returns it
+        updater.check_for_update = Mock(side_effect=SelfUpdateNotNeededError("Already at latest"))
+        updater.fetch_latest_release = Mock(return_value=release)
+        updater.perform_self_update = Mock(return_value=True)
+
+        result = updater.check_and_update(allow_prerelease=False, force=True)
+        assert result == "1.0.0"
+        updater.perform_self_update.assert_called_once()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

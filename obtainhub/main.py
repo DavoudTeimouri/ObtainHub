@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.6.1 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.6.2 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -640,20 +640,20 @@ def _select_from_options(opts, prompt, allow_default=False, allow_skip=False):
         return None
     try:
         if allow_skip:
-            choice = input(prompt + f" [0-{len(opts)}, 0=Skip]: ").strip()
-            if choice == "0":
+            choice = input(prompt + f" [0-{len(opts)}, 0=Skip, X=Exit]: ").strip()
+            if choice == "0" or choice.lower() == "x":
                 return None
             if choice.isdigit() and 1 <= int(choice) <= len(opts):
                 return opts[int(choice) - 1]
         elif allow_default:
-            choice = input(prompt + f" [0-{len(opts)}, 0=Default]: ").strip()
-            if choice == "" or choice == "0":
+            choice = input(prompt + f" [0-{len(opts)}, 0=Default, X=Exit]: ").strip()
+            if choice == "" or choice == "0" or choice.lower() == "x":
                 return opts[0]
             if choice.isdigit() and 1 <= int(choice) <= len(opts):
                 return opts[int(choice) - 1]
         else:
-            choice = input(prompt + f" [1-{len(opts)}, 0=Cancel]: ").strip()
-            if choice == "0":
+            choice = input(prompt + f" [1-{len(opts)}, 0=Cancel, X=Exit]: ").strip()
+            if choice == "0" or choice.lower() == "x":
                 return None
             if choice.isdigit() and 1 <= int(choice) <= len(opts):
                 return opts[int(choice) - 1]
@@ -876,10 +876,14 @@ def cmd_install(
                     for i, r in enumerate(recent[:3]):
                         print(f"  [{i+1}] {r.get('tag_name')}")
                     print(f"  [0] Latest ({'include prerelease' if parsed.prerelease else 'stable'})")
+                    print(f"  [X] Cancel")
                     try:
-                        choice = input("Select version [0-3] (0 = latest): ").strip()
+                        choice = input("Select version [0-3, X=Cancel]: ").strip()
                     except (EOFError, KeyboardInterrupt):
                         choice = "0"
+                    if choice.lower() == "x":
+                        print("Cancelled.")
+                        return 1
                     if choice.isdigit() and 1 <= int(choice) <= len(recent[:3]):
                         release = recent[int(choice) - 1]
                         print(f"Installing {release.get('tag_name')} (older version - may be unstable).")
@@ -1332,10 +1336,14 @@ def cmd_check(
             for i, (_, label, _) in enumerate(menu):
                 print(f"  [{i+1}] {label}")
             print(f"  [0] All ({len(menu)})")
+            print(f"  [X] Exit (check nothing)")
             try:
-                choice = input("Check > [0-{0}]: ".format(len(menu))).strip()
+                choice = input("Check > [0-{0}, X=Exit]: ".format(len(menu))).strip()
             except (EOFError, KeyboardInterrupt):
                 choice = "0"
+            if choice.lower() == "x":
+                print("Cancelled.")
+                return 0
             if choice == "0" or choice == "":
                 apps_to_check = [app.id for app in managed]
             elif choice.isdigit() and 1 <= int(choice) <= len(menu):

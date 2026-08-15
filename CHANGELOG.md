@@ -5,13 +5,22 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6.2] - 2026-08-13
+
+### Fixed
+- **`ohub self-update --force` now works.** When already at the latest version, `check_for_update` raised "already latest" and the force flag was ignored (no reinstall happened). `--force` now re-fetches the release and reinstalls. Regression test added.
+- **`X` cancels any select list.** Every interactive picker (`ohub check`, asset/version selection, candidate menus) now accepts `X` (in addition to `0`) to exit/cancel cleanly.
+
+### Docs
+- Removed real app names (`v2rayN`, `OnionHop`, `qBittorrent`, `qimgv`) from README and CHANGELOG; replaced with generic samples (`MyApp`, `MyTool`, `owner/myrepo`, `folder:myapp`).
+
 ## [0.7.6.1] - 2026-08-13
 
 ### Fixed
-- **Folder/zip apps no longer prompt for an asset when already up to date.** `ohub check` was listing available ZIP assets and asking the user to pick one even when the app was already at the latest version (e.g. `v2rayN` showing "Up to date" yet prompting `Select asset to track`). The asset picker now only appears when an update is actually available.
+- **Folder/zip apps no longer prompt for an asset when already up to date.** `ohub check` was listing available ZIP assets and asking the user to pick one even when the app was already at the latest version (e.g. `MyApp` showing "Up to date" yet prompting `Select asset to track`). The asset picker now only appears when an update is actually available.
 
 ### Docs
-- README: added two concrete custom-source examples (a GitHub repo source like `2dust/v2rayN`, and a non-GitHub JSON manifest source).
+- README: added two concrete custom-source examples (a GitHub repo source like `owner/myrepo`, and a non-GitHub JSON manifest source).
 
 ## [0.7.6.0] - 2026-08-13
 
@@ -50,19 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Apps with messy names reliably found (hardening).** `search_repositories` no longer drops GitHub-matched results when the strict case-insensitive substring filter would leave zero hits — it now trusts GitHub's relevance ranking instead of nuking valid matches. `ohub check`'s progressive-query fallback also no longer aborts on a transient non-rate-limit error, so it keeps trying cleaner/shorter/raw-name queries.
-- Verified end-to-end: `OnionHop V3 version 3.7.10` -> cleaned `onionhop` -> exact match `center2055/OnionHop` -> linked.
+- Verified end-to-end: `MyTool V3 version 3.7.10` -> cleaned `mytool` -> exact match `owner/MyTool` -> linked.
 
 ## [0.7.4.3] - 2026-08-13
 
 ### Fixed
 - **`ohub check --all` no longer lists ohub itself.** The unmanaged-app filter now excludes any registry entry whose name starts with a managed app's name (so "ObtainHub 0.7.4.3" is hidden even though the managed name is "ObtainHub").
-- **Apps with messy names are now found.** `ohub check` cleans the registry name before searching GitHub — stripping all version-like tokens (e.g. "OnionHop V3 version 3.7.10" -> "OnionHop") — and falls back through progressively shorter queries, then the raw name, until a repository is found. Names that mix letters and digits (e.g. "v2rayN") are kept.
+- **Apps with messy names are now found.** `ohub check` cleans the registry name before searching GitHub — stripping all version-like tokens (e.g. "MyTool V3 version 3.7.10" -> "MyTool") — and falls back through progressively shorter queries, then the raw name, until a repository is found. Names that mix letters and digits (e.g. "MyTool2") are kept.
 
 ## [0.7.4.2] - 2026-08-13
 
 ### Fixed
 - **`ohub check --all --candidates` now works.** The candidate list is always shown when repositories are found (the exact-match fast path no longer skipped it). The exact match is marked with `<=` in the list.
-- **Version numbers in app names no longer block matching.** The exact-match comparison now uses the version-stripped name (e.g. "v2rayN 6.0" matches repo `v2rayN`). A fallback search with the raw name runs when the stripped query finds nothing.
+- **Version numbers in app names no longer block matching.** The exact-match comparison now uses the version-stripped name (e.g. "MyTool 6.0" matches repo `MyTool`). A fallback search with the raw name runs when the stripped query finds nothing.
 
 ## [0.7.4.1] - 2026-08-13
 

@@ -339,7 +339,14 @@ class SelfUpdater:
                 release = self.check_for_update(allow_prerelease=allow_prerelease)
             except SelfUpdateNotNeededError as e:
                 if force:
+                    # Same version, but --force requested: refetch the release so
+                    # we can reinstall it. check_for_update raised before returning it.
                     logger.info(f"Force update requested, continuing despite: {e}")
+                    try:
+                        release = self.fetch_latest_release(allow_prerelease=allow_prerelease)
+                    except Exception as fetch_err:
+                        logger.error(f"Could not fetch release for forced update: {fetch_err}")
+                        return None
                 else:
                     logger.info(f"No update needed: {e}")
                     return None

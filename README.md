@@ -113,7 +113,7 @@ Update installed applications. The target can be an exact id or a display name. 
 ```cmd
 ohub update                          # Update all apps
 ohub update owner/repo               # Update specific app
-ohub update qbittorrent                # Update by display name
+ohub update SampleApp                # Update by display name
 ohub update --prerelease             # Include prereleases
 ohub update --dry-run                # Show what would be updated
 ohub update --reset                  # Forget saved choices so prompts re-appear
@@ -194,7 +194,7 @@ Remove an app or folder from ohub management **without** uninstalling it (untrac
 
 ```cmd
 ohub remove owner/repo                 # Remove from management (confirm)
-ohub remove qbittorrent                 # Remove by display name
+ohub remove SampleApp                 # Remove by display name
 ohub remove folder:MyApp               # Remove a folder-managed app
 ohub remove owner/repo --yes           # Auto-confirm
 ```
@@ -249,10 +249,10 @@ A source with no manifest (a plain GitHub repo URL) still works — ohub reads i
 
 ```cmd
 # Point ohub at the GitHub repo that ships the app's releases:
-ohub source add qbittorrent https://github.com/qbittorrent/qBittorrent
+ohub source add myapp https://github.com/owner/myapp
 
 # Install / update it exactly like a normal GitHub app:
-ohub install qbittorrent/qBittorrent
+ohub install owner/myapp
 ohub update
 ```
 
@@ -262,10 +262,10 @@ No manifest JSON required — ohub uses the repo's published releases. Only choo
 
 *Example 1 — a GitHub repo as a source (no manifest needed):*
 ```cmd
-# v2rayN releases live on GitHub; register the repo so ohub can install/update it
-ohub source add v2rayN https://github.com/2dust/v2rayN
+# Register the GitHub repo so ohub can install/update the app from it
+ohub source add myapp https://github.com/owner/myapp
 # Install (ohub resolves via the source), then update later
-ohub install 2dust/v2rayN
+ohub install owner/myapp
 ohub update
 ```
 
@@ -419,16 +419,16 @@ Installed apps are tracked in `%APPDATA%\ObtainHub\state.json` (Windows) or `~/.
       "updated_at": 1700000000,
       "requires_manual_uninstall": false
     },
-    "folder:qimgv": {
-      "id": "folder:qimgv",
-      "name": "qimgv",
+    "folder:myapp": {
+      "id": "folder:myapp",
+      "name": "myapp",
       "version": "",
       "installer_type": "folder",
-      "installer_path": "D:\\Tools\\qimgv",
+      "installer_path": "D:\\Tools\\myapp",
       "source_url": "",
       "tag": "",
       "app_type": "folder",
-      "install_location": "D:\\Tools\\qimgv",
+      "install_location": "D:\\Tools\\myapp",
       "asset_pattern": "",
       "preferred_asset": ""
     }
