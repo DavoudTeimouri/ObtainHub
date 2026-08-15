@@ -17,9 +17,10 @@ ObtainHub (`ohub`) is a CLI tool for installing, updating, and tracking Windows 
 - **Download reuse** — reuses an existing installer in the download folder when the size matches, and asks before re-downloading
 - **Source validation** — `ohub source add` verifies the URL serves installable content before accepting it
 - **Exact-match check** — `ohub check` links unmanaged apps only to an EXACT GitHub repo (or custom-source) match; `--candidates` offers a list when no exact match
+- **Detects external updates** — `ohub check` re-reads the actually-installed version from the system registry, so apps you updated manually (or via self-update) are no longer reported as "up to date" against a stale stored version
 - **Candidate asset selection** — when no standard installer exists, lists available assets and lets you pick one; the chosen pattern is saved for future updates
 - **Archived / inactive warnings** — flagged during check, install, update, and add
-- **Self-update (manual)** — `ohub self-update` upgrades ohub itself on demand (no longer runs automatically on every command)
+- **Self-update (manual)** — `ohub self-update` upgrades ohub itself on demand (no longer runs automatically on every command). The installer is launched detached so it does not hang on the running `ohub.exe`.
 - **State tracking** — records installed apps, versions, type, installer paths, and source in `state.json`
 - **Prerelease support** — opt-in with `--prerelease` flag
 - **Download-only mode** — fetch installers without executing them
@@ -125,11 +126,11 @@ ohub check owner/repo                # Check specific app
 ohub check --prerelease              # Include prereleases
 ohub check --all                     # Also scan system-installed (unmanaged) apps
 ohub check --candidates              # For unmanaged apps w/o exact match, offer candidate repos to link ([0] skips)
-ohub check --timeout 30              # Per-repo search timeout (10-60s; default 20, retries 3)
+ohub check --timeout 30              # Per-repo search timeout (10-300s; default 90, retries 3)
 ohub check --reset                   # Forget saved choices so prompts re-appear
 ohub check --json                    # Output as JSON
 ```
-Running `ohub check` with no app on an interactive terminal shows a numbered list of managed apps so you can check one or all. Apps that were manually uninstalled are detected and dropped from ohub automatically.
+Running `ohub check` with no app on an interactive terminal shows a numbered list of managed apps so you can check one or all. Apps that were manually uninstalled are detected and dropped from ohub automatically. For every managed app, `ohub check` re-reads the installed version from the system registry, so an update you performed outside ohub (or a self-update) is reflected immediately instead of being masked by ohub's stored version.
 
 - Managed apps are always checked for updates.
 - Unmanaged system apps are scanned only with `--all`; an unmanaged app is linked only to an **exact** GitHub repo name match, unless `--candidates` is given (then a list of candidate repos by name is offered).
@@ -282,7 +283,7 @@ ohub config edit                       # Open in editor (not yet implemented)
 ```
 
 ### `ohub self-update`
-Update ObtainHub itself. **Self-update is manual** - ohub no longer checks for updates automatically on every command. Run this when you want to upgrade.
+Update ObtainHub itself. **Self-update is manual** - ohub no longer checks for updates automatically on every command. Run this when you want to upgrade. The installer is launched detached and ohub exits so it can replace the running `ohub.exe` (no hang); restart ohub once the install finishes.
 
 ```cmd
 ohub self-update                       # Check and update
@@ -341,7 +342,7 @@ On a multi-user Windows machine, a config in `%ProgramData%\ObtainHub\config.jso
 | `manifest_sources` | list | `[]` | Custom sources (see below). Each: `{"name","url","enabled","type":"github"\|"manifest"}`. |
 | `proxy` | str | `""` | HTTP(S) proxy URL. |
 | `timeout_seconds` | int | `30` | Network timeout. |
-| `check_timeout_seconds` | int | `20` | Per-app check timeout (10–60). |
+| `check_timeout_seconds` | int | `90` | Per-app check timeout (10–300). |
 | `check_timeout_retries` | int | `3` | Check retries (1–5). |
 | `max_parallel_downloads` | int | `3` | Reserved. |
 | `log_level` | str | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. |
@@ -484,7 +485,7 @@ python build_dist.py --clean
 
 ## GitHub Actions
 
-Automated builds on tag push (e.g., `git tag v0.1.0.14 && git push origin v0.1.0.14`):
+Automated builds on tag push (e.g., `git tag v0.7.5.3 && git push origin v0.7.5.3`):
 
 - Builds on `windows-latest`
 - Runs `tools/sync_versions.py` so the Inno Setup, WiX MSI, and PyPI metadata all carry the version from `obtainhub/__init__.py` (no more desynced installers)
