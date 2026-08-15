@@ -97,10 +97,15 @@ ohub install owner/repo --version 1.2.3    # Install a specific (older) version
 ohub install owner/repo --prerelease       # Include prereleases
 ohub install owner/repo --download-only    # Download only, don't install
 ohub install owner/repo --force            # Force reinstall
-ohub install owner/repo --yes              # Auto-confirm prompts
+ohub install owner/repo --yes              # Auto-confirm prompts (silent install)
+ohub install owner/repo --interactive      # Launch the installer visibly; you drive it, ohub verifies after
 ```
 
 Installing also registers the repo as a manifest source. If the app is already managed by ohub and up to date, install is skipped; if a newer version exists, it installs as an update. For portable/archive installs, ohub prompts before overwriting an existing folder (back up your config first).
+
+**Install verification (trust the system, not the installer).** After the installer exits, `ohub` re-reads the system (registry / install location) to confirm the app is actually present before recording it in `state.json`. If the installer reports success but the app is not found in the system, `ohub` reports `not detected` and does **not** record it — so a lying exit code or a hung/spawned installer never produces a false "installed". Run `ohub check` afterward to re-detect.
+
+**Interactive vs silent.** By default `ohub install` runs the installer silently. When you run it on a terminal **without** `--yes`, it automatically launches the installer **visibly** (no silent flags) so you can click through the wizard; `ohub` then waits and verifies the result. Use `--interactive` to force this, or `--yes` to stay fully silent/automated. The same applies to `ohub update` and `ohub uninstall`.
 
 ### `ohub update [owner/repo]`
 Update installed applications. The target can be an exact id or a display name. Folder-managed apps are skipped unless linked to a GitHub repo via `ohub add --repo`.
@@ -180,8 +185,10 @@ Uninstall an application from the system and remove it from ohub (state + any re
 ohub uninstall owner/repo              # Uninstall with confirmation
 ohub uninstall owner/repo --yes        # Auto-confirm
 ohub uninstall owner/repo --keep-data  # Keep downloaded installer files
+ohub uninstall owner/repo --interactive # Launch the uninstaller visibly; you drive it, ohub verifies after
 ```
 
+`ohub uninstall` invokes the real uninstaller (MSI/EXE) or removes the extracted folder (portable/zip), then re-checks the system registry. If the app is still present afterward (uninstaller returned early, or a permission issue), it reports "still present / run as administrator" and keeps the app in ohub management so you can retry, instead of claiming success. On a terminal without `--yes`, the uninstaller launches **visibly** (interactive) by default; use `--yes` to stay silent.
 ### `ohub remove <id|name>`
 Remove an app or folder from ohub management **without** uninstalling it (untrack only).
 
@@ -444,6 +451,27 @@ Options: [1] Attempt auto-uninstall [2] Cancel / Manual uninstall
 ```
 
 Use `--force` to skip this check, or uninstall manually first.
+
+## Install / Uninstall: Interactive Mode & Verification
+
+Because installers vary wildly (Inno, NSIS, MSI, custom wizards) and their exit codes
+are not always trustworthy, `ohub` does not blindly believe the installer:
+
+- **Interactive by default (TTY).** When you run `ohub install` / `ohub update` /
+  `ohub uninstall` on a terminal without `--yes`, the installer/uninstaller is launched
+  **visibly** (no `/VERYSILENT` etc.) so you can drive it yourself. `--yes` keeps it
+  fully silent for automation/CI; `--interactive` forces the visible mode explicitly.
+- **Verify against system state.** After the process exits, `ohub` re-reads the
+  Windows Registry (Programs & Features) and/or the recorded install location. Install
+  is only recorded as success if the app is actually present; uninstall is only
+  considered done if the app is gone. A lying exit code, a hung installer, or a spawned
+  child that returns early can no longer produce a false "installed"/"uninstalled" state.
+- **If verification fails:** install reports `not detected` and does not write to
+  `state.json` (re-run `ohub check` to pick it up); uninstall reports `still present`
+  and keeps the app managed so you can retry as administrator.
+
+This is the recommended way to handle the long tail of apps `ohub` can't fully automate:
+let the wizard run, and let `ohub` confirm the result.
 
 ## Building from Source
 

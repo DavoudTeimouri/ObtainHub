@@ -18,9 +18,13 @@ from obtainhub.core.exceptions import (
 )
 from obtainhub.core.logger import get_logger
 from obtainhub.core.state import get_state_manager, InstalledApp
+from obtainhub.core.system_scanner import get_installed_system_apps
 
 
 logger = get_logger(__name__)
+
+# How long to wait for an interactive (visible) installer to finish.
+INTERACTIVE_TIMEOUT = 900
 
 
 class InstallResult(Enum):
@@ -72,6 +76,7 @@ class SilentInstaller:
         app_id: str,
         force: bool = False,
         download_only: bool = False,
+        interactive: bool = False,
     ) -> Tuple[InstallResult, str]:
         """
         Install an application.
@@ -82,6 +87,8 @@ class SilentInstaller:
             app_id: App identifier (owner/repo)
             force: Force reinstall even if already installed
             download_only: Only download, don't install
+            interactive: Launch the installer visibly (no silent flags) and let the
+                user drive it; ohub then verifies the result against system state.
 
         Returns:
             Tuple of (InstallResult, message)
@@ -109,20 +116,71 @@ class SilentInstaller:
 
         # Execute installer based on type
         if installer_type == InstallerType.MSI:
-            return self._install_msi(file_path, app_id)
+            result, message = self._install_msi(file_path, app_id, interactive=interactive)
         elif installer_type in (InstallerType.EXE_SETUP, InstallerType.EXE_STANDALONE):
-            return self._install_exe(file_path, app_id)
+            result, message = self._install_exe(file_path, app_id, interactive=interactive)
         else:
             return InstallResult.FAILED, f"Unsupported installer type: {installer_type}"
 
-    def _install_msi(self, file_path: Path, app_id: str) -> Tuple[InstallResult, str]:
-        """Install MSI package silently."""
+        # Trust reality, not the exit code: verify the app is actually present
+        # in the system before reporting success (installers can lie / hang / spawn).
+        # Dry runs skip verification (nothing was actually installed).
+        if not self.dry_run and result == InstallResult.SUCCESS:
+            ok, detected = self._verify_installed(app_id)
+            if not ok:
+                return InstallResult.FAILED, (
+                    f"Installer exited but {app_id} was not detected in the system "
+                    f"(registry / install location). State not changed - re-run "
+                    f"'ohub check' if it did install."
+                )
+            if detected:
+                message = f"Successfully installed {file_path.name} (system version {detected})"
+        return result, message
+
+    def _verify_installed(self, app_id: str):
+        """Check the system (registry / install location) for the installed app.
+
+        Returns (detected: bool, detected_version: Optional[str]). We trust the
+        system of record, not the installer's exit code.
+        """
+        repo = app_id.split("/", 1)[-1].lower()
+        try:
+            for sa in get_installed_system_apps():
+                if sa.name.lower() == repo or repo in sa.name.lower():
+                    return True, getattr(sa, "version", "") or ""
+        except Exception as e:
+            logger.debug(f"Registry scan failed during verification: {e}")
+        # Fall back to a recorded install location that still exists on disk
+        existing = self.state_manager.get_installed_app(app_id)
+        if existing and getattr(existing, "install_location", ""):
+            if Path(existing.install_location).exists():
+                return True, getattr(existing, "version", "") or ""
+        return False, None
+
+    def _install_msi(self, file_path: Path, app_id: str, interactive: bool = False) -> Tuple[InstallResult, str]:
+        """Install MSI package silently (or interactively when requested)."""
         logger.info(f"Installing MSI: {file_path}")
 
         if self.dry_run:
             return InstallResult.SUCCESS, f"[DRY RUN] Would install MSI: {file_path}"
 
         args = ["msiexec"] + self.MSI_INSTALL_ARGS + [str(file_path)]
+
+        if interactive:
+            # Visible, basic-UI install the user drives themselves; ohub waits.
+            logger.info(f"Interactive MSI install: {file_path}")
+            try:
+                result = subprocess.run(
+                    ["msiexec", "/i", str(file_path), "/qb!"],
+                    timeout=INTERACTIVE_TIMEOUT,
+                )
+                if result.returncode == 0 or result.returncode in (1641, 3010):
+                    return InstallResult.SUCCESS, f"Installer completed (interactive): {file_path.name}"
+                return InstallResult.FAILED, f"Interactive MSI exited with code {result.returncode}"
+            except subprocess.TimeoutExpired:
+                return InstallResult.FAILED, "Interactive install timed out (installer still running?)"
+            except Exception as e:
+                return InstallResult.FAILED, f"Interactive install error: {e}"
 
         try:
             result = subprocess.run(
@@ -169,12 +227,25 @@ class SilentInstaller:
         except Exception as e:
             raise InstallerExecutionError(f"MSI installation error: {e}")
 
-    def _install_exe(self, file_path: Path, app_id: str) -> Tuple[InstallResult, str]:
+    def _install_exe(self, file_path: Path, app_id: str, interactive: bool = False) -> Tuple[InstallResult, str]:
         """Install EXE installer silently with detected flags."""
         logger.info(f"Installing EXE: {file_path}")
 
         if self.dry_run:
             return InstallResult.SUCCESS, f"[DRY RUN] Would install EXE: {file_path}"
+
+        if interactive:
+            # Visible wizard the user drives; ohub waits for it to finish.
+            logger.info(f"Interactive EXE install: {file_path}")
+            try:
+                result = subprocess.run([str(file_path)], timeout=INTERACTIVE_TIMEOUT)
+                if result.returncode == 0:
+                    return InstallResult.SUCCESS, f"Installer completed (interactive): {file_path.name}"
+                return InstallResult.FAILED, f"Interactive install exited with code {result.returncode}"
+            except subprocess.TimeoutExpired:
+                return InstallResult.FAILED, "Interactive install timed out (installer still running?)"
+            except Exception as e:
+                return InstallResult.FAILED, f"Interactive install error: {e}"
 
         # Try different silent flag combinations
         flag_sets = [
@@ -236,6 +307,7 @@ class SilentInstaller:
         self,
         app_id: str,
         force: bool = False,
+        interactive: bool = False,
     ) -> Tuple[bool, str]:
         """
         Uninstall an application.
@@ -253,11 +325,11 @@ class SilentInstaller:
 
         # MSI uninstall (via product code / cached installer)
         if app and app.installer_type == InstallerType.MSI.value and app.install_path:
-            return self._uninstall_msi(app)
+            return self._uninstall_msi(app, interactive=interactive)
 
         # EXE setup uninstall (via cached installer)
         if app and app.installer_type in (InstallerType.EXE_SETUP.value, InstallerType.EXE_STANDALONE.value) and app.installer_path:
-            return self._uninstall_exe(app)
+            return self._uninstall_exe(app, interactive=interactive)
 
         # Portable / zip / archive apps: delete the extracted folder.
         if app:
@@ -272,7 +344,7 @@ class SilentInstaller:
 
         return False, "No uninstall method available (manual uninstall required)"
 
-    def _uninstall_msi(self, app: InstalledApp) -> Tuple[bool, str]:
+    def _uninstall_msi(self, app: InstalledApp, interactive: bool = False) -> Tuple[bool, str]:
         """Uninstall MSI package."""
         logger.info(f"Uninstalling MSI: {app.name}")
 
@@ -283,6 +355,20 @@ class SilentInstaller:
         installer_path = Path(app.installer_path) if app.installer_path else None
 
         if installer_path and installer_path.exists():
+            if interactive:
+                try:
+                    result = subprocess.run(
+                        ["msiexec", "/x", str(installer_path), "/qb!"],
+                        timeout=INTERACTIVE_TIMEOUT,
+                    )
+                    if result.returncode in (0, 1641, 3010):
+                        return True, f"Uninstaller completed (interactive): {app.name}"
+                    return False, f"Interactive MSI uninstall exited with code {result.returncode}"
+                except subprocess.TimeoutExpired:
+                    return False, "Interactive uninstall timed out (still running?)"
+                except Exception as e:
+                    return False, f"Interactive uninstall error: {e}"
+
             args = ["msiexec"] + self.MSI_UNINSTALL_ARGS + [str(installer_path)]
 
             try:
@@ -307,7 +393,7 @@ class SilentInstaller:
 
         return False, "MSI installer file not found for uninstall"
 
-    def _uninstall_exe(self, app: InstalledApp) -> Tuple[bool, str]:
+    def _uninstall_exe(self, app: InstalledApp, interactive: bool = False) -> Tuple[bool, str]:
         """Uninstall EXE installer."""
         logger.info(f"Uninstalling EXE: {app.name}")
 
@@ -317,6 +403,17 @@ class SilentInstaller:
         installer_path = Path(app.installer_path) if app.installer_path else None
 
         if installer_path and installer_path.exists():
+            if interactive:
+                try:
+                    result = subprocess.run([str(installer_path)], timeout=INTERACTIVE_TIMEOUT)
+                    if result.returncode == 0:
+                        return True, f"Uninstaller completed (interactive): {app.name}"
+                    return False, f"Interactive uninstall exited with code {result.returncode}"
+                except subprocess.TimeoutExpired:
+                    return False, "Interactive uninstall timed out (still running?)"
+                except Exception as e:
+                    return False, f"Interactive uninstall error: {e}"
+
             # Common uninstall flags
             uninstall_flags = [
                 ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
@@ -432,6 +529,7 @@ def install_app(
     download_only: bool = False,
     force: bool = False,
     dry_run: bool = False,
+    interactive: bool = False,
 ) -> Tuple[InstallResult, str]:
     """
     Convenience function to install an app.
@@ -448,4 +546,4 @@ def install_app(
         Tuple of (InstallResult, message)
     """
     installer = SilentInstaller(dry_run=dry_run)
-    return installer.install(file_path, installer_type, app_id, force, download_only)
+    return installer.install(file_path, installer_type, app_id, force, download_only, interactive)

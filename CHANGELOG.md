@@ -5,7 +5,17 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.5.3] - 2026-08-13
+## [0.7.6.0] - 2026-08-13
+
+### Added
+- **Interactive install / update / uninstall.** On a TTY without `--yes`, ohub launches the installer/uninstaller **visibly** (no silent flags) so you drive the wizard; `--interactive` forces this, `--yes` stays silent for automation. (`ohub install/update/uninstall --interactive`)
+- **Verify by system state, not exit code.** After the installer exits, ohub re-reads the Windows Registry / install location. Install is only recorded in `state.json` if the app is actually present; otherwise it reports `not detected` and does NOT write state. Uninstall already re-checked the registry and keeps the app managed on failure (from 0.7.5.0). This closes the gap for the long tail of apps ohub can't fully automate.
+
+### Fixed
+- `ohub check` re-reads the installed version from the system registry so updates performed outside ohub (including self-update) are detected (0.7.5.3).
+
+### Docs
+- README + new "Install / Uninstall: Interactive Mode & Verification" section explain the model and failure handling.
 
 ### Fixed
 - **`ohub check` now detects versions updated OUTSIDE ohub.** Previously `ohub check` compared against its own stored version, so if you updated an app manually (or ohub self-updated), the recorded version stayed stale and `check` wrongly reported "up to date". `ohub check` now re-reads the actually-installed version from the system registry (Programs & Features) for every managed app and updates its state. Self-update is detected too: after the detached installer replaces `ohub.exe`, the next `ohub check` picks up the new version (registry name "ObtainHub X.Y.Z" matched against the stored "ObtainHub").

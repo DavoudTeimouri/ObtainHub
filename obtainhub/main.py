@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.5.3 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.6.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -80,6 +80,10 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     install_parser.add_argument(
         "--force", action="store_true", help="Force reinstall"
+    )
+    install_parser.add_argument(
+        "--interactive", action="store_true",
+        help="Launch the installer visibly and let you drive it; ohub verifies the result (auto-on when run interactively without --yes)",
     )
     install_parser.add_argument(
         "--download-only", action="store_true", help="Only download, don't install"
@@ -107,6 +111,10 @@ def main(args: Optional[List[str]] = None) -> int:
     update_parser.add_argument(
         "--reset", action="store_true",
         help="Forget saved asset/repo choices so prompts re-appear",
+    )
+    update_parser.add_argument(
+        "--interactive", action="store_true",
+        help="Launch installers visibly and let you drive them; ohub verifies each result",
     )
 
     # check
@@ -154,6 +162,10 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     uninstall_parser.add_argument(
         "--keep-data", action="store_true", help="Keep downloaded installer files"
+    )
+    uninstall_parser.add_argument(
+        "--interactive", action="store_true",
+        help="Launch the uninstaller visibly and let you drive it; ohub verifies the result",
     )
 
     # remove
@@ -274,6 +286,13 @@ def main(args: Optional[List[str]] = None) -> int:
                     "tag": "",
                     "app_type": "github",
                 })
+
+        # Interactive install/uninstall: when run on a TTY without --yes, launch
+        # the installer/uninstaller visibly and let the user drive it (ohub then
+        # verifies the result against system state). --yes / --download-only stays silent.
+        if parsed.command in ("install", "update", "uninstall") and not getattr(parsed, "interactive", False):
+            if sys.stdin.isatty() and not parsed.yes and not getattr(parsed, "download_only", False):
+                parsed.interactive = True
 
         if parsed.command == "install":
             return cmd_install(
@@ -514,6 +533,7 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
             return True, f"Downloaded to {downloaded_path}"
         result, message = installer.install(
             downloaded_path, itype, app_id, force=True,
+            interactive=getattr(parsed, "interactive", False),
         )
         if result == InstallResult.SUCCESS:
             installer.record_update(
@@ -753,7 +773,8 @@ def _install_from_source(entry, source_name, parsed, config_manager, state_manag
     installer = SilentInstaller()
     itype = InstallerType.EXE_SETUP if entry.installer_type == "exe_setup" else (
         InstallerType.MSI if entry.installer_type == "msi" else InstallerType.EXE_STANDALONE)
-    result, message = installer.install(target, itype, app_id, force=True)
+    result, message = installer.install(target, itype, app_id, force=True,
+                                      interactive=getattr(parsed, "interactive", False))
     if result == InstallResult.SUCCESS:
         _record_source_app(app_id, entry, source_name, str(target), state_manager)
         print(f"Success: {message}")
@@ -1001,6 +1022,7 @@ def cmd_install(
         match.installer_type,
         app_id,
         force=parsed.force,
+        interactive=parsed.interactive,
     )
 
     if result == InstallResult.SUCCESS:
@@ -1077,7 +1099,8 @@ def _update_from_source(app, parsed, state_manager, config_manager):
         installer = SilentInstaller()
         itype = InstallerType.EXE_SETUP if entry.installer_type == "exe_setup" else (
             InstallerType.MSI if entry.installer_type == "msi" else InstallerType.EXE_STANDALONE)
-        result, message = installer.install(target, itype, saved_app_id, force=True)
+        result, message = installer.install(target, itype, saved_app_id, force=True,
+                                          interactive=getattr(parsed, "interactive", False))
         if result == InstallResult.SUCCESS:
             state_manager.update_app(saved_app_id, version=entry.version, installer_path=str(target),
                                      source_url=entry.url, tag=entry.version, source=app.source)
@@ -1693,7 +1716,7 @@ def cmd_uninstall(
         return 1
 
     installer = SilentInstaller()
-    success, message = installer.uninstall(app_id)
+    success, message = installer.uninstall(app_id, interactive=parsed.interactive)
 
     if success:
         # Verify the app is actually gone from the system (EXE uninstallers may
