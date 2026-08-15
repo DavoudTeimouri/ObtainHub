@@ -55,7 +55,7 @@ class Config:
     # Network
     proxy: str = ""
     timeout_seconds: int = 30
-    check_timeout_seconds: int = 20
+    check_timeout_seconds: int = 90
     check_timeout_retries: int = 3
     max_parallel_downloads: int = 3
 
@@ -100,8 +100,8 @@ class Config:
         if self.timeout_seconds < 5:
             errors.append("timeout_seconds must be >= 5")
         
-        if not (10 <= self.check_timeout_seconds <= 60):
-            errors.append("check_timeout_seconds must be between 10 and 60")
+        if not (10 <= self.check_timeout_seconds <= 300):
+            errors.append("check_timeout_seconds must be between 10 and 300")
         if not (1 <= self.check_timeout_retries <= 5):
             errors.append("check_timeout_retries must be between 1 and 5")
         

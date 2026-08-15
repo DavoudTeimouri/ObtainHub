@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.5.1 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.5.2 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -134,7 +134,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     check_parser.add_argument(
         "--timeout", type=int, default=None,
-        help="Per-repo search timeout in seconds (10-60; default from config)",
+        help="Per-repo search timeout in seconds (10-300; default from config)",
     )
 
     # list
@@ -1303,20 +1303,6 @@ def cmd_check(
     else:
         apps_to_check = [app.id for app in state_manager.get_all_apps()]
     ohub_app_names = {a.name.lower() for a in state_manager.get_all_apps()}
-    ohub_apps2 = state_manager.get_all_apps()
-    ohub_locations = {
-        str(getattr(a, "install_location", "") or "").lower()
-        for a in ohub_apps2
-    } | {
-        str(getattr(a, "installer_path", "") or "").lower()
-        for a in ohub_apps2
-    }
-    ohub_locations.discard("")
-    unmanaged_apps = [
-        sa for sa in system_apps
-        if not any(sa.name.lower().startswith(n) for n in ohub_app_names)
-        and sa.install_location.lower() not in ohub_locations
-    ]
 
     if parsed.all:
         if not apps_to_check and not unmanaged_apps:
@@ -1435,7 +1421,7 @@ def cmd_check(
     if unmanaged_apps:
         cfg = config_manager.load()
         timeout = parsed.timeout if parsed.timeout is not None else cfg.check_timeout_seconds
-        timeout = max(10, min(60, int(timeout)))
+        timeout = max(10, min(300, int(timeout)))
         retries = max(1, min(5, int(cfg.check_timeout_retries)))
         check_history = state_manager.get_check_history()
         if selected_unmanaged:
