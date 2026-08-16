@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.6.3 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.6.4 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -386,23 +386,31 @@ def _remove_app_source(config_manager, app_id: str, app) -> None:
 def _detect_manual_removal(state_manager, app) -> bool:
     """If a managed app is gone from the system, treat it as manually uninstalled.
 
-    Checks the recorded install location (for any app type) and, for GitHub apps,
-    also cross-checks the system registry (Programs & Features). Removes the app
-    from ohub state and returns True when it appears manually removed.
+    For folder/zip apps the install location IS the app — if the folder is gone,
+    it's removed. For GitHub (setup-installed) apps the registry (Programs &
+    Features) is the source of truth: install_location is often empty or stale,
+    so we only remove when the app is absent from the registry AND its cached
+    installer is gone.
     """
-    # Any app with a recorded install location that no longer exists
-    if app.install_location and not Path(app.install_location).exists():
-        print(f"  {app.name} ({app.id}): install location missing - assumed manually removed. Removing from ohub.")
-        state_manager.remove_app(app.id)
-        return True
-    # GitHub app whose cached installer is gone AND not present in the registry
+    # Folder / zip / portable apps: the install_location folder IS the app.
+    if app.app_type in ("folder", "zip"):
+        if app.install_location and not Path(app.install_location).exists():
+            print(f"  {app.name} ({app.id}): install location missing - assumed manually removed. Removing from ohub.")
+            state_manager.remove_app(app.id)
+            return True
+        return False
+
+    # GitHub / setup-installed apps: trust the registry, not install_location.
     if app.app_type == "github":
         reg_present = any(
-            sa.name.lower() == app.name.lower()
+            sa.name.lower() == app.name.lower() or app.name.lower() in sa.name.lower()
             for sa in get_installed_system_apps()
         )
+        if reg_present:
+            return False  # still installed (registry says so)
+        # Not in registry — check if the cached installer is gone too
         installer_gone = bool(app.installer_path) and not Path(app.installer_path).exists()
-        if installer_gone and not reg_present:
+        if installer_gone:
             print(f"  {app.name} ({app.id}): not in system registry and installer missing - assumed manually removed. Removing from ohub.")
             state_manager.remove_app(app.id)
             return True

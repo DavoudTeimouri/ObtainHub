@@ -5,6 +5,11 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6.4] - 2026-08-13
+
+### Fixed
+- **GitHub apps no longer falsely flagged as manually removed.** `ohub check` treated any managed app whose recorded `install_location` was missing on disk as removed. For setup-installed (GitHub) apps that path is often empty or stale, so valid installs were wrongly dropped. `install_location` is now only authoritative for folder/zip apps; GitHub apps are checked against the **system registry** (Programs & Features) instead — present there means keep it. Regression tests added.
+
 ## [0.7.6.3] - 2026-08-13
 
 ### Fixed
