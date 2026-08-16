@@ -553,6 +553,42 @@ Workflows: `.github/workflows/release.yml`, `.github/workflows/sync-release-note
 - Python 3.11+ (for development)
 - GitHub API access (token optional, but recommended for higher rate limits)
 
+## Code Signing (Release Binaries)
+
+Release binaries are **code-signed** automatically during the GitHub Actions build (`release.yml`) when signing secrets are configured. This prevents Windows SmartScreen from flagging the installer as an unrecognized app.
+
+Two signing backends are supported — configure ONE in **Settings → Secrets and variables → Actions**:
+
+### Option A — Azure Trusted Signing (recommended)
+Create a Trusted Signing account in Azure, then add these repository secrets:
+
+| Secret | Value |
+|---|---|
+| `AZURE_TENANT_ID` | Azure tenant ID |
+| `AZURE_CLIENT_ID` | Service principal (app registration) client ID |
+| `AZURE_CLIENT_SECRET` | Service principal secret |
+| `AZURE_ACCOUNT_ENDPOINT` | e.g. `https://eus.codesigning.azure.net/` |
+| `AZURE_CODE_SIGNING_PROFILE` | Code Signing profile name |
+
+The workflow installs `AzureSignTool` (dotnet global tool) and signs `ohub.exe`, `ObtainHub-Setup.exe`, and `ObtainHub.msi` with a trusted timestamp.
+
+### Option B — PFX certificate
+If you already have a code-signing certificate (`.pfx`), add:
+
+| Secret | Value |
+|---|---|
+| `SIGNING_PFX_B64` | Base64-encoded `.pfx` file content (`certutil -encode cert.pfx cert.b64`) |
+| `SIGNING_PFX_PASSWORD` | PFX password |
+
+The workflow decodes it to a temp file, signs with `signtool` (SHA-256 + DigiCert timestamp), then deletes it.
+
+### No secrets configured
+If neither set of secrets is present, the build proceeds **unsigned** and prints a warning — Windows SmartScreen will warn "unrecognized app". This is the current state until you add a certificate. To fix, supply a cert via either option above.
+
+## AI-Assisted Development
+
+This repository and the ObtainHub application are developed **with AI assistance** — using AI agents (e.g. Hermes Agent / Claude by Nous Research / Anthropic) for code writing, debugging, release engineering, testing, and documentation. The human author directs the work, reviews every change, and makes all final decisions. AI is a tool in this workflow; it is not the sole author.
+
 ## License
 
 MIT License — see LICENSE file.
