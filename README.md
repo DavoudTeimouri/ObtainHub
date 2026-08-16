@@ -557,7 +557,7 @@ Workflows: `.github/workflows/release.yml`, `.github/workflows/sync-release-note
 
 Release binaries are **code-signed** automatically during the GitHub Actions build (`release.yml`) when signing secrets are configured. This prevents Windows SmartScreen from flagging the installer as an unrecognized app.
 
-Two signing backends are supported — configure ONE in **Settings → Secrets and variables → Actions**:
+Two signing backends are supported — configure ONE via **Settings → Secrets and variables → Actions → New repository secret**:
 
 ### Option A — Azure Trusted Signing (recommended)
 Create a Trusted Signing account in Azure, then add these repository secrets:
@@ -584,10 +584,6 @@ The workflow decodes it to a temp file, signs with `signtool` (SHA-256 + DigiCer
 
 ### No secrets configured
 If neither set of secrets is present, the build proceeds **unsigned** and prints a warning — Windows SmartScreen will warn "unrecognized app". This is the current state until you add a certificate. To fix, supply a cert via either option above.
-
-## AI-Assisted Development
-
-This repository and the ObtainHub application are developed **with AI assistance** — using AI agents (e.g. Hermes Agent / Claude by Nous Research / Anthropic) for code writing, debugging, release engineering, testing, and documentation. The human author directs the work, reviews every change, and makes all final decisions. AI is a tool in this workflow; it is not the sole author.
 
 ## License
 
