@@ -156,9 +156,11 @@ def parse_version(version: str) -> tuple:
             else:
                 break
         parts.append(int(num) if num else 0)
+    # Pad short versions (e.g. "1.2" -> (1, 2, 0)); keep all segments so
+    # 4-part versions like 0.7.6.4 are not truncated to 0.7.6.
     while len(parts) < 3:
         parts.append(0)
-    return tuple(parts[:3])
+    return tuple(parts)
 
 
 def is_newer(latest: str, current: str) -> bool:

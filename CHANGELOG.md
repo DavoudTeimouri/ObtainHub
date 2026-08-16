@@ -5,6 +5,11 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6.5] - 2026-08-13
+
+### Fixed
+- **Version comparison no longer ignores the 4th segment.** `parse_version` truncated versions to 3 parts (`0.7.6.3` and `0.7.6.4` both became `(0,7,6)`), so `ohub check` reported "Up to date" even when a newer patch release existed (e.g. current 0.7.6.3 vs latest 0.7.6.4). Now all segments are kept; short versions still pad (1.2 → (1,2,0)). Regression tests added.
+
 ## [0.7.6.4] - 2026-08-13
 
 ### Fixed
