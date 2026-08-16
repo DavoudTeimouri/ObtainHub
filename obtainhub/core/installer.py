@@ -344,6 +344,35 @@ class SilentInstaller:
 
         return False, "No uninstall method available (manual uninstall required)"
 
+    def _registry_uninstall_cmd(self, app_name: str):
+        """Return (exe, args) for an app's real uninstaller from the registry.
+
+        The cached ``installer_path`` is the *setup* exe we downloaded; running it
+        re-opens the install wizard. The genuine uninstall command lives in the
+        registry ``UninstallString`` (e.g. ``"C:\\...\\unins000.exe"``). Returns
+        None when no registry entry matches.
+        """
+        try:
+            for sa in get_installed_system_apps():
+                if not sa.uninstall_string:
+                    continue
+                if sa.name.lower() == app_name.lower() or app_name.lower() in sa.name.lower():
+                    cmd = sa.uninstall_string.strip()
+                    # Common form: "C:\Path\unins000.exe" /SILENT  (quoted exe + args)
+                    if cmd.startswith('"'):
+                        end = cmd.index('"', 1)
+                        exe = cmd[1:end]
+                        rest = cmd[end + 1:].strip()
+                    else:
+                        parts = cmd.split(None, 1)
+                        exe = parts[0]
+                        rest = parts[1] if len(parts) > 1 else ""
+                    args = rest.split() if rest else []
+                    return exe, args
+        except Exception as e:
+            logger.debug(f"Registry uninstall lookup failed for {app_name}: {e}")
+        return None
+
     def _uninstall_msi(self, app: InstalledApp, interactive: bool = False) -> Tuple[bool, str]:
         """Uninstall MSI package."""
         logger.info(f"Uninstalling MSI: {app.name}")
@@ -402,10 +431,19 @@ class SilentInstaller:
 
         installer_path = Path(app.installer_path) if app.installer_path else None
 
-        if installer_path and installer_path.exists():
-            if interactive:
+        # Prefer the real uninstaller from the registry (UninstallString) instead
+        # of the cached setup.exe — running the setup exe re-opens the install
+        # wizard, not the uninstaller. Looked up regardless of installer_path.
+        reg_cmd = self._registry_uninstall_cmd(app.name)
+
+        if interactive:
+            target_cmd = reg_cmd
+            if not target_cmd and installer_path and installer_path.exists():
+                target_cmd = (str(installer_path), [])
+            if target_cmd:
+                exe, base_args = target_cmd
                 try:
-                    result = subprocess.run([str(installer_path)], timeout=INTERACTIVE_TIMEOUT)
+                    result = subprocess.run([exe] + base_args, timeout=INTERACTIVE_TIMEOUT)
                     if result.returncode == 0:
                         return True, f"Uninstaller completed (interactive): {app.name}"
                     return False, f"Interactive uninstall exited with code {result.returncode}"
@@ -413,8 +451,27 @@ class SilentInstaller:
                     return False, "Interactive uninstall timed out (still running?)"
                 except Exception as e:
                     return False, f"Interactive uninstall error: {e}"
+            return False, f"No uninstaller found in registry for {app.name} (manual uninstall required)"
 
-            # Common uninstall flags
+        # Silent: try the registry uninstaller with silent flags, then the cached
+        # setup.exe as a last resort (some Inno setups support it).
+        if reg_cmd:
+            exe, base_args = reg_cmd
+            for flags in [["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], ["/S"], ["/silent"], ["/quiet"], []]:
+                try:
+                    result = subprocess.run(
+                        [exe] + base_args + flags,
+                        capture_output=True, text=True, timeout=300,
+                    )
+                    if result.returncode == 0:
+                        logger.info(f"Registry uninstall successful: {app.name}")
+                        return True, f"Successfully uninstalled {app.name}"
+                except Exception:
+                    continue
+            return False, f"Registry uninstall failed for {app.name} (manual uninstall required)"
+
+        if installer_path and installer_path.exists():
+            # Fall back to cached installer path with silent flags
             uninstall_flags = [
                 ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
                 ["/S"],

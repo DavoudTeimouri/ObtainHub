@@ -5,6 +5,11 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6.3] - 2026-08-13
+
+### Fixed
+- **`ohub uninstall` no longer launches the install wizard.** Uninstall ran the cached *setup* exe, which re-opens the install/repair wizard instead of uninstalling. It now reads the real uninstaller from the Windows registry `UninstallString` (e.g. `unins000.exe`) and runs that — both interactively and silently. Falls back to the cached setup exe with uninstall flags only when no registry entry exists. Regression tests added.
+
 ## [0.7.6.2] - 2026-08-13
 
 ### Fixed
