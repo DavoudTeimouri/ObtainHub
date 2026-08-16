@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.6.6] - 2026-08-14
 
-### Added
-- **Code signing for release binaries.** The `release.yml` workflow now signs `ohub.exe`, `ObtainHub-Setup.exe`, and `ObtainHub.msi` using either Azure Trusted Signing (`AzureSignTool`) or a PFX certificate from GitHub secrets. Timestamped with DigiCert (SHA-256). Skips cleanly with a warning when no signing secrets are configured — no cert means unsigned build, not a failed build.
+### Changed
+- **Release binaries remain unsigned (code signing deferred).** The `release.yml` workflow has code-signing support wired in (Azure Trusted Signing or PFX certificate from GitHub secrets), but no certificate is configured yet — so current releases ship unsigned and Windows SmartScreen will warn on first run. Code signing will be enabled later once a certificate is available.
 
 ## [0.7.6.5] - 2026-08-13
 

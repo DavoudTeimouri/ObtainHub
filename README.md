@@ -555,7 +555,7 @@ Workflows: `.github/workflows/release.yml`, `.github/workflows/sync-release-note
 
 ## Code Signing (Release Binaries)
 
-Release binaries are **code-signed** automatically during the GitHub Actions build (`release.yml`) when signing secrets are configured. This prevents Windows SmartScreen from flagging the installer as an unrecognized app.
+Release binaries are **code-signed** automatically during the GitHub Actions build (`release.yml`) when signing secrets are configured. This prevents Windows SmartScreen from flagging the installer as an unrecognized app. **Status: not yet enabled — no certificate is configured, so current releases ship unsigned and SmartScreen may warn on first run. Code signing will be enabled later.**
 
 Two signing backends are supported — configure ONE via **Settings → Secrets and variables → Actions → New repository secret**:
 
