@@ -5,7 +5,10 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.6.6] - 2026-08-14
+## [0.7.6.7] - 2026-08-21
+
+### Fixed
+- **Installing a ZIP-only release no longer crashes.** `ohub install <owner/repo>` for a repo whose latest release contains only a `.zip` (no MSI/EXE setup) failed with `'Namespace' object has no attribute 'name'` / "Failed to install archive". Root cause: the install command read `parsed.name`, but the `install` subparser has no `--name` flag (only `add` does). Fix: fall back to the repo name via `getattr(parsed, "name", "") or repo`. Regression tests added.
 
 ### Changed
 - **Release binaries remain unsigned (code signing deferred).** The `release.yml` workflow has code-signing support wired in (Azure Trusted Signing or PFX certificate from GitHub secrets), but no certificate is configured yet — so current releases ship unsigned and Windows SmartScreen will warn on first run. Code signing will be enabled later once a certificate is available.

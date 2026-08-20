@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.6.6 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.6.7 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -998,7 +998,7 @@ def cmd_install(
         try:
             app = add_zip_app(
                 app_id, release,
-                name=parsed.name or repo,
+                name=getattr(parsed, "name", "") or repo,
                 prefer_asset=match,
             )
             version = release.get('tag_name', '').lstrip('v')
