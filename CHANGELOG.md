@@ -5,6 +5,16 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6.8] - 2026-08-22
+
+### Added
+- **`ohub source verify <name>` subcommand** — validates a custom source by fetching it and confirming it serves installable content. GitHub sources check for releases with assets; manifest sources verify a parseable JSON list. No external tools required; uses the existing Downloader + requests.
+- **Progressive timeout fallback** — the `--timeout` flag (default 90s from config `check_timeout_seconds`) supports progressive query fallbacks via `_progressive_queries()` and `_clean_app_query()` helpers; if the first (cleaned) search times out or returns no results, the loop automatically tries progressively shorter cleaned names, then the raw name, before giving up. Wired into the unmanaged apps loop in `cmd_check`.
+- **`--json` flag on `ohub check`** — already existed; outputs results as JSON via `print(json.dumps(results, indent=2))` instead of human-readable lines. No code change needed; flag was already implemented.
+
+### Fixed
+- **Installing a ZIP-only release no longer crashes.** `ohub install <owner/repo>` for a repo whose latest release contains only a `.zip` (no MSI/EXE setup) failed with `'Namespace' object has no attribute 'name'` / "Failed to install archive". Root cause: the install command read `parsed.name`, but the `install` subparser has no `--name` flag (only `add` does). Fix: fall back to the repo name via `getattr(parsed, "name", "") or repo`. Regression tests added.
+
 ## [0.7.6.7] - 2026-08-21
 
 ### Fixed
