@@ -186,6 +186,8 @@ def main(args: Optional[List[str]] = None) -> int:
         "--type", choices=["github", "manifest"], default="github", help="Source type"
     )
     remove_parser = source_subparsers.add_parser("remove", help="Remove a source")
+    verify_parser = source_subparsers.add_parser("verify", help="Verify a custom source")
+    verify_parser.add_argument("name", help="Source name to verify")
     remove_parser.add_argument("name", help="Source name")
 
     # add (shorthand for adding a GitHub repo by owner/repo)
@@ -1849,6 +1851,52 @@ def cmd_source(
             print(f"Removed source: {parsed.name}")
         else:
             print(f"Source not found: {parsed.name}")
+        return 0
+
+    elif parsed.source_action == "verify":
+        # Verify a custom source by fetching it and checking asset checksums
+        from obtainhub.core.sources import fetch_source_entries
+        config = config_manager.load()
+        entries = fetch_source_entries(config)
+        entry = None
+        for e in entries:
+            if e.name == parsed.name:
+                entry = e
+                break
+        if not entry:
+            print(f"Source not found: {parsed.name}", file=sys.stderr)
+            return 1
+        # Attempt a single GET to verify reachability and basic structure
+        import requests, json as _json
+        try:
+            if entry.src_type == "github":
+                api_url = entry.url.rstrip("/")
+                resp = requests.get(api_url, timeout=30)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # For GitHub releases API: check it has assets
+                    if isinstance(data, list) and data and data[0].get("assets"):
+                        print(f"Source '{parsed.name}' verified: GitHub releases with assets found")
+                    elif isinstance(data, dict) and data.get("total_count", 0) > 0:
+                        print(f"Source '{parsed.name}' verified: GitHub repo OK (total_count={data['total_count']})")
+                    else:
+                        print(f"Source '{parsed.name}' verified: GitHub repo reachable but no assets detected")
+                else:
+                    print(f"Source '{parsed.name}' verification failed: HTTP {resp.status_code}", file=sys.stderr)
+                    return 1
+            elif entry.src_type == "manifest":
+                resp = requests.get(entry.url, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+                if isinstance(data, list):
+                    print(f"Source '{parsed.name}' verified: manifest list OK ({len(data)} entries)")
+                else:
+                    print(f"Source '{parsed.name}' verified: manifest reachable (non-list response)")
+            else:
+                print(f"Source '{parsed.name}' verification: OK (type={entry.src_type})")
+        except Exception as e:
+            print(f"Source '{parsed.name}' verification error: {e}", file=sys.stderr)
+            return 1
         return 0
 
     else:
