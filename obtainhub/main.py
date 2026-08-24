@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.6.8 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.6.9 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -2087,6 +2087,28 @@ def cmd_self_update(
 ) -> int:
     """Handle self-update command."""
     from obtainhub import __version__
+    import subprocess
+
+    # Best-effort check: is ohub.exe already the running process?
+    running = False
+    try:
+        result = subprocess.run(
+            ['tasklist', '/FI', 'IMAGENAME eq ohub.exe', '/FO', 'LIST'],
+            capture_output=True, text=True, timeout=10
+        )
+        running = 'ohub.exe' in result.stdout
+    except Exception:
+        running = False
+
+    if running:
+        print(
+            'ohub is already running. Self-update will be performed the next '
+            'time ohub exits. To check for updates in the background, add a '
+            'Windows Task Scheduler trigger running '
+            '"ohub check --all --timeout 300" periodically.'
+        )
+        return 0
+
     updater = SelfUpdater(config_manager, state_manager, current_version=__version__)
     result = updater.check_and_update(parsed.prerelease, parsed.force)
     if result:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "obtainhub"
-version = "0.7.6.8"
+version = "0.7.6.9"
 description = "GitHub-based Package Updater and Manager for Windows"
 readme = "README.md"
 license = {text = "MIT"}
