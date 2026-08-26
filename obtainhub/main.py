@@ -34,7 +34,7 @@ from obtainhub.core.exceptions import (
     ManualUninstallRequired,
 )
 from obtainhub.utils.helpers import get_architecture as get_system_architecture
-from obtainhub.utils.helpers import is_newer, is_windows_x64
+from obtainhub.utils.helpers import is_newer, is_windows_x64, parse_version
 
 # Global flag for graceful shutdown
 _shutdown_requested = False
@@ -61,7 +61,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.6.9 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v0.7.6.10 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -433,7 +433,13 @@ def _refresh_installed_version(state_manager, app) -> None:
     ]
     if not installed:
         return
-    sys_app = installed[0]
+    # A single app can appear under multiple registry keys (e.g. an EXE-setup
+    # and an MSI install both write DisplayName="ObtainHub", or the same
+    # product is present for per-user and per-machine). Pick the HIGHEST version
+    # so we don't report an older copy as the installed version. This also fixes
+    # the self-update case where ohub's own entry could be shadowed by a stale
+    # second install of the same name.
+    sys_app = max(installed, key=lambda sa: parse_version(sa.version))
     changed = False
     if sys_app.version and sys_app.version != app.version:
         app.version = sys_app.version

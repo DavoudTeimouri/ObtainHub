@@ -41,3 +41,26 @@ def test_refresh_installed_version_name_with_version_suffix():
         m._refresh_installed_version(state, app)
 
     assert app.version == "0.7.5.2"
+
+
+def test_refresh_picks_highest_when_multiple_registry_entries():
+    # Bug: installing both EXE-setup and MSI writes two "ObtainHub" registry
+    # entries (different product codes). A stale older entry must NOT shadow
+    # the newer installed version. ohub must pick the HIGHEST version present.
+    state = mock.MagicMock()
+    app = _mk(id="DavoudTeimouri/ObtainHub", name="ObtainHub", version="0.7.6.7")
+
+    older = mock.MagicMock(version="0.7.6.7", install_location="C:\\ObtainHub-old")
+    older.name = "ObtainHub"
+    newer = mock.MagicMock(version="0.7.6.9", install_location="C:\\ObtainHub-new")
+    newer.name = "ObtainHub"
+
+    # registry order must NOT matter - newer must win regardless of position
+    with mock.patch.object(m, "get_installed_system_apps", return_value=[older, newer]):
+        m._refresh_installed_version(state, app)
+    assert app.version == "0.7.6.9", app.version
+
+    with mock.patch.object(m, "get_installed_system_apps", return_value=[newer, older]):
+        app2 = _mk(id="DavoudTeimouri/ObtainHub", name="ObtainHub", version="0.7.6.7")
+        m._refresh_installed_version(state, app2)
+    assert app2.version == "0.7.6.9", app2.version

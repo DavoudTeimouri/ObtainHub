@@ -5,7 +5,10 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.6.9] - 2026-08-23
+## [0.7.6.10] - 2026-08-23
+
+### Fixed
+- **Self-version detection with multiple installs (EXE + MSI).** Installing ObtainHub via both the EXE setup and the MSI left two `DisplayName="ObtainHub"` registry entries (different product codes). `ohub check` then read the first one alphabetically, which could be the *older* version, so it wrongly reported "current 0.7.6.7, latest 0.7.6.9 → UPDATE AVAILABLE" even though 0.7.6.9 was installed. `_refresh_installed_version` now picks the **highest** version among all matching registry entries, not the first. Regression test added.
 
 ### Fixed
 - **Self-update when ohub is running deferred.** If `ohub self-update` is invoked while `ohub.exe` is the current process, the command now detects the running instance via `tasklist` (stdlib, Windows-only; on other OSes it gracefully skips), prints a clear message that update will be deferred until the next process exit, and returns 0 immediately. The Inno/NSIS installer can then replace the executable when ohub exits. A Windows Task Scheduler trigger can run periodic background checks: `ohub check --all --timeout 300`.
