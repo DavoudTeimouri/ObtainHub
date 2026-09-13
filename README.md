@@ -22,10 +22,19 @@ ObtainHub (`ohub`) is a CLI tool for installing, updating, and tracking Windows 
 - **Archived / inactive warnings** — flagged during check, install, update, and add
 - **Self-update (manual)** — `ohub self-update` upgrades ohub itself on demand (no longer runs automatically on every command). The installer is launched detached so it does not hang on the running `ohub.exe`.
 - **State tracking** — records installed apps, versions, type, installer paths, and source in `state.json`
+- **State export/import** — `ohub state export/import` backs up and restores the full ohub state (apps, cache, history) as JSON for machine migration.
 - **Prerelease support** — opt-in with `--prerelease` flag
 - **Download-only mode** — fetch installers without executing them
 - **System app detection** — scan Windows Registry for installed applications (with `ohub list --all` / `ohub check --all`)
-- **GitHub token support** — higher rate limits with `ohub config set github_token`
+- **Scheduled background checks** — `ohub schedule enable` creates a Windows Task Scheduler task (or cron job on Linux/macOS) that runs `ohub check --all --yes` daily at 3 AM. `status` shows last run; `run` triggers an immediate check.
+- **Multi-architecture asset selection** — `--arch x64|arm64|x86|auto` flag on `install`/`update`/`check`; per-app `arch_preference` saved so future checks use the same architecture.
+- **Portable shims** — `ohub shim add/remove/list/path` creates lightweight `.exe` shims in a user-defined directory for folder/zip apps, enabling PATH-less execution.
+- **Release notes preview** — `--notes` flag on `check` and `update` shows the GitHub release body before installing.
+- **SHA256 from release notes** — `ohub check` parses release body for checksums and verifies downloaded assets.
+- **App groups / profiles** — `ohub group` manages named groups of apps; `ohub install @group` installs all.
+- **Winget/Scoop/Chocolatey fallback** — `install/update/check` query Windows package managers when GitHub has no suitable asset.
+- **Pre/post install hooks** — per-app commands run before/after install with env vars.
+- **TUI dashboard** — `ohub tui` launches a Textual-based terminal UI for visual app management.
 - **Global + per-user config** — machine-wide settings apply to all users; each user's token and explicit overrides win
 - **Single-source versioning** — `obtainhub/__init__.py` is the one version of truth; the installer/manifest files are synced automatically at build time
 
@@ -95,6 +104,7 @@ ohub install owner/repo                    # Latest stable release
 ohub install owner/repo --tag v1.2.3       # Specific tag
 ohub install owner/repo --version 1.2.3    # Install a specific (older) version
 ohub install owner/repo --prerelease       # Include prereleases
+ohub install owner/repo --arch x64|arm64|x86|auto  # Architecture to select (default: auto)
 ohub install owner/repo --download-only    # Download only, don't install
 ohub install owner/repo --force            # Force reinstall
 ohub install owner/repo --yes              # Auto-confirm prompts (silent install)
@@ -118,6 +128,8 @@ ohub update --prerelease             # Include prereleases
 ohub update --dry-run                # Show what would be updated
 ohub update --reset                  # Forget saved choices so prompts re-appear
 ohub update --yes                    # Auto-confirm prompts
+ohub update --arch x64|arm64|x86|auto  # Architecture to select (default: auto)
+ohub update --notes                  # Show release notes for available updates
 ```
 
 When no standard installer is found in a release, `ohub update` lists the available candidate assets and installs/extracts the chosen one (the choice is remembered for future updates).
@@ -134,6 +146,8 @@ ohub check --candidates              # For unmanaged apps w/o exact match, offer
 ohub check --timeout 30              # Per-repo search timeout (10-300s; default 90, retries 3)
 ohub check --reset                   # Forget saved choices so prompts re-appear
 ohub check --json                    # Output as JSON
+ohub check --arch x64|arm64|x86|auto  # Architecture to select (default: auto)
+ohub check --notes                   # Show release notes for available updates
 ```
 Running `ohub check` with no app on an interactive terminal shows a numbered list of managed apps so you can check one or all. Apps that were manually uninstalled are detected and dropped from ohub automatically. For every managed app, `ohub check` re-reads the installed version from the system registry, so an update you performed outside ohub (or a self-update) is reflected immediately instead of being masked by ohub's stored version.
 
@@ -281,7 +295,62 @@ ohub source add mylist https://my-intranet.example.com/apps/manifest.json --type
 ohub install MyApp
 ```
 
-### `ohub search <query>`
+### `ohub schedule`
+
+Manage scheduled background checks. Creates a Windows Task Scheduler task (or cron job on Linux/macOS) that runs `ohub check --all --yes` on a configurable interval.
+
+```cmd
+ohub schedule status                    # Show schedule status and last run
+ohub schedule enable                    # Enable scheduled checks (creates task)
+ohub schedule disable                   # Disable scheduled checks (removes task)
+ohub schedule run                       # Run check now (immediate)
+ohub schedule run --prerelease          # Run check now including prereleases
+```
+
+The interval is configurable via `ohub config set schedule_interval_hours <n>` (default 24). Notification on updates is controlled by `schedule_notify_on_update`.
+
+### `ohub shim`
+Manage portable shims for folder/zip apps. Creates lightweight `.exe` shims in `config.shim_dir` (default `~/bin/obtainhub`) that forward to the actual app executable.
+
+```cmd
+ohub shim list                        # List all shims
+ohub shim add owner/repo              # Create a shim for an app
+ohub shim add owner/repo --name myapp # Custom shim name
+ohub shim remove owner/repo           # Remove a shim
+ohub shim path                        # Show shim directory path
+```
+
+Add the shim directory to your PATH to run portable apps from anywhere without modifying system PATH.
+
+### `ohub state`
+Export/import full ohub state (managed apps, manifest cache, check history) as JSON for backup or machine migration.
+
+```cmd
+ohub state export                       # Export to stdout
+ohub state export backup.json           # Export to file
+ohub state import backup.json           # Import (skips same/older versions)
+ohub state import backup.json --dry-run # Preview what would be imported
+```
+
+### `ohub tui`
+Launch terminal UI dashboard (Textual-based). Lists managed apps with current/latest versions and update status; row selection shows details; keybindings: `r` refresh, `u` update, `c` check, `q` quit, `j/k` navigate.
+
+```cmd
+ohub tui
+```
+
+### `ohub group`
+Manage named groups of apps for batch operations.
+
+```cmd
+ohub group add dev-tools vscode git 7zip
+ohub group list
+ohub group install @dev-tools
+ohub group update @dev-tools
+ohub group check @dev-tools
+ohub group remove dev-tools
+```
+
 Search GitHub repositories for applications with releases.
 
 ```cmd
@@ -369,8 +438,18 @@ On a multi-user Windows machine, a config in `%ProgramData%\ObtainHub\config.jso
 | `prefer_x64` | bool | `true` | Prefer x64 assets. |
 | `allow_x86_fallback` | bool | `false` | Fall back to x86 if no x64 asset. |
 | `auto_attempt_uninstall` | bool | `false` | Try to run the uninstaller on remove. |
-| `manifest_sources` | list | `[]` | Custom sources (see below). Each: `{"name","url","enabled","type":"github"\|"manifest"}`. |
-| `proxy` | str | `""` | HTTP(S) proxy URL. |
+|| `manifest_sources` | list | `[]` | Custom sources (see below). Each: `{"name","url","enabled","type":"github"|"manifest"}`. |
+|| `shim_dir` | str | `...\bin\obtainhub` | Directory for portable shims. |
+|| `allow_hooks` | bool | `true` | Allow pre/post install hooks. |
+|| `enable_winget` | bool | `true` | Enable winget fallback. |
+|| `enable_scoop` | bool | `true` | Enable scoop fallback. |
+|| `enable_choco` | bool | `true` | Enable chocolatey fallback. |
+|| `prefer_native` | bool | `false` | Try native package managers first. |
+|| `schedule_enabled` | bool | `false` | Enable scheduled background checks. |
+|| `schedule_interval_hours` | int | `24` | Scheduled check interval in hours. |
+|| `schedule_notify_on_update` | bool | `false` | Notify when updates found during scheduled check. |
+|| `schedule_run_on_startup` | bool | `false` | Run scheduled check on startup. |
+|| `proxy` | str | `""` | HTTP(S) proxy URL. |
 | `timeout_seconds` | int | `30` | Network timeout. |
 | `check_timeout_seconds` | int | `90` | Per-app check timeout (10–300). |
 | `check_timeout_retries` | int | `3` | Check retries (1–5). |

@@ -14,7 +14,8 @@ class ManifestSource:
     url: str
     enabled: bool = True
     headers: Dict[str, str] = field(default_factory=dict)
-    type: str = "github"         # "github" | "manifest"
+    type: str = "github"         # "github" | "manifest" | "winget" | "scoop" | "chocolatey"
+    hooks: Dict[str, str] = field(default_factory=dict)  # pre_install, post_install, pre_uninstall, post_uninstall
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -36,15 +37,25 @@ class Config:
     download_dir: str = str(Path.home() / "Downloads" / "ObtainHub")
     config_dir: str = str(Path.home() / ".config" / "obtainhub")
     state_dir: str = str(Path.home() / ".local" / "share" / "obtainhub")
+    shim_dir: str = str(Path.home() / "bin" / "obtainhub")  # Portable shim directory
 
     # Update behavior
     update_interval_hours: int = 24
     auto_update: bool = True
     allow_prerelease: bool = False
 
+    # Scheduled checks
+    schedule_enabled: bool = False
+    schedule_interval_hours: int = 24
+    schedule_notify_on_update: bool = True
+    schedule_run_on_startup: bool = False
+
     # Architecture preferences
     prefer_x64: bool = True
     allow_x86_fallback: bool = False
+
+    # App groups/profiles
+    groups: Dict[str, List[str]] = field(default_factory=dict)  # group_name -> list of app_ids
 
     # Manual uninstall handling
     auto_attempt_uninstall: bool = False
@@ -82,7 +93,7 @@ class Config:
         # Filter known fields to ignore unknown keys
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}
         filtered_data = {k: v for k, v in data.items() if k in known_fields}
-        
+
         # Convert manifest_sources
         if "manifest_sources" in filtered_data:
             filtered_data["manifest_sources"] = [
@@ -93,39 +104,42 @@ class Config:
     def validate(self) -> List[str]:
         """Validate configuration, return list of errors."""
         errors = []
-        
+
         if self.update_interval_hours < 1:
             errors.append("update_interval_hours must be >= 1")
-        
+
         if self.timeout_seconds < 5:
             errors.append("timeout_seconds must be >= 5")
-        
+
         if not (10 <= self.check_timeout_seconds <= 300):
             errors.append("check_timeout_seconds must be between 10 and 300")
         if not (1 <= self.check_timeout_retries <= 5):
             errors.append("check_timeout_retries must be between 1 and 5")
-        
+
         if self.max_parallel_downloads < 1:
             errors.append("max_parallel_downloads must be >= 1")
-        
+
+        if not (1 <= self.schedule_interval_hours <= 8760):
+            errors.append("schedule_interval_hours must be between 1 and 8760")
+
         valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if self.log_level.upper() not in valid_log_levels:
             errors.append(f"log_level must be one of: {valid_log_levels}")
-        
+
         return errors
 
 
 class ConfigManager:
     """Manages configuration loading, saving, and migration."""
-    
+
     DEFAULT_CONFIG_FILENAME = "config.json"
-    
+
     def __init__(self, config_dir: Optional[str] = None):
         if config_dir:
             self.config_dir = Path(config_dir)
         else:
             self.config_dir = Path.home() / ".config" / "obtainhub"
-        
+
         self.config_file = self.config_dir / self.DEFAULT_CONFIG_FILENAME
         self._config: Optional[Config] = None
 
@@ -232,14 +246,14 @@ class ConfigManager:
         """Save configuration to file."""
         if config is None:
             config = self.config
-        
+
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Validate before saving
         errors = config.validate()
         if errors:
             raise ValueError(f"Config validation failed: {errors}")
-        
+
         # Write atomically
         temp_file = self.config_file.with_suffix(".tmp")
         try:
@@ -269,13 +283,13 @@ class ConfigManager:
         setattr(self.config, key, value)
         self.save()
 
-    def add_manifest_source(self, name: str, url: str, enabled: bool = True, headers: Optional[Dict[str, str]] = None, src_type: str = "github") -> None:
-        """Add a manifest source (type: github | manifest)."""
+    def add_manifest_source(self, name: str, url: str, enabled: bool = True, headers: Optional[Dict[str, str]] = None, src_type: str = "github", hooks: Optional[Dict[str, str]] = None) -> None:
+        """Add a manifest source (type: github | manifest | winget | scoop | chocolatey)."""
         # Remove existing with same name
         self.config.manifest_sources = [ms for ms in self.config.manifest_sources if ms.name != name]
         # Add new
         self.config.manifest_sources.append(ManifestSource(
-            name=name, url=url, enabled=enabled, headers=headers or {}, type=src_type,
+            name=name, url=url, enabled=enabled, headers=headers or {}, type=src_type, hooks=hooks or {},
         ))
         self.save()
 

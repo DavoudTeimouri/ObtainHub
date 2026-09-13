@@ -1,6 +1,7 @@
 """GitHub API client for ObtainHub."""
 
 import os
+import re
 import time
 from datetime import datetime, timezone
 import requests
@@ -9,6 +10,18 @@ from typing import Any, Dict, List, Optional
 
 # Repos with no push in this many days are considered inactive
 INACTIVE_DAYS = 365
+
+# Checksum patterns to extract from release body
+CHECKSUM_PATTERNS = [
+    # checksums.txt style: sha256 filename
+    re.compile(r'^([a-fA-F0-9]{64})\s+(\S+)$', re.MULTILINE),
+    # inline markdown table: | file | sha256 |
+    re.compile(r'\|\s*(\S+)\s*\|\s*([a-fA-F0-9]{64})\s*\|'),
+    # .sha256 file style: sha256 *filename
+    re.compile(r'^([a-fA-F0-9]{64})\s*\*(\S+)$', re.MULTILINE),
+    # key: value style
+    re.compile(r'(\S+)\s*:\s*([a-fA-F0-9]{64})'),
+]
 
 
 @dataclass
@@ -22,6 +35,7 @@ class ReleaseInfo:
     draft: bool
     assets: List[Dict[str, Any]]
     html_url: str
+    checksums: Optional[Dict[str, str]] = None  # filename -> sha256
 
 
 class GitHubClient:
@@ -181,6 +195,18 @@ class GitHubClient:
                 continue
         return None
 
+    def _extract_checksums(self, body: str) -> Dict[str, str]:
+        """Extract SHA256 checksums from release body text."""
+        checksums = {}
+        for pattern in CHECKSUM_PATTERNS:
+            for match in pattern.finditer(body):
+                if len(match.groups()) == 2:
+                    sha256, filename = match.groups()
+                    # Normalize: sha256 is first group in most patterns, but check
+                    if len(sha256) == 64 and all(c in '0123456789abcdefABCDEF' for c in sha256):
+                        checksums[filename.lower()] = sha256.lower()
+        return checksums
+
     def _parse_release(self, release_data: Dict) -> ReleaseInfo:
         """Parse raw release data into ReleaseInfo dataclass."""
         assets = []
@@ -191,6 +217,8 @@ class GitHubClient:
                 'size': asset_data.get('size', 0),
             })
 
+        checksums = self._extract_checksums(release_data.get('body', ''))
+
         return ReleaseInfo(
             tag_name=release_data.get('tag_name', ''),
             name=release_data.get('name', ''),
@@ -200,6 +228,7 @@ class GitHubClient:
             draft=release_data.get('draft', False),
             assets=assets,
             html_url=release_data.get('html_url', ''),
+            checksums=checksums,
         )
 
     def get_latest_release_parsed(self, owner: str, repo: str, include_prerelease: bool = False) -> Optional[ReleaseInfo]:

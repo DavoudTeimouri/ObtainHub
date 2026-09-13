@@ -29,6 +29,7 @@ class InstalledApp:
     preferred_asset: str = ""     # selected asset name for zip/exe apps
     github_repo: str = ""         # owner/repo linked to a folder app for updates
     source: str = ""              # name of the custom manifest/github source this app came from (empty = none)
+    arch_preference: str = ""     # "x64" | "arm64" | "x86" | "auto" (empty = use config default)
 
     def to_dict(self) -> dict:
         return asdict(self)

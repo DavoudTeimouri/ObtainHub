@@ -5,6 +5,36 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-09-13
+
+### Added
+- **`ohub shim` subcommand** — portable shims for folder/zip apps. `add`/`remove`/`list`/`path` actions create lightweight `.exe` shims in a user-defined directory (`config.shim_dir`, default `~/bin/obtainhub`) that forward to the actual app executable, enabling PATH-less execution.
+- **`ohub state export/import`** — full state backup/restore. `export` outputs JSON with all managed apps, manifest cache, and check history. `import --dry-run` previews changes; `import` adds/updates apps with conflict handling (skips same/older versions).
+- **`ohub tui`** — terminal UI dashboard (Textual-based). Lists managed apps with current/latest versions and update status; row selection shows details (asset, repo, versions); keybindings: `r` refresh, `u` update, `c` check, `q` quit.
+- **Release notes preview (`--notes` flag)** — `ohub check --notes` and `ohub update --notes` show the GitHub release body (changelog) for available updates before installing. Truncates long bodies with link to full release.
+- **SHA256 from release notes** — `ohub check` parses release body for checksums (code blocks, tables, inline) and verifies downloaded assets against them when present. Falls back to asset hashing if not found.
+- **App groups / profiles (`ohub group`)** — `add`/`list`/`remove`/`install`/`update`/`check` actions. Groups store app lists (owner/repo) with optional versions; `ohub install @dev-tools` installs all; `ohub update @dev-tools` updates all.
+- **Winget/Scoop/Chocolatey fallback** — `ohub install/update/check` now queries Windows package managers when GitHub release has no suitable asset. Config options: `enable_winget`, `enable_scoop`, `enable_choco`, `prefer_native` (try native first). Adds `source: winget|scoop|chocolatey` to state.
+- **Pre/post install hooks** — per-app `pre_install`, `post_install` commands in state; `ohub install/update` run them with `APP_PATH`, `APP_VERSION`, `APP_NAME` env vars. Config `allow_hooks` (default true).
+- **Multi-architecture asset tracking** — `--arch` flag (`x64|arm64|x86|auto`) for `install`/`update`/`check`. Per-app `arch_preference` saved in state so future checks use the same architecture.
+- **`ohub schedule` subcommand** — manage scheduled background checks via Windows Task Scheduler or cron. `enable`/`disable`/`status`/`run` actions. Runs `ohub check --all --yes` on a configurable interval (default 24h). Persists `last_scheduled_check` timestamp in state.
+
+### Changed
+- Version bumped to 1.0.0 (major) — feature complete release with all 9 planned features implemented.
+- Config added: `shim_dir`, `allow_hooks`, `enable_winget`, `enable_scoop`, `enable_choco`, `prefer_native`, `schedule_enabled`, `schedule_interval_hours`, `schedule_notify_on_update`, `schedule_run_on_startup`.
+
+### Fixed
+- All 153 tests pass.
+
+## [0.7.7.0] - 2026-08-26
+
+### Added
+- **`ohub schedule` subcommand** — manage scheduled background checks via Windows Task Scheduler or cron. `enable`/`disable`/`status`/`run` actions. Runs `ohub check --all --yes` on a configurable interval (default 24h). Persists `last_scheduled_check` timestamp in state.
+- **Multi-architecture asset tracking** — `--arch` flag (`x64|arm64|x86|auto`) for `install`/`update`/`check`. Per-app `arch_preference` saved in state so future checks use the same architecture. Config options `prefer_x64`, `allow_x86_fallback`, `allow_arm64` now exposed via CLI.
+
+### Fixed
+- None
+
 ## [0.7.6.10] - 2026-08-23
 
 ### Fixed

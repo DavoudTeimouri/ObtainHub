@@ -1,9 +1,11 @@
 """ObtainHub CLI entry point."""
 
 import sys
+import os
 import argparse
 import signal
 import time
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -61,7 +63,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v0.7.6.10 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v1.0.0 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -95,6 +97,10 @@ def main(args: Optional[List[str]] = None) -> int:
         "--reset", action="store_true",
         help="Forget saved asset/repo choice for this app so prompts re-appear",
     )
+    install_parser.add_argument(
+        "--arch", choices=["x64", "arm64", "x86", "auto"], default="auto",
+        help="Architecture to select: x64, arm64, x86, or auto (default: auto)",
+    )
 
     # update
     update_parser = subparsers.add_parser("update", help="Update installed apps")
@@ -113,8 +119,15 @@ def main(args: Optional[List[str]] = None) -> int:
         help="Forget saved asset/repo choices so prompts re-appear",
     )
     update_parser.add_argument(
+        "--arch", choices=["x64", "arm64", "x86", "auto"], default="auto",
+        help="Architecture to select: x64, arm64, x86, or auto (default: auto)",
+    )
+    update_parser.add_argument(
         "--interactive", action="store_true",
         help="Launch installers visibly and let you drive them; ohub verifies each result",
+    )
+    update_parser.add_argument(
+        "--notes", action="store_true", help="Show release notes for available updates"
     )
 
     # check
@@ -141,8 +154,15 @@ def main(args: Optional[List[str]] = None) -> int:
         help="Forget saved asset/repo choices so prompts re-appear",
     )
     check_parser.add_argument(
+        "--arch", choices=["x64", "arm64", "x86", "auto"], default="auto",
+        help="Architecture to select: x64, arm64, x86, or auto (default: auto)",
+    )
+    check_parser.add_argument(
         "--timeout", type=int, default=None,
         help="Per-repo search timeout in seconds (10-300; default from config)",
+    )
+    check_parser.add_argument(
+        "--notes", action="store_true", help="Show release notes for available updates"
     )
 
     # list
@@ -183,8 +203,12 @@ def main(args: Optional[List[str]] = None) -> int:
     add_parser.add_argument("name", help="Source name")
     add_parser.add_argument("url", help="Source URL (GitHub API or manifest)")
     add_parser.add_argument(
-        "--type", choices=["github", "manifest"], default="github", help="Source type"
+        "--type", choices=["github", "manifest", "winget", "scoop", "chocolatey"], default="github", help="Source type"
     )
+    add_parser.add_argument("--pre-install", help="Command to run before installation")
+    add_parser.add_argument("--post-install", help="Command to run after installation")
+    add_parser.add_argument("--pre-uninstall", help="Command to run before uninstallation")
+    add_parser.add_argument("--post-uninstall", help="Command to run after uninstallation")
     remove_parser = source_subparsers.add_parser("remove", help="Remove a source")
     verify_parser = source_subparsers.add_parser("verify", help="Verify a custom source")
     verify_parser.add_argument("name", help="Source name to verify")
@@ -252,6 +276,57 @@ def main(args: Optional[List[str]] = None) -> int:
     self_update_parser.add_argument(
         "--force", action="store_true", help="Force update even if same version"
     )
+
+    # schedule
+    schedule_parser = subparsers.add_parser("schedule", help="Manage scheduled background checks")
+    schedule_subparsers = schedule_parser.add_subparsers(dest="schedule_action")
+    schedule_subparsers.add_parser("enable", help="Enable scheduled checks")
+    schedule_subparsers.add_parser("disable", help="Disable scheduled checks")
+    schedule_subparsers.add_parser("status", help="Show schedule status")
+    run_parser = schedule_subparsers.add_parser("run", help="Run scheduled check now")
+    run_parser.add_argument("--prerelease", action="store_true", help="Include prerelease versions")
+
+    # group
+    group_parser = subparsers.add_parser("group", help="Manage app groups/profiles")
+    group_subparsers = group_parser.add_subparsers(dest="group_action")
+    group_subparsers.add_parser("list", help="List all groups")
+    group_add = group_subparsers.add_parser("add", help="Add apps to a group")
+    group_add.add_argument("name", help="Group name")
+    group_add.add_argument("apps", nargs="+", help="App identifiers (owner/repo)")
+    group_remove = group_subparsers.add_parser("remove", help="Remove apps from a group")
+    group_remove.add_argument("name", help="Group name")
+    group_remove.add_argument("apps", nargs="+", help="App identifiers to remove")
+    group_del = group_subparsers.add_parser("delete", help="Delete a group entirely")
+    group_del.add_argument("name", help="Group name")
+    group_install = group_subparsers.add_parser("install", help="Install all apps in a group")
+    group_install.add_argument("name", help="Group name")
+    group_install.add_argument("--prerelease", action="store_true", help="Allow prerelease versions")
+    group_update = group_subparsers.add_parser("update", help="Update all apps in a group")
+    group_update.add_argument("name", help="Group name")
+    group_update.add_argument("--prerelease", action="store_true", help="Allow prerelease versions")
+
+    # shim
+    shim_parser = subparsers.add_parser("shim", help="Manage portable shims")
+    shim_subparsers = shim_parser.add_subparsers(dest="shim_action")
+    shim_subparsers.add_parser("list", help="List all shims")
+    shim_add = shim_subparsers.add_parser("add", help="Create a shim for an app")
+    shim_add.add_argument("app", help="App identifier (owner/repo or name)")
+    shim_add.add_argument("--name", help="Shim name (default: app name)")
+    shim_remove = shim_subparsers.add_parser("remove", help="Remove a shim")
+    shim_remove.add_argument("app", help="App identifier or shim name")
+    shim_subparsers.add_parser("path", help="Show shim directory path")
+
+    # state
+    state_parser = subparsers.add_parser("state", help="Export/import ohub state")
+    state_subparsers = state_parser.add_subparsers(dest="state_action")
+    state_export = state_subparsers.add_parser("export", help="Export state to JSON file")
+    state_export.add_argument("file", nargs="?", help="Output file (default: stdout)")
+    state_import = state_subparsers.add_parser("import", help="Import state from JSON file")
+    state_import.add_argument("file", help="Input file")
+    state_import.add_argument("--dry-run", action="store_true", help="Show what would be imported without applying")
+
+    # tui
+    subparsers.add_parser("tui", help="Launch terminal UI dashboard")
 
     parsed = parser.parse_args(args)
 
@@ -332,6 +407,16 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_config(parsed, config_manager)
         elif parsed.command == "self-update":
             return cmd_self_update(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "schedule":
+            return cmd_schedule(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "group":
+            return cmd_group(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "shim":
+            return cmd_shim(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "state":
+            return cmd_state(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "tui":
+            return cmd_tui(parsed, config_manager, state_manager, logger)
         else:
             parser.print_help()
             return 1
@@ -537,8 +622,20 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
     from obtainhub.core.local_apps import extract_archive
 
     print(f"    Downloading {match.name}...")
+    # Use checksum from release if available and match doesn't have one
+    expected_sha256 = getattr(match, "sha256", "") or ""
+    if not expected_sha256 and release:
+        # Try to get checksum from release body
+        checksums = release.get('checksums', {})
+        if checksums:
+            # Match by filename (case-insensitive)
+            for filename, sha in checksums.items():
+                if filename.lower() == match.name.lower():
+                    expected_sha256 = sha
+                    break
     downloaded_path = download_file(
         match.url, filename=match.name, expected_size=getattr(match, "size", None),
+        expected_sha256=expected_sha256,
         reuse_callback=_reuse_prompt,
     )
     pattern = AssetMatcher.derive_asset_pattern(match)
@@ -560,7 +657,7 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
                 source_url=release.get('html_url', ''),
                 tag=release.get('tag_name', ''),
             )
-            state_manager.update_app(app_id, asset_pattern=pattern, github_repo=f"{owner}/{repo}" if owner else app.github_repo)
+            state_manager.update_app(app_id, asset_pattern=pattern, github_repo=f"{owner}/{repo}" if owner else app.github_repo, arch_preference=arch_preference if arch_preference != "auto" else "")
             return True, message
         return False, message
 
@@ -598,6 +695,7 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
             source_url=release.get('html_url', ''),
             tag=release.get('tag_name', ''),
             github_repo=f"{owner}/{repo}" if owner else app.github_repo,
+            arch_preference=arch_preference if arch_preference != "auto" else "",
         )
         return True, f"Extracted to {dest}"
 
@@ -611,6 +709,7 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
         source_url=release.get('html_url', ''),
         tag=release.get('tag_name', ''),
         github_repo=f"{owner}/{repo}" if owner else app.github_repo,
+        arch_preference=arch_preference if arch_preference != "auto" else "",
     )
     return True, f"Downloaded to {downloaded_path}"
 
@@ -761,6 +860,9 @@ def _install_from_source(entry, source_name, parsed, config_manager, state_manag
             print(f"{app_id} is already managed by ohub and up to date ({existing.version}).")
             return 0
 
+    # Get hooks from source if available
+    hooks = getattr(entry, "hooks", {}) if hasattr(entry, "hooks") else {}
+
     target = None
     if entry.installer_type in ("zip", "zip_installer"):
         target = _download_entry(entry, config_manager, state_manager)
@@ -790,7 +892,8 @@ def _install_from_source(entry, source_name, parsed, config_manager, state_manag
     itype = InstallerType.EXE_SETUP if entry.installer_type == "exe_setup" else (
         InstallerType.MSI if entry.installer_type == "msi" else InstallerType.EXE_STANDALONE)
     result, message = installer.install(target, itype, app_id, force=True,
-                                      interactive=getattr(parsed, "interactive", False))
+                                      interactive=getattr(parsed, "interactive", False),
+                                      hooks=hooks)
     if result == InstallResult.SUCCESS:
         _record_source_app(app_id, entry, source_name, str(target), state_manager)
         print(f"Success: {message}")
@@ -958,12 +1061,25 @@ def cmd_install(
         print(f"{app_id} already managed but a newer version ({latest_version}) is available - updating.")
 
     # Match asset
+    # Use arch from app state (arch_preference) or CLI flag
+    arch_preference = getattr(existing, "arch_preference", "") if existing else ""
+    arch_preference = parsed.arch if parsed.arch != "auto" else arch_preference
+
     matcher = AssetMatcher(
         allow_arm64=False,
         allow_x86_fallback=False,
         require_installer=not parsed.download_only,
     )
-    match = matcher.get_best_match(release.get('assets', []))
+    # Filter by arch preference if set
+    if arch_preference and arch_preference != "auto":
+        filtered_matches = matcher.filter_by_arch_preference(release.get('assets', []), arch_preference)
+        # If no matches with the preferred arch, fall back to all
+        if filtered_matches:
+            match = matcher.get_best_match([{"name": m.name, "browser_download_url": m.url, "size": m.size, "sha256": m.sha256} for m in filtered_matches])
+        else:
+            match = None
+    else:
+        match = matcher.get_best_match(release.get('assets', []))
 
     # No strict installer? Offer candidate assets (ZIP/EXE/etc.) for selection
     if not match:
@@ -1057,6 +1173,7 @@ def cmd_install(
             "source_url": release.get('html_url', ''),
             "tag": release.get('tag_name', ''),
             "asset_pattern": matcher.derive_asset_pattern(match),
+            "arch_preference": arch_preference if arch_preference != "auto" else "",
         })
     else:
         print(f"Install failed: {message}")
@@ -1189,7 +1306,17 @@ def cmd_update(
             latest_version = release.get('tag_name', '').lstrip("v")
             has_update = is_newer(latest_version, current_version)
 
+            # Use arch from app state (arch_preference) or CLI flag
+            arch_preference = getattr(app, "arch_preference", "")
+            arch_preference = parsed.arch if parsed.arch != "auto" else arch_preference
+
             match = matcher.get_best_match(release.get('assets', []))
+            if arch_preference and arch_preference != "auto":
+                filtered_matches = matcher.filter_by_arch_preference(release.get('assets', []), arch_preference)
+                if filtered_matches:
+                    match = matcher.get_best_match([{"name": m.name, "browser_download_url": m.url, "size": m.size, "sha256": m.sha256} for m in filtered_matches])
+                else:
+                    match = None
             if app.app_type == "zip" and not match:
                 match = matcher.match_by_pattern(release.get('assets', []), app.asset_pattern)
 
@@ -1232,6 +1359,18 @@ def cmd_update(
                 print(f"    Would download {match.name} ({match.installer_type.name})")
                 updated_count += 1
                 continue
+
+            # Show release notes if requested
+            if parsed.notes:
+                body = release.get('body', '').strip()
+                if body:
+                    lines = body.split('\n')
+                    if len(lines) > 20:
+                        body = '\n'.join(lines[:20]) + '\n... (truncated, see release URL for full notes)'
+                    print(f"    Notes:    {body}")
+                else:
+                    print(f"    Notes:    (no release notes)")
+                print(f"    Release:  {release.get('html_url', '')}")
 
             applied, message = _apply_match(
                 app_id, app, release, match, state_manager, installer, parsed,
@@ -1439,8 +1578,18 @@ def cmd_check(
 
             _warn_repo_status(client, app_id)
 
+            # Use arch from app state (arch_preference) or CLI flag
+            arch_preference = getattr(app, "arch_preference", "")
+            arch_preference = parsed.arch if parsed.arch != "auto" else arch_preference
+
             # Prefer saved asset pattern, then strict installer, then candidates
             match = matcher.get_best_match(release.get('assets', []))
+            if arch_preference and arch_preference != "auto":
+                filtered_matches = matcher.filter_by_arch_preference(release.get('assets', []), arch_preference)
+                if filtered_matches:
+                    match = matcher.get_best_match([{"name": m.name, "browser_download_url": m.url, "size": m.size, "sha256": m.sha256} for m in filtered_matches])
+                else:
+                    match = None
             if app.app_type == "zip" and not match:
                 match = matcher.match_by_pattern(release.get('assets', []), app.asset_pattern)
 
@@ -1454,6 +1603,20 @@ def cmd_check(
                     print(f"    Latest:   {latest_version}")
                     print(f"    Status:   UPDATE AVAILABLE")
                     print(f"    Asset:    {asset_info}")
+                    
+                    # Show release notes if requested
+                    if parsed.notes:
+                        body = release.get('body', '').strip()
+                        if body:
+                            # Truncate long release notes
+                            lines = body.split('\n')
+                            if len(lines) > 20:
+                                body = '\n'.join(lines[:20]) + '\n... (truncated, see release URL for full notes)'
+                            print(f"    Notes:    {body}")
+                        else:
+                            print(f"    Notes:    (no release notes)")
+                        print(f"    Release:  {release.get('html_url', '')}")
+                    
                     if not match and candidates:
                         print(f"    Available assets (install/upgrade candidates):")
                         for i, opt in enumerate(candidates):
@@ -1472,6 +1635,18 @@ def cmd_check(
                     print(f"    Current:  {current_version}")
                     print(f"    Latest:   {latest_version}")
                     print(f"    Status:   Up to date")
+                    
+                    # Show release notes if requested even when up to date
+                    if parsed.notes:
+                        body = release.get('body', '').strip()
+                        if body:
+                            lines = body.split('\n')
+                            if len(lines) > 20:
+                                body = '\n'.join(lines[:20]) + '\n... (truncated, see release URL for full notes)'
+                            print(f"    Notes:    {body}")
+                        else:
+                            print(f"    Notes:    (no release notes)")
+                        print(f"    Release:  {release.get('html_url', '')}")
                     print()
 
             results.append({
@@ -1848,7 +2023,17 @@ def cmd_source(
         except Exception as e:
             print(f"Error: could not validate source '{url}': {e}", file=sys.stderr)
             return 1
-        config_manager.add_manifest_source(parsed.name, url, enabled=True, headers={}, src_type=src_type)
+        # Build hooks dict from parsed arguments
+        hooks = {}
+        if getattr(parsed, "pre_install", None):
+            hooks["pre_install"] = parsed.pre_install
+        if getattr(parsed, "post_install", None):
+            hooks["post_install"] = parsed.post_install
+        if getattr(parsed, "pre_uninstall", None):
+            hooks["pre_uninstall"] = parsed.pre_uninstall
+        if getattr(parsed, "post_uninstall", None):
+            hooks["post_uninstall"] = parsed.post_uninstall
+        config_manager.add_manifest_source(parsed.name, url, enabled=True, headers={}, src_type=src_type, hooks=hooks)
         print(f"Added source: {parsed.name} ({src_type}) -> {url}")
         return 0
 
@@ -2124,6 +2309,702 @@ def cmd_self_update(
         return 0
     else:
         print("Already at latest version")
+    return 0
+
+
+def cmd_group(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle group command for managing app groups/profiles."""
+    config = config_manager.load()
+    action = parsed.group_action or "list"
+
+    if action == "list":
+        if not config.groups:
+            print("No groups defined.")
+            return 0
+        for name, apps in config.groups.items():
+            print(f"  {name}: {len(apps)} app(s)")
+            for app_id in apps:
+                app = state_manager.get_app(app_id)
+                display = app.name if app else app_id
+                print(f"    - {display} ({app_id})")
+        return 0
+
+    elif action == "add":
+        group_name = parsed.name
+        app_ids = parsed.apps
+        if group_name not in config.groups:
+            config.groups[group_name] = []
+        added = 0
+        for app_id in app_ids:
+            # Resolve app name to id if needed
+            resolved_id = _resolve_app_id(state_manager, app_id)
+            if resolved_id not in config.groups[group_name]:
+                config.groups[group_name].append(resolved_id)
+                added += 1
+                print(f"  Added {resolved_id} to group '{group_name}'")
+            else:
+                print(f"  {resolved_id} already in group '{group_name}'")
+        if added:
+            config_manager.save(config)
+        return 0
+
+    elif action == "remove":
+        group_name = parsed.name
+        app_ids = parsed.apps
+        if group_name not in config.groups:
+            print(f"Group '{group_name}' does not exist.")
+            return 1
+        removed = 0
+        for app_id in app_ids:
+            resolved_id = _resolve_app_id(state_manager, app_id)
+            if resolved_id in config.groups[group_name]:
+                config.groups[group_name].remove(resolved_id)
+                removed += 1
+                print(f"  Removed {resolved_id} from group '{group_name}'")
+            else:
+                print(f"  {resolved_id} not in group '{group_name}'")
+        if not config.groups[group_name]:
+            del config.groups[group_name]
+            print(f"  Group '{group_name}' is now empty and was deleted.")
+        if removed:
+            config_manager.save(config)
+        return 0
+
+    elif action == "delete":
+        group_name = parsed.name
+        if group_name in config.groups:
+            del config.groups[group_name]
+            config_manager.save(config)
+            print(f"Deleted group '{group_name}'")
+        else:
+            print(f"Group '{group_name}' does not exist.")
+            return 1
+        return 0
+
+    elif action in ("install", "update"):
+        group_name = parsed.name
+        if group_name not in config.groups:
+            print(f"Group '{group_name}' does not exist.")
+            return 1
+        app_ids = config.groups[group_name]
+        if not app_ids:
+            print(f"Group '{group_name}' is empty.")
+            return 0
+
+        from obtainhub.main import cmd_install, cmd_update
+        from argparse import Namespace
+
+        success = 0
+        for app_id in app_ids:
+            print(f"\n=== {action.upper()} {app_id} ===")
+            # Create a mock parsed object
+            mock_parsed = Namespace(
+                app=app_id,
+                tag=None,
+                version_arg=None,
+                prerelease=getattr(parsed, "prerelease", False),
+                force=False,
+                interactive=False,
+                download_only=False,
+                yes=True,
+                reset=False,
+                arch="auto",
+            )
+            if action == "install":
+                result = cmd_install(mock_parsed, config_manager, state_manager, logger)
+            else:
+                result = cmd_update(mock_parsed, config_manager, state_manager, logger)
+            if result == 0:
+                success += 1
+        print(f"\n{action.capitalize()} complete: {success}/{len(app_ids)} succeeded.")
+        return 0 if success == len(app_ids) else 1
+
+
+def cmd_shim(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle shim command for portable shims."""
+    config = config_manager.load()
+    shim_dir = Path(config.shim_dir).expanduser()
+    action = parsed.shim_action or "list"
+
+    if action == "path":
+        print(str(shim_dir))
+        return 0
+
+    if action == "list":
+        if not shim_dir.exists():
+            print("No shims created.")
+            return 0
+        shims = list(shim_dir.glob("*.exe"))
+        if not shims:
+            print("No shims created.")
+            return 0
+        for shim in shims:
+            print(f"  {shim.name}")
+        return 0
+
+    elif action == "add":
+        app_token = parsed.app
+        app = state_manager.get_app(app_token)
+        if not app:
+            # Try by name
+            for a in state_manager.get_all_apps():
+                if a.name.lower() == app_token.lower():
+                    app = a
+                    break
+        if not app:
+            print(f"App not found in ohub state: {app_token}")
+            return 1
+
+        # Find the actual executable
+        exe_path = None
+        if app.app_type == "zip" and app.install_location:
+            # Look for .exe in install location
+            for exe in Path(app.install_location).rglob("*.exe"):
+                if exe.is_file():
+                    exe_path = exe
+                    break
+        elif app.installer_path and Path(app.installer_path).exists():
+            # For installed apps, we can't easily find the exe
+            # Check if there's a known executable
+            pass
+
+        if not exe_path:
+            print(f"Could not find executable for {app.name}. App may not be a portable/extracted app.")
+            return 1
+
+        shim_name = getattr(parsed, "name", None) or app.name
+        shim_path = shim_dir / f"{shim_name}.exe"
+
+        shim_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a simple launcher shim (Python script compiled or batch file)
+        # For simplicity, create a .bat file that launches the exe
+        bat_path = shim_dir / f"{shim_name}.bat"
+        bat_content = f'@echo off\n"{exe_path}" %*\n'
+        try:
+            with open(bat_path, "w") as f:
+                f.write(bat_content)
+            print(f"Created shim: {bat_path} -> {exe_path}")
+            print(f"Add {shim_dir} to your PATH to use '{shim_name}' from anywhere.")
+        except Exception as e:
+            print(f"Failed to create shim: {e}")
+            return 1
+        return 0
+
+    elif action == "remove":
+        app_token = parsed.app
+        # Try to find shim by app name or shim name
+        shim_path = shim_dir / f"{app_token}.bat"
+        if not shim_path.exists():
+            shim_path = shim_dir / f"{app_token}.exe"
+        if not shim_path.exists():
+            # Try by app name from state
+            app = state_manager.get_app(app_token)
+            if not app:
+                for a in state_manager.get_all_apps():
+                    if a.name.lower() == app_token.lower():
+                        app = a
+                        break
+            if app:
+                shim_path = shim_dir / f"{app.name}.bat"
+                if not shim_path.exists():
+                    shim_path = shim_dir / f"{app.name}.exe"
+
+        if shim_path.exists():
+            try:
+                shim_path.unlink()
+                print(f"Removed shim: {shim_path}")
+            except Exception as e:
+                print(f"Failed to remove shim: {e}")
+                return 1
+        else:
+            print(f"Shim not found: {app_token}")
+            return 1
+        return 0
+
+    return 0
+
+
+def cmd_state(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle state export/import command."""
+    action = parsed.state_action or "export"
+
+    if action == "export":
+        # Export all state to JSON
+        export_data = {
+            "version": 1,
+            "exported_at": int(datetime.now().timestamp()),
+            "installed": {},
+            "manifest_cache": {},
+            "check_history": {},
+        }
+        
+        # Export installed apps
+        for app in state_manager.get_all_apps():
+            export_data["installed"][app.id] = app.to_dict()
+        
+        # Export manifest cache
+        for key, entry in state_manager.get_manifest_cache().items():
+            export_data["manifest_cache"][key] = entry.to_dict()
+        
+        # Export check history
+        for key, entry in state_manager.get_check_history().items():
+            export_data["check_history"][key] = entry.to_dict()
+
+        output = json.dumps(export_data, indent=2)
+        
+        if parsed.file:
+            try:
+                with open(parsed.file, "w", encoding="utf-8") as f:
+                    f.write(output)
+                print(f"State exported to {parsed.file}")
+            except Exception as e:
+                print(f"Error writing file: {e}")
+                return 1
+        else:
+            print(output)
+        return 0
+
+    elif action == "import":
+        if not parsed.file:
+            print("Error: input file required for import")
+            return 1
+        
+        try:
+            with open(parsed.file, "r", encoding="utf-8") as f:
+                import_data = json.load(f)
+        except Exception as e:
+            print(f"Error reading file: {e}")
+            return 1
+
+        # Validate format
+        if not isinstance(import_data, dict) or "installed" not in import_data:
+            print("Error: invalid state file format")
+            return 1
+
+        dry_run = getattr(parsed, "dry_run", False)
+        
+        if dry_run:
+            print("[DRY RUN] Would import the following apps:")
+        
+        imported = 0
+        skipped = 0
+        
+        for app_id, app_data in import_data.get("installed", {}).items():
+            existing = state_manager.get_app(app_id)
+            
+            if existing:
+                # Check if import version is newer
+                try:
+                    from obtainhub.utils.helpers import is_newer
+                    if is_newer(app_data.get("version", ""), existing.version):
+                        action_str = "UPDATE"
+                    else:
+                        action_str = "SKIP (same or older version)"
+                except Exception:
+                    action_str = "SKIP (version compare failed)"
+            else:
+                action_str = "ADD"
+            
+            if dry_run:
+                print(f"  {action_str}: {app_id} v{app_data.get('version', '?')} ({app_data.get('name', '?')})")
+            else:
+                if action_str.startswith("SKIP"):
+                    skipped += 1
+                else:
+                    state_manager.add_installed_app(app_data)
+                    imported += 1
+        
+        if not dry_run:
+            # Also import manifest cache and check history
+            for key, entry_data in import_data.get("manifest_cache", {}).items():
+                state_manager.data.setdefault("manifest_cache", {})[key] = entry_data
+            for key, entry_data in import_data.get("check_history", {}).items():
+                state_manager.data.setdefault("check_history", {})[key] = entry_data
+            state_manager.save()
+            print(f"Import complete: {imported} added/updated, {skipped} skipped.")
+        else:
+            print(f"\n[dry-run] Would add/update {imported}, skip {skipped}. Run without --dry-run to apply.")
+        
+        return 0
+
+    return 0
+
+
+def cmd_schedule(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle schedule command."""
+    config = config_manager.load()
+    action = parsed.schedule_action or "status"
+
+    if action == "enable":
+        config.schedule_enabled = True
+        config_manager.save(config)
+        print("Scheduled checks enabled")
+        if os.name == "nt":
+            _create_windows_task()
+        else:
+            _create_cron_job()
+        return 0
+
+    elif action == "disable":
+        config.schedule_enabled = False
+        config_manager.save(config)
+        print("Scheduled checks disabled")
+        if os.name == "nt":
+            _remove_windows_task()
+        else:
+            _remove_cron_job()
+        return 0
+
+    elif action == "run":
+        # Run check now (similar to cmd_check but for all apps)
+        print("[*] Running scheduled check...")
+        from obtainhub.main import cmd_check
+        # Create a mock parsed object with --all and no app specified
+        class MockParsed:
+            app = None
+            prerelease = getattr(parsed, "prerelease", False)
+            json = False
+            all = True
+            candidates = False
+            reset = False
+            timeout = config.check_timeout_seconds
+            yes = True
+        return cmd_check(MockParsed(), config_manager, state_manager, logger)
+
+    else:  # status
+        print(f"Scheduled checks: {'ENABLED' if config.schedule_enabled else 'DISABLED'}")
+        print(f"Interval: {config.schedule_interval_hours} hours")
+        print(f"Notify on update: {config.schedule_notify_on_update}")
+        print(f"Run on startup: {config.schedule_run_on_startup}")
+        if config.schedule_enabled:
+            last_check = state_manager.data.get("last_scheduled_check", 0)
+            if last_check:
+                from datetime import datetime
+                dt = datetime.fromtimestamp(last_check)
+                print(f"Last run: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            else:
+                print("Last run: never")
+            if os.name == "nt":
+                _check_windows_task_exists()
+            else:
+                _check_cron_job_exists()
+        return 0
+
+
+def _create_windows_task() -> None:
+    """Create Windows Task Scheduler task for scheduled checks."""
+    import subprocess
+    import sys
+    task_name = "ObtainHubScheduledCheck"
+    # Find ohub.exe path
+    ohub_path = sys.executable
+    if not ohub_path.endswith("ohub.exe"):
+        # Running from source, use python -m obtainhub
+        ohub_path = f"{sys.executable} -m obtainhub"
+    else:
+        ohub_path = f"\"{ohub_path}\""
+
+    cmd = f"{ohub_path} check --all --yes"
+    try:
+        # Create task that runs daily at 3 AM
+        subprocess.run([
+            "schtasks", "/Create", "/TN", task_name,
+            "/TR", cmd,
+            "/SC", "DAILY",
+            "/ST", "03:00",
+            "/F",  # Force overwrite
+            "/RL", "HIGHEST",  # Run with highest privileges
+        ], check=True, capture_output=True)
+        print(f"Created Windows Task Scheduler task: {task_name}")
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Could not create scheduled task: {e.stderr.decode() if e.stderr else e}")
+    except FileNotFoundError:
+        print("Warning: schtasks not found (not on Windows?)")
+
+
+def _remove_windows_task() -> None:
+    """Remove Windows Task Scheduler task."""
+    import subprocess
+    task_name = "ObtainHubScheduledCheck"
+    try:
+        subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"], check=True, capture_output=True)
+        print(f"Removed Windows Task Scheduler task: {task_name}")
+    except subprocess.CalledProcessError:
+        pass  # Task may not exist
+    except FileNotFoundError:
+        pass
+
+
+def _check_windows_task_exists() -> None:
+    """Check if Windows Task Scheduler task exists."""
+    import subprocess
+    task_name = "ObtainHubScheduledCheck"
+    try:
+        result = subprocess.run(["schtasks", "/Query", "/TN", task_name, "/FO", "LIST"], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("Windows Task Scheduler task: EXISTS")
+            # Parse next run time
+            for line in result.stdout.splitlines():
+                if "Next Run Time" in line:
+                    print(f"  {line.strip()}")
+        else:
+            print("Windows Task Scheduler task: NOT FOUND")
+    except Exception:
+        print("Windows Task Scheduler task: UNKNOWN")
+
+
+def _create_cron_job() -> None:
+    """Create cron job for scheduled checks (Linux/macOS)."""
+    import subprocess
+    import sys
+    ohub_cmd = f"{sys.executable} -m obtainhub check --all --yes"
+    cron_line = f"0 3 * * * {ohub_cmd}  # ObtainHub scheduled check\n"
+    try:
+        # Get current crontab
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        current = result.stdout if result.returncode == 0 else ""
+        if "ObtainHub scheduled check" not in current:
+            new_cron = current.rstrip() + "\n" + cron_line if current else cron_line
+            subprocess.run(["crontab", "-"], input=new_cron, text=True, check=True)
+            print("Created cron job for scheduled checks (daily 3 AM)")
+        else:
+            print("Cron job already exists")
+    except Exception as e:
+        print(f"Warning: Could not create cron job: {e}")
+
+
+def _remove_cron_job() -> None:
+    """Remove cron job."""
+    import subprocess
+    try:
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        if result.returncode == 0:
+            lines = [l for l in result.stdout.splitlines() if "ObtainHub scheduled check" not in l]
+            subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", text=True, check=True)
+            print("Removed cron job")
+    except Exception:
+        pass
+
+
+def _check_cron_job_exists() -> None:
+    """Check if cron job exists."""
+    import subprocess
+    try:
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        if result.returncode == 0 and "ObtainHub scheduled check" in result.stdout:
+            print("Cron job: EXISTS")
+            for line in result.stdout.splitlines():
+                if "ObtainHub scheduled check" in line:
+                    print(f"  {line.strip()}")
+        else:
+            print("Cron job: NOT FOUND")
+    except Exception:
+        print("Cron job: UNKNOWN")
+
+
+def cmd_tui(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Launch terminal UI dashboard."""
+    try:
+        from textual.app import App, ComposeResult
+        from textual.containers import Container, Horizontal, Vertical
+        from textual.widgets import Header, Footer, Static, DataTable, Log, Input, Button
+        from textual.reactive import reactive
+        from textual.binding import Binding
+    except ImportError:
+        print("Error: textual not installed. Install with: pip install textual")
+        return 1
+
+    config = config_manager.load()
+    client = GitHubClient(config.github_token)
+    matcher = AssetMatcher(
+        prefer_x64=config.prefer_x64,
+        allow_x86_fallback=config.allow_x86_fallback,
+    )
+
+    class ObtainHubTUI(App):
+        """ObtainHub Terminal UI Dashboard."""
+
+        CSS = """
+        Screen {
+            layout: vertical;
+        }
+        #app-list {
+            width: 1fr;
+            height: 1fr;
+            border: solid $accent;
+        }
+        #details {
+            width: 1fr;
+            height: 1fr;
+            border: solid $accent;
+            padding: 1;
+        }
+        #log-panel {
+            height: 12;
+            border: solid $surface;
+        }
+        .managed { color: $success; }
+        .unmanaged { color: $warning; }
+        .outdated { color: $error; }
+        .current { color: $success; }
+        """
+
+        BINDINGS = [
+            Binding("q", "quit", "Quit"),
+            Binding("r", "refresh", "Refresh"),
+            Binding("u", "update", "Update"),
+            Binding("c", "check", "Check"),
+            Binding("d", "details", "Details"),
+            Binding("j", "down", "Down"),
+            Binding("k", "up", "Up"),
+        ]
+
+        selected_app: reactive[str] = reactive("")
+        apps_data: reactive[list] = reactive([])
+
+        def compose(self) -> ComposeResult:
+            yield Header()
+            with Horizontal():
+                with Vertical():
+                    yield Static("Managed Apps", classes="section-title")
+                    yield DataTable(id="app-table", cursor_type="row")
+                with Vertical():
+                    yield Static("Details", classes="section-title")
+                    yield Static("", id="details")
+            yield Log(id="log-panel")
+            yield Footer()
+
+        def on_mount(self) -> None:
+            self.title = "ObtainHub TUI"
+            self.sub_title = "Press 'r' to refresh, 'q' to quit"
+            table = self.query_one("#app-table", DataTable)
+            table.add_columns("App", "Current", "Latest", "Status")
+            self.call_later(self.refresh_apps)
+
+        def refresh_apps(self) -> None:
+            """Refresh the app list."""
+            self.log("Refreshing app list...")
+            try:
+                apps = state_manager.get_all_apps()
+                table = self.query_one("#app-table", DataTable)
+                table.clear()
+                self.apps_data = []
+                
+                for app in apps:
+                    try:
+                        release = client.get_latest_release(app.github_repo, config.include_prerelease)
+                        if release:
+                            match = matcher.find_best_asset(release.assets, config.architecture)
+                            latest_version = release.tag_name.lstrip('v')
+                            current_version = app.version or "-"
+                            
+                            if current_version == latest_version:
+                                status = "✓ Current"
+                                status_class = "current"
+                            else:
+                                status = "! Update"
+                                status_class = "outdated"
+                            
+                            self.apps_data.append({
+                                "id": app.id,
+                                "name": app.name,
+                                "current": current_version,
+                                "latest": latest_version,
+                                "status": status,
+                                "status_class": status_class,
+                                "repo": app.github_repo,
+                                "match": match,
+                            })
+                            table.add_row(
+                                app.name,
+                                current_version,
+                                latest_version,
+                                status,
+                            )
+                        else:
+                            self.apps_data.append({
+                                "id": app.id,
+                                "name": app.name,
+                                "current": app.version or "-",
+                                "latest": "?",
+                                "status": "? No release",
+                                "status_class": "unmanaged",
+                                "repo": app.github_repo,
+                                "match": None,
+                            })
+                            table.add_row(app.name, app.version or "-", "?", "? No release")
+                    except Exception as e:
+                        self.log(f"Error checking {app.name}: {e}")
+                
+                self.log(f"Refreshed {len(self.apps_data)} apps")
+            except Exception as e:
+                self.log(f"Error: {e}")
+
+        def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            """Show details when row selected."""
+            if event.row_index < len(self.apps_data):
+                app_data = self.apps_data[event.row_index]
+                self.selected_app = app_data["id"]
+                details = self.query_one("#details", Static)
+                
+                match = app_data["match"]
+                match_info = f"Asset: {match.name} ({match.installer_type.name})" if match else "No suitable asset"
+                
+                details.update(f"""[bold]{app_data['name']}[/bold] ({app_data['id']})
+Repo: {app_data['repo']}
+Current: {app_data['current']}
+Latest: {app_data['latest']}
+Status: {app_data['status']}
+{match_info}
+
+[u]pdate  [c]heck  [d]etails  [q]uit""")
+
+        def action_refresh(self) -> None:
+            self.refresh_apps()
+
+        def action_update(self) -> None:
+            if self.selected_app:
+                self.log(f"Updating {self.selected_app}...")
+                # TODO: Implement async update
+                self.log("Update triggered (not fully implemented in TUI)")
+
+        def action_check(self) -> None:
+            if self.selected_app:
+                self.log(f"Checking {self.selected_app}...")
+                self.refresh_apps()
+
+        def action_details(self) -> None:
+            if self.selected_app:
+                self.log(f"Details for {self.selected_app}")
+
+    app = ObtainHubTUI()
+    app.run()
     return 0
 
 

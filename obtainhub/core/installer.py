@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 
 from obtainhub.core.asset_matcher import InstallerType
 from obtainhub.core.config import get_config_manager
@@ -25,6 +25,9 @@ logger = get_logger(__name__)
 
 # How long to wait for an interactive (visible) installer to finish.
 INTERACTIVE_TIMEOUT = 900
+
+# Hook timeout (seconds)
+HOOK_TIMEOUT = 60
 
 
 class InstallResult(Enum):
@@ -77,6 +80,7 @@ class SilentInstaller:
         force: bool = False,
         download_only: bool = False,
         interactive: bool = False,
+        hooks: Optional[Dict[str, str]] = None,
     ) -> Tuple[InstallResult, str]:
         """
         Install an application.
@@ -89,6 +93,7 @@ class SilentInstaller:
             download_only: Only download, don't install
             interactive: Launch the installer visibly (no silent flags) and let the
                 user drive it; ohub then verifies the result against system state.
+            hooks: Optional dict of hook commands (pre_install, post_install, etc.)
 
         Returns:
             Tuple of (InstallResult, message)
@@ -106,6 +111,10 @@ class SilentInstaller:
                     f"Installer downloaded to: {file_path}\n"
                     f"Options: [1] Attempt auto-uninstall [2] Cancel / Manual uninstall"
                 )
+
+        # Run pre-install hook
+        if hooks and "pre_install" in hooks:
+            self._run_hook(hooks["pre_install"], file_path.parent, "pre_install")
 
         # Handle download-only mode
         if download_only or installer_type == InstallerType.ZIP:
@@ -135,6 +144,11 @@ class SilentInstaller:
                 )
             if detected:
                 message = f"Successfully installed {file_path.name} (system version {detected})"
+
+        # Run post-install hook
+        if hooks and "post_install" in hooks and result == InstallResult.SUCCESS:
+            self._run_hook(hooks["post_install"], file_path.parent, "post_install")
+
         return result, message
 
     def _verify_installed(self, app_id: str):
@@ -156,6 +170,29 @@ class SilentInstaller:
             if Path(existing.install_location).exists():
                 return True, getattr(existing, "version", "") or ""
         return False, None
+
+    def _run_hook(self, command: str, cwd: Path, hook_name: str):
+        """Run a hook command."""
+        if not command or not command.strip():
+            return
+        logger.info(f"Running {hook_name} hook: {command}")
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=HOOK_TIMEOUT,
+            )
+            if result.returncode != 0:
+                logger.warning(f"{hook_name} hook failed (exit {result.returncode}): {result.stderr}")
+            else:
+                logger.info(f"{hook_name} hook completed successfully")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"{hook_name} hook timed out after {HOOK_TIMEOUT}s")
+        except Exception as e:
+            logger.warning(f"{hook_name} hook error: {e}")
 
     def _install_msi(self, file_path: Path, app_id: str, interactive: bool = False) -> Tuple[InstallResult, str]:
         """Install MSI package silently (or interactively when requested)."""
@@ -308,6 +345,7 @@ class SilentInstaller:
         app_id: str,
         force: bool = False,
         interactive: bool = False,
+        hooks: Optional[Dict[str, str]] = None,
     ) -> Tuple[bool, str]:
         """
         Uninstall an application.
@@ -315,6 +353,7 @@ class SilentInstaller:
         Args:
             app_id: App identifier (owner/repo)
             force: Force uninstall even if not tracked
+            hooks: Optional dict of hook commands (pre_uninstall, post_uninstall)
 
         Returns:
             Tuple of (success, message)
@@ -323,26 +362,36 @@ class SilentInstaller:
         if not app and not force:
             return False, f"App not found in state: {app_id}"
 
+        # Run pre-uninstall hook
+        if hooks and "pre_uninstall" in hooks:
+            self._run_hook(hooks["pre_uninstall"], Path.cwd(), "pre_uninstall")
+
         # MSI uninstall (via product code / cached installer)
         if app and app.installer_type == InstallerType.MSI.value and app.install_path:
-            return self._uninstall_msi(app, interactive=interactive)
-
+            success, message = self._uninstall_msi(app, interactive=interactive)
         # EXE setup uninstall (via cached installer)
-        if app and app.installer_type in (InstallerType.EXE_SETUP.value, InstallerType.EXE_STANDALONE.value) and app.installer_path:
-            return self._uninstall_exe(app, interactive=interactive)
-
+        elif app and app.installer_type in (InstallerType.EXE_SETUP.value, InstallerType.EXE_STANDALONE.value) and app.installer_path:
+            success, message = self._uninstall_exe(app, interactive=interactive)
         # Portable / zip / archive apps: delete the extracted folder.
-        if app:
+        elif app:
             target = app.install_location
             if target:
                 try:
                     import shutil
                     shutil.rmtree(target, ignore_errors=True)
-                    return True, f"Removed portable app files at {target}"
+                    success, message = True, f"Removed portable app files at {target}"
                 except Exception as e:
-                    return False, f"Could not remove files at {target}: {e} (manual removal required)"
+                    success, message = False, f"Could not remove files at {target}: {e} (manual removal required)"
+            else:
+                success, message = False, "No install location recorded (manual uninstall required)"
+        else:
+            success, message = False, "No uninstall method available (manual uninstall required)"
 
-        return False, "No uninstall method available (manual uninstall required)"
+        # Run post-uninstall hook
+        if hooks and "post_uninstall" in hooks and success:
+            self._run_hook(hooks["post_uninstall"], Path.cwd(), "post_uninstall")
+
+        return success, message
 
     def _registry_uninstall_cmd(self, app_name: str):
         """Return (exe, args) for an app's real uninstaller from the registry.
@@ -587,6 +636,7 @@ def install_app(
     force: bool = False,
     dry_run: bool = False,
     interactive: bool = False,
+    hooks: Optional[Dict[str, str]] = None,
 ) -> Tuple[InstallResult, str]:
     """
     Convenience function to install an app.
@@ -598,9 +648,10 @@ def install_app(
         download_only: Only download, don't install
         force: Force reinstall
         dry_run: Don't actually execute
+        hooks: Optional dict of hook commands
 
     Returns:
         Tuple of (InstallResult, message)
     """
     installer = SilentInstaller(dry_run=dry_run)
-    return installer.install(file_path, installer_type, app_id, force, download_only, interactive)
+    return installer.install(file_path, installer_type, app_id, force, download_only, interactive, hooks)

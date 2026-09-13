@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from obtainhub.core.exceptions import AssetMatchError
 
@@ -200,13 +200,14 @@ class AssetMatcher:
             -match.size,  # Larger files first (more likely to be full installer)
         )
 
-    def match_assets(self, assets: List[dict]) -> List[AssetMatch]:
+    def match_assets(self, assets: List[dict], checksums: Optional[Dict[str, str]] = None) -> List[AssetMatch]:
         """
         Match and filter assets for Windows x64.
 
         Args:
             assets: List of asset dicts from GitHub API with keys:
                     name, browser_download_url, size, sha256 (optional)
+            checksums: Optional dict of filename -> sha256 from release body
 
         Returns:
             Sorted list of AssetMatch objects
@@ -218,6 +219,14 @@ class AssetMatcher:
             url = asset.get("browser_download_url", "")
             size = asset.get("size", 0)
             sha256 = asset.get("sha256", "")
+
+            # Try to get checksum from release body if not in asset
+            if not sha256 and checksums:
+                # Match by filename (case-insensitive)
+                for filename, sha in checksums.items():
+                    if filename.lower() == name.lower():
+                        sha256 = sha
+                        break
 
             # Skip excluded files
             if self._is_excluded(name):
@@ -348,6 +357,32 @@ class AssetMatcher:
             if fnmatch.fnmatch(m.name.lower(), pattern.lower()):
                 return m
         return None
+
+    def filter_by_arch_preference(self, assets: List[dict], arch_preference: str) -> List[AssetMatch]:
+        """Filter assets by architecture preference.
+
+        Args:
+            assets: List of asset dicts from GitHub API
+            arch_preference: "x64" | "arm64" | "x86" | "auto" (empty = use matcher defaults)
+
+        Returns:
+            Filtered list of AssetMatch objects matching the architecture preference
+        """
+        if not arch_preference or arch_preference == "auto":
+            return self.match_assets(assets)
+
+        # Map preference to Architecture enum
+        arch_map = {
+            "x64": Architecture.X64,
+            "arm64": Architecture.ARM64,
+            "x86": Architecture.X86,
+        }
+        target_arch = arch_map.get(arch_preference.lower())
+        if not target_arch:
+            return self.match_assets(assets)  # fallback to default behavior
+
+        matches = self.match_assets(assets)
+        return [m for m in matches if m.architecture == target_arch]
 
 
 def get_asset_matcher(**kwargs) -> AssetMatcher:
