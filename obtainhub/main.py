@@ -280,17 +280,17 @@ def main(args: Optional[List[str]] = None) -> int:
     # schedule
     schedule_parser = subparsers.add_parser("schedule", help="Manage scheduled background checks")
     schedule_subparsers = schedule_parser.add_subparsers(dest="schedule_action")
-    schedule_subparsers.add_parser("enable", help="Enable scheduled checks")
-    schedule_subparsers.add_parser("disable", help="Disable scheduled checks")
-    schedule_subparsers.add_parser("status", help="Show schedule status")
-    run_parser = schedule_subparsers.add_parser("run", help="Run scheduled check now")
+    schedule_subparsers.add_parser("enable", help="Enable scheduled checks (creates Task Scheduler task or cron job)")
+    schedule_subparsers.add_parser("disable", help="Disable scheduled checks (removes task)")
+    schedule_subparsers.add_parser("status", help="Show schedule status, last run, and next run")
+    run_parser = schedule_subparsers.add_parser("run", help="Run scheduled check now (immediate)")
     run_parser.add_argument("--prerelease", action="store_true", help="Include prerelease versions")
 
     # group
     group_parser = subparsers.add_parser("group", help="Manage app groups/profiles")
     group_subparsers = group_parser.add_subparsers(dest="group_action")
     group_subparsers.add_parser("list", help="List all groups")
-    group_add = group_subparsers.add_parser("add", help="Add apps to a group")
+    group_add = group_subparsers.add_parser("add", help="Create a group with apps")
     group_add.add_argument("name", help="Group name")
     group_add.add_argument("apps", nargs="+", help="App identifiers (owner/repo)")
     group_remove = group_subparsers.add_parser("remove", help="Remove apps from a group")
@@ -304,29 +304,33 @@ def main(args: Optional[List[str]] = None) -> int:
     group_update = group_subparsers.add_parser("update", help="Update all apps in a group")
     group_update.add_argument("name", help="Group name")
     group_update.add_argument("--prerelease", action="store_true", help="Allow prerelease versions")
+    group_check = group_subparsers.add_parser("check", help="Check all apps in a group for updates")
+    group_check.add_argument("name", help="Group name")
+    group_check.add_argument("--prerelease", action="store_true", help="Allow prerelease versions")
 
     # shim
-    shim_parser = subparsers.add_parser("shim", help="Manage portable shims")
+    shim_parser = subparsers.add_parser("shim", help="Manage portable shims for folder/zip apps")
     shim_subparsers = shim_parser.add_subparsers(dest="shim_action")
-    shim_subparsers.add_parser("list", help="List all shims")
-    shim_add = shim_subparsers.add_parser("add", help="Create a shim for an app")
+    shim_subparsers.add_parser("list", help="List all created shims")
+    shim_add = shim_subparsers.add_parser("add", help="Create a shim for a managed app")
     shim_add.add_argument("app", help="App identifier (owner/repo or name)")
-    shim_add.add_argument("--name", help="Shim name (default: app name)")
+    shim_add.add_argument("--name", help="Custom shim name (default: app name)")
     shim_remove = shim_subparsers.add_parser("remove", help="Remove a shim")
     shim_remove.add_argument("app", help="App identifier or shim name")
     shim_subparsers.add_parser("path", help="Show shim directory path")
 
     # state
-    state_parser = subparsers.add_parser("state", help="Export/import ohub state")
+    state_parser = subparsers.add_parser("state", help="Export/import ohub state (backup/restore)")
     state_subparsers = state_parser.add_subparsers(dest="state_action")
-    state_export = state_subparsers.add_parser("export", help="Export state to JSON file")
+    state_export = state_subparsers.add_parser("export", help="Export state to JSON file or stdout")
     state_export.add_argument("file", nargs="?", help="Output file (default: stdout)")
     state_import = state_subparsers.add_parser("import", help="Import state from JSON file")
-    state_import.add_argument("file", help="Input file")
+    state_import.add_argument("file", nargs="?", help="Input file (required for import)")
     state_import.add_argument("--dry-run", action="store_true", help="Show what would be imported without applying")
 
     # tui
-    subparsers.add_parser("tui", help="Launch terminal UI dashboard")
+    tui_parser = subparsers.add_parser("tui", help="Launch terminal UI dashboard (requires 'textual' package)")
+    tui_parser.add_argument("--check-deps", action="store_true", help="Check if TUI dependencies are installed")
 
     parsed = parser.parse_args(args)
 
@@ -2581,12 +2585,13 @@ def cmd_state(
         return 0
 
     elif action == "import":
-        if not parsed.file:
+        file_path = getattr(parsed, "file", None)
+        if not file_path:
             print("Error: input file required for import")
             return 1
         
         try:
-            with open(parsed.file, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 import_data = json.load(f)
         except Exception as e:
             print(f"Error reading file: {e}")
@@ -2830,14 +2835,24 @@ def cmd_tui(
     logger,
 ) -> int:
     """Launch terminal UI dashboard."""
+    # Check dependencies first
     try:
-        from textual.app import App, ComposeResult
-        from textual.containers import Container, Horizontal, Vertical
-        from textual.widgets import Header, Footer, Static, DataTable, Log, Input, Button
-        from textual.reactive import reactive
-        from textual.binding import Binding
+        import textual
+        textual_available = True
     except ImportError:
+        textual_available = False
+
+    if getattr(parsed, "check_deps", False):
+        if textual_available:
+            print("TUI dependencies: OK (textual installed)")
+        else:
+            print("TUI dependencies: MISSING (textual not installed)")
+            print("Install with: pip install textual")
+        return 0
+
+    if not textual_available:
         print("Error: textual not installed. Install with: pip install textual")
+        print("Or run: ohub tui --check-deps")
         return 1
 
     config = config_manager.load()
@@ -2846,6 +2861,12 @@ def cmd_tui(
         prefer_x64=config.prefer_x64,
         allow_x86_fallback=config.allow_x86_fallback,
     )
+
+    from textual.app import App, ComposeResult
+    from textual.containers import Container, Horizontal, Vertical
+    from textual.widgets import Header, Footer, Static, DataTable, Log, Input, Button
+    from textual.reactive import reactive
+    from textual.binding import Binding
 
     class ObtainHubTUI(App):
         """ObtainHub Terminal UI Dashboard."""

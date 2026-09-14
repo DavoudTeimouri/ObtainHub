@@ -23,6 +23,8 @@ def main():
         "--onefile",
         "--name", "ohub",
         "--clean",
+        "--hidden-import", "textual",
+        "--hidden-import", "rich",
         "obtainhub/main.py"
     ])
     

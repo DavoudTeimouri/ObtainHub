@@ -30,6 +30,10 @@ DisableDirPage=no
 CreateAppDir=yes
 UninstallDisplayIcon={app}\{#AppExeName}
 MinVersion=6.7
+; CloseApplications tells Inno Setup to detect running instances and prompt to close them
+CloseApplications=yes
+CloseApplicationsFilter={#AppExeName}
+RestartApplications=yes
 
 [Files]
 Source: "..\dist\ohub.exe"; DestDir: "{app}"; Flags: ignoreversion

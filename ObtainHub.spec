@@ -31,6 +31,8 @@ a = Analysis(
         'obtainhub.utils.helpers',
         'requests',
         'urllib3',
+        'textual',
+        'rich',
     ],
     hookspath=[],
     hooksconfig={},
