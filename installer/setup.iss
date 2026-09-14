@@ -3,7 +3,7 @@
 ; Windows x64 installer with PATH management
 
 #define AppName "ObtainHub"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 #define AppPublisher "DavoudTeimouri"
 #define AppURL "https://github.com/DavoudTeimouri/ObtainHub"
 #define AppExeName "ohub.exe"

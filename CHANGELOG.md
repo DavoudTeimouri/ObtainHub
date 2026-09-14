@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - All 153 tests pass.
 
+## [1.0.1] - 2026-09-14
+
+### Added
+- **TUI dependencies bundled in installer** — `textual` and `rich` packages now included as hidden imports in PyInstaller build (`build_dist.py` and `ObtainHub.spec`). The standalone `ohub.exe` and Inno Setup/MSI installers now include TUI dependencies out of the box — `ohub tui` works without requiring `pip install textual`.
+
+### Fixed
+- **`ohub state import` crash** — Fixed `'Namespace' object has no attribute 'file'` error when running `ohub state import <file>` without the optional `file` argument for export. Used `getattr(parsed, "file", None)` for safe attribute access.
+- **Self-update ohub.exe conflict** — Added `CloseApplications=yes`, `CloseApplicationsFilter={#AppExeName}`, `RestartApplications=yes` to Inno Setup script. The installer now detects running `ohub.exe` instances and prompts the user to close them before replacing the binary, eliminating the "file in use" error during self-update.
+- **Help text improvements** — Added descriptive help text to all subcommand actions (`schedule enable/disable/status/run`, `group add/remove/delete/install/update/check`, `shim add/remove/list/path`, `state export/import`, `tui --check-deps`) so `ohub <command> --help` shows meaningful descriptions.
+
+### Changed
+- Version bumped to 1.0.1 (patch) — installer fixes and TUI dependency bundling.
+
 ## [0.7.7.0] - 2026-08-26
 
 ### Added
