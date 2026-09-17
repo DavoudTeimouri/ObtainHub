@@ -5,6 +5,20 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-09-17
+### Added
+- Notifier plugin: desktop notifications on update (requires `plyer`).
+- State export/import: backup and restore full app state.
+- Package manager fallback: Winget, Scoop, Chocolatey as fallback sources.
+- Documentation improvements: expanded README with detailed feature descriptions.
+### Changed
+- Refactored README to be more concise and feature-focused.
+- Updated release workflow to include GPG signing support (conditional on secrets).
+- Improved hook security: use `shlex.split()` + `shell=False` to prevent injection.
+- Added `notifier_enabled` and `notifier_cmd` config options.
+### Fixed
+- Version consistency across all files (1.0.3).
+
 ## [1.0.2] - 2026-09-17
 ### Added
 - Bump version to 1.0.2 for release.
@@ -123,7 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Self-managed apps no longer re-detected as unmanaged.** In `ohub check --all`, apps ohub already manages (by name or install location) are excluded from the system scan.
 - **`ohub check` now handles folder/portable apps** like `ohub update` does — it searches GitHub by the app's name when no `owner/repo` is linked, instead of reporting \"cannot resolve remote\".
-- **`ohub check` candidate fallback:** search query now strips version numbers (e.g. \"App 1.2.3\" → \"App\"). Without `--candidates`, the best-starred repo is offered as the match; with `--candidates` a numbered list is shown.
+- **`ohub check` candidate fallback:** search query now strips version numbers (e.g. \"App 1.2.3\" -> \"App\"). Without `--candidates`, the best-starred repo is offered as the match; with `--candidates` a numbered list is shown.
 ## [0.7.2.0] - 2026-08-13
 ### Fixed
 - Extraction `PermissionError` now tells the user to **close the running app** and retry (or run as admin / pick an owned folder).

@@ -6,7 +6,7 @@ with support for EXE, MSI, and ZIP installers, self-update mechanism,
 and custom manifest sources.
 """
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 __author__ = "ObtainHub Contributors"
 __license__ = "MIT"
 __version_info__ = (1, 0, 1, 0)

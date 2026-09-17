@@ -1,673 +1,264 @@
 # ObtainHub
 
-**Windows x64 app manager via GitHub Releases — and custom sources**
-
-ObtainHub (`ohub`) is a CLI tool for installing, updating, and tracking Windows x64 applications distributed via **GitHub Releases** or **custom sources** (any GitHub repo, or a JSON manifest hosted anywhere — including non-GitHub hosts). It handles downloading, silent installation, updates, and state tracking — all from the command line.
+A cross-platform, open-source package manager for Windows that simplifies installing and updating applications from GitHub releases.
 
 ## Features
 
-- **Windows x64 only** — optimized for `.msi`, `.exe` (Inno/NSIS/InstallShield), `.zip` installer, and portable archives
-- **Silent installation** — `msiexec /qn` for MSI, auto-detected flags for EXE
-- **Smart asset selection** — prefers x64 > ARM64 > x86, EXE_SETUP (Inno) > MSI > ZIP_INSTALLER; portable archives are extracted and tracked
-- **GitHub repo management** — track a repo by exact `owner/repo` and keep it updated
-- **Older-version install** — `ohub install owner/repo --version 1.2.3`, or pick from the 3 most recent releases interactively
-- **Archive (zip) repos** — for repos (incl. archived) that only ship ZIP/portable assets: download, extract to a folder, and track for updates
-- **Local folder management** — `ohub add --type folder --name MyApp --repo owner/repo` tracks a folder app linked to a GitHub repo for updates
-- **Custom sources (non-GitHub)** — `ohub source add` registers a GitHub repo or a JSON manifest; `install`/`update`/`check` fall back to these sources when an `owner/repo` is not on GitHub. Manifest format supports `exe_setup`/`msi`/`zip`/`exe_standalone` assets on any host.
-- **Download reuse** — reuses an existing installer in the download folder when the size matches, and asks before re-downloading
-- **Source validation** — `ohub source add` verifies the URL serves installable content before accepting it
-- **Exact-match check** — `ohub check` links unmanaged apps only to an EXACT GitHub repo (or custom-source) match; `--candidates` offers a list when no exact match
-- **Detects external updates** — `ohub check` re-reads the actually-installed version from the system registry, so apps you updated manually (or via self-update) are no longer reported as "up to date" against a stale stored version
-- **Candidate asset selection** — when no standard installer exists, lists available assets and lets you pick one; the chosen pattern is saved for future updates
-- **Archived / inactive warnings** — flagged during check, install, update, and add
-- **Self-update (manual)** — `ohub self-update` upgrades ohub itself on demand (no longer runs automatically on every command). The installer is launched detached so it does not hang on the running `ohub.exe`.
-- **State tracking** — records installed apps, versions, type, installer paths, and source in `state.json`
-- **State export/import** — `ohub state export/import` backs up and restores the full ohub state (apps, cache, history) as JSON for machine migration.
-- **Prerelease support** — opt-in with `--prerelease` flag
-- **Download-only mode** — fetch installers without executing them
-- **System app detection** — scan Windows Registry for installed applications (with `ohub list --all` / `ohub check --all`)
-- **Scheduled background checks** — `ohub schedule enable` creates a Windows Task Scheduler task (or cron job on Linux/macOS) that runs `ohub check --all --yes` daily at 3 AM. `status` shows last run; `run` triggers an immediate check.
-- **Multi-architecture asset selection** — `--arch x64|arm64|x86|auto` flag on `install`/`update`/`check`; per-app `arch_preference` saved so future checks use the same architecture.
-- **Portable shims** — `ohub shim add/remove/list/path` creates lightweight `.exe` shims in a user-defined directory for folder/zip apps, enabling PATH-less execution.
-- **Release notes preview** — `--notes` flag on `check` and `update` shows the GitHub release body before installing.
-- **SHA256 from release notes** — `ohub check` parses release body for checksums and verifies downloaded assets.
-- **App groups / profiles** — `ohub group` manages named groups of apps; `ohub install @group` installs all.
-- **Winget/Scoop/Chocolatey fallback** — `install/update/check` query Windows package managers when GitHub has no suitable asset.
-- **Pre/post install hooks** — per-app commands run before/after install with env vars.
-- **TUI dashboard** — `ohub tui` launches a Textual-based terminal UI for visual app management.
-- **Global + per-user config** — machine-wide settings apply to all users; each user's token and explicit overrides win
-- **Single-source versioning** — `obtainhub/__init__.py` is the one version of truth; the installer/manifest files are synced automatically at build time
+- **GitHub Integration**: Install and update apps directly from GitHub releases.
+- **Cross-Platform**: Primarily Windows x64, with support for other architectures via configuration.
+- **Multiple Installer Types**: Supports MSI, EXE (Inno Setup, NSIS, Wise, InstallShield, generic silent), ZIP, and portable folder apps.
+- **Scheduled Checks**: Automatically check for updates on a schedule.
+- **Self‑Update**: ObtainHub can update itself.
+- **Shims**: Create portable shims (`ohub shim <app>`) to run apps from anywhere.
+- **TUI Dashboard**: Interactive terminal UI (`ohub tui`) to browse, install, update, and remove apps.
+- **Hooks**: Run custom scripts before/after install/uninstall (`pre_install`, `post_install`, `pre_uninstall`, `post_uninstall`).
+- **Groups**: Organize apps into groups for bulk operations.
+- **Architecture Preferences**: Prefer x64, allow x86 fallback, or force ARM64.
+- **Plugin System**: Extend functionality with plugins (see `obtainhub/plugins`).
+- **Notifier Plugin**: Desktop notifications on update (requires `plyer`).
+- **State Export/Import**: Backup and restore full app state via `ohub state export` and `ohub state import`.
+- **Package Manager Fallback**: When GitHub release lacks a suitable asset, fall back to Winget, Scoop, or Chocolatey.
+- **Asset Caching**: Reduce GitHub API calls with ETag/Last-Modified caching.
+- **Parallel Checks**: Speed up `--all` checks with concurrent processing.
+- **Incremental State**: Efficient state file updates.
+- **Structured Logging**: Optional JSON log output.
 
 ## Installation
 
-### Via Installer (Recommended)
-Download the latest **ObtainHub-Setup-x64.exe** or **ObtainHub.msi** from [GitHub Releases](https://github.com/DavoudTeimouri/ObtainHub/releases).
+Download the latest release from the [Releases page](https://github.com/DavoudTeimouri/ObtainHub/releases) and run the installer, or use the ZIP portable version.
 
-```cmd
-ObtainHub-Setup-x64.exe /VERYSILENT /NORESTART
-```
+### Quick Start (Windows)
 
-### Via MSI (Enterprise)
-```cmd
-msiexec /i ObtainHub.msi /qn /norestart
-```
-
-### Manual
-Download `ohub.exe` from [GitHub Releases](https://github.com/DavoudTeimouri/ObtainHub/releases) and place it in your PATH.
-
-## Quick Start
-
-```cmd
-# Install an app from GitHub Releases
+```powershell
+# Install ObtainHub (run as Administrator)
 ohub install owner/repo
-ohub install owner/repo --version 1.2.3     # or pick from recent releases
-
-# Install / update from a custom (non-GitHub) source
-ohub source add myapp https://github.com/owner/repo
-ohub source add mymanifest https://example.com/manifest.json --type manifest
-ohub install owner/repo                    # falls back to sources when not on GitHub
-
-# Add a repo / archive / local folder for management
-ohub add owner/repo
-ohub add owner/repo --type zip            # repo ships archives: download, extract, track
-ohub add "D:\My Folder" --type folder --name MyApp --repo owner/repo     # track folder app (name + repo required)
-
-# Check for updates (don't install)
-ohub check
-
-# Update all installed apps
-ohub update
-
-# List installed apps
-ohub list
-
-# List all apps including system-installed
-ohub list --all
-
-# Uninstall an app
-ohub uninstall owner/repo
-
-# Self-update ObtainHub
-ohub self-update
-
-# Search GitHub repositories
-ohub search "text editor" --min-stars 100
 ```
 
-## Commands Reference
+### First‑time Setup
 
-### `ohub install <owner/repo>`
-Install an application from GitHub Releases. The app can be given by exact id (`owner/repo`) or by display name.
+After installation, you may want to:
 
-```cmd
-ohub install owner/repo                    # Latest stable release
-ohub install owner/repo --tag v1.2.3       # Specific tag
-ohub install owner/repo --version 1.2.3    # Install a specific (older) version
-ohub install owner/repo --prerelease       # Include prereleases
-ohub install owner/repo --arch x64|arm64|x86|auto  # Architecture to select (default: auto)
-ohub install owner/repo --download-only    # Download only, don't install
-ohub install owner/repo --force            # Force reinstall
-ohub install owner/repo --yes              # Auto-confirm prompts (silent install)
-ohub install owner/repo --interactive      # Launch the installer visibly; you drive it, ohub verifies after
-```
+1. Set your GitHub token for higher rate limits:
+   ```powershell
+   ohub config set github_token <your_personal_token>
+   ```
+2. Enable scheduled checks:
+   ```powershell
+   ohub config set schedule_enabled true
+   ohub config set schedule_interval_hours 12
+   ```
+3. Try the TUI:
+   ```powershell
+   ohub tui
+   ```
 
-Installing also registers the repo as a manifest source. If the app is already managed by ohub and up to date, install is skipped; if a newer version exists, it installs as an update. For portable/archive installs, ohub prompts before overwriting an existing folder (back up your config first).
+## Usage
 
-**Install verification (trust the system, not the installer).** After the installer exits, `ohub` re-reads the system (registry / install location) to confirm the app is actually present before recording it in `state.json`. If the installer reports success but the app is not found in the system, `ohub` reports `not detected` and does **not** record it — so a lying exit code or a hung/spawned installer never produces a false "installed". Run `ohub check` afterward to re-detect.
+### Core Commands
 
-**Interactive vs silent.** By default `ohub install` runs the installer silently. When you run it on a terminal **without** `--yes`, it automatically launches the installer **visibly** (no silent flags) so you can click through the wizard; `ohub` then waits and verifies the result. Use `--interactive` to force this, or `--yes` to stay fully silent/automated. The same applies to `ohub update` and `ohub uninstall`.
+| Command | Description |
+|---------|-------------|
+| `ohub add <repo> [options]` | Add a GitHub repo for management. |
+| `ohub install <app> [options]` | Install or update an app. |
+| `ohub check [options]` | Check for updates without installing. |
+| `ohub update <app> [options]` | Update specific app(s). |
+| `ohub remove <app>` | Remove app from management (does not uninstall). |
+| `ohub shim <app>` | Create a shim executable for portable apps. |
+| `ohub tui` | Launch the terminal user interface. |
+| `ohub config <action>` | View or modify configuration. |
+| `ohub schedule <action>` | Enable/disable/view scheduled checks. |
 
-### `ohub update [owner/repo]`
-Update installed applications. The target can be an exact id or a display name. Folder-managed apps are skipped unless linked to a GitHub repo via `ohub add --repo`.
+### Advanced Features
 
-```cmd
-ohub update                          # Update all apps
-ohub update owner/repo               # Update specific app
-ohub update SampleApp                # Update by display name
-ohub update --prerelease             # Include prereleases
-ohub update --dry-run                # Show what would be updated
-ohub update --reset                  # Forget saved choices so prompts re-appear
-ohub update --yes                    # Auto-confirm prompts
-ohub update --arch x64|arm64|x86|auto  # Architecture to select (default: auto)
-ohub update --notes                  # Show release notes for available updates
-```
+#### Hooks
 
-When no standard installer is found in a release, `ohub update` lists the available candidate assets and installs/extracts the chosen one (the choice is remembered for future updates).
+Define scripts in your config or via manifest sources:
 
-### `ohub check [owner/repo]`
-Check for available updates without installing. The target can be an exact id or a display name.
-
-```cmd
-ohub check                           # Check managed apps
-ohub check owner/repo                # Check specific app
-ohub check --prerelease              # Include prereleases
-ohub check --all                     # Also scan system-installed (unmanaged) apps
-ohub check --candidates              # For unmanaged apps w/o exact match, offer candidate repos to link ([0] skips)
-ohub check --timeout 30              # Per-repo search timeout (10-300s; default 90, retries 3)
-ohub check --reset                   # Forget saved choices so prompts re-appear
-ohub check --json                    # Output as JSON
-ohub check --arch x64|arm64|x86|auto  # Architecture to select (default: auto)
-ohub check --notes                   # Show release notes for available updates
-```
-Running `ohub check` with no app on an interactive terminal shows a numbered list of managed apps so you can check one or all. Apps that were manually uninstalled are detected and dropped from ohub automatically. For every managed app, `ohub check` re-reads the installed version from the system registry, so an update you performed outside ohub (or a self-update) is reflected immediately instead of being masked by ohub's stored version.
-
-- Managed apps are always checked for updates.
-- Unmanaged system apps are scanned only with `--all`; an unmanaged app is linked only to an **exact** GitHub repo name match, unless `--candidates` is given (then a list of candidate repos by name is offered).
-- When an app has no standard installer, `ohub check` lists the available assets and (interactively) lets you pick one; the chosen asset is downloaded/extracted if an update is available, and the pattern is saved for future updates.
-- Archived or inactive repositories print a warning.
-- Every interactive choice (asset, repo link) is remembered in state. Use `--reset` (or `ohub remove`) to clear them and be re-prompted.
-
-### `ohub add <owner/repo>`
-Add a repository, archive, or local folder for management.
-
-```cmd
-ohub add owner/repo                       # Track a GitHub repo (exact match)
-ohub add owner/repo --type zip             # Repo ships archives: download, extract, track
-ohub add owner/repo --type zip --location D:\Apps\MyApp
-ohub add "D:\MyFolder" --type folder --name MyApp --repo owner/MyApp   # Track a folder app (--name AND --repo required)
-ohub add owner/repo --as-source            # Also register as a manifest source
-```
-
-- `--type github` (default): track a GitHub repository by exact `owner/repo`.
-- `--type zip`: for repositories (including archived ones) that only ship ZIP/portable assets — the archive is downloaded, extracted to a folder, and tracked; updates re-use the saved asset pattern.
-- `--type folder`: track a single local-folder app. **Both `--name` (the real application name) and `--repo owner/repo` are required.** The folder is NOT scanned for executables - the name and repo are the only source of truth, used to find updates. Drive roots such as `C:\` are refused. Quote the path if it contains spaces, e.g. `ohub add "D:\My Folder" --type folder --name MyApp --repo owner/MyApp`.
-- During check/install/update/add, archived or inactive repositories print a warning.
-
-### `ohub list`
-List all installed applications.
-
-```cmd
-ohub list                            # Tabular output (ohub-managed apps)
-ohub list --json                     # JSON output
-ohub list --all                      # Include system-installed apps from Windows Registry
-```
-
-**Output format:**
-```
-Name                      Version          Type                  Source
---------------------------------------------------------------------------------
-MyApp                     1.2.3            github                ohub
-AnotherApp                2.0.0-beta       zip @ C:\Apps\Another  ohub
-PortableTool             -               folder @ D:\Tools      ohub
-```
-The `Type` column shows `github`, `zip`, or `folder`, and (for zip/folder) the install location.
-
-### `ohub uninstall <owner/repo>`
-Uninstall an application from the system and remove it from ohub (state + any registered manifest source). For MSI/EXE installs the real uninstaller is invoked; for portable/zip apps the extracted folder is removed. Permission failures suggest running as administrator.
-
-```cmd
-ohub uninstall owner/repo              # Uninstall with confirmation
-ohub uninstall owner/repo --yes        # Auto-confirm
-ohub uninstall owner/repo --keep-data  # Keep downloaded installer files
-ohub uninstall owner/repo --interactive # Launch the uninstaller visibly; you drive it, ohub verifies after
-```
-
-`ohub uninstall` invokes the real uninstaller (MSI/EXE) or removes the extracted folder (portable/zip), then re-checks the system registry. If the app is still present afterward (uninstaller returned early, or a permission issue), it reports "still present / run as administrator" and keeps the app in ohub management so you can retry, instead of claiming success. On a terminal without `--yes`, the uninstaller launches **visibly** (interactive) by default; use `--yes` to stay silent.
-### `ohub remove <id|name>`
-Remove an app or folder from ohub management **without** uninstalling it (untrack only).
-
-```cmd
-ohub remove owner/repo                 # Remove from management (confirm)
-ohub remove SampleApp                 # Remove by display name
-ohub remove folder:MyApp               # Remove a folder-managed app
-ohub remove owner/repo --yes           # Auto-confirm
-```
-
-### `ohub source`
-Manage custom sources (GitHub repos or manifest URLs). Sources let you install and update apps that are **not** on the default GitHub repo, including non-GitHub hosts.
-
-```cmd
-ohub source list                       # List configured sources
-ohub source add my-source https://github.com/owner/repo
-ohub source add my-repo-api https://api.github.com/repos/owner/repo/releases
-ohub source add my-manifest https://example.com/manifest.json --type manifest
-ohub source remove my-source
-```
-
-`ohub source add` validates the URL before accepting it (a GitHub source must expose releases/assets; a manifest source must be a JSON list). Once added, `ohub install <name>` and `ohub update` fall back to these sources when an `owner/repo` is not found on GitHub. Apps installed from a source are tracked by source name; `ohub update` checks them for newer versions, and `ohub uninstall`/`ohub remove` drops them from ohub (the shared source stays).
-
-A manifest is a JSON list of apps:
 ```json
-[
-  {"name": "AppName", "version": "1.2.3", "url": "https://host/AppName-1.2.3-setup.exe", "installer_type": "exe_setup", "sha256": "", "size": 0}
-]
-```
-`installer_type` is one of `exe_setup`, `msi`, `zip`, `exe_standalone` (auto-detected from the URL when omitted).
-
-**How to add a custom source and use it**
-
-```cmd
-# 1) Add a GitHub repo as a source (validated: must expose releases/assets)
-ohub source add myapp https://github.com/owner/repo
-
-# 2) Or add a JSON manifest hosted anywhere (non-GitHub)
-ohub source add mylist https://example.com/manifest.json --type manifest
-
-# 3) List / remove sources
-ohub source list
-ohub source remove myapp
-
-# 4) Install from a source: same command as GitHub; ohub falls back to sources
-ohub install owner/repo            # resolves via the source when not on github.com
-
-# 5) Update apps installed from sources
-ohub update                        # checks each source for a newer version
-
-# 6) Discover unmanaged system apps that live in a source
-ohub check --all                  # matches registry apps to source entries
+{
+  "hooks": {
+    "pre_install": "echo \"Installing $APP_ID\"",
+    "post_install": "echo \"Done installing $APP_ID\"",
+    "pre_uninstall": "echo \"Preparing to uninstall $APP_ID\"",
+    "post_uninstall": "echo \"Uninstalled $APP_ID\""
+  }
+}
 ```
 
-A source with no manifest (a plain GitHub repo URL) still works — ohub reads its releases directly. You do **not** need a separate manifest file; `--type github` sources use the repo's own releases. Use `--type manifest` only when you host your own JSON list on a non-GitHub host.
+#### Groups
 
-**Example — keep an app from a source without writing a manifest**
-
-```cmd
-# Point ohub at the GitHub repo that ships the app's releases:
-ohub source add myapp https://github.com/owner/myapp
-
-# Install / update it exactly like a normal GitHub app:
-ohub install owner/myapp
-ohub update
+```powershell
+ohub config set groups.devtools=\"git-for-windows/vscode,PowerShell/PowerShell\"
+ohub install devtools  # installs all apps in the devtools group
 ```
 
-No manifest JSON required — ohub uses the repo's published releases. Only choose `--type manifest` when the app lives on a non-GitHub host and you provide your own JSON list.
+#### Plugin System
 
-**Custom source examples**
+Place Python plugins in `obtainhub/plugins/`. They must subclass `obtainhub.plugins.base.Plugin` and implement the lifecycle methods.
 
-*Example 1 — a GitHub repo as a source (no manifest needed):*
-```cmd
-# Register the GitHub repo so ohub can install/update the app from it
-ohub source add myapp https://github.com/owner/myapp
-# Install (ohub resolves via the source), then update later
-ohub install owner/myapp
-ohub update
+Example plugin (`obtainhub/plugins/example.py`):
+
+```python
+from obtainhub.plugins.base import Plugin
+
+class ExamplePlugin(Plugin):
+    def on_load(self):
+        print(f"[Plugin] {self.name} loaded")
+
+    def on_update(self, app_id: str, current_version: str, latest_version: str):
+        print(f"[Plugin] {self.name}: {app_id} updated {current_version} -> {latest_version}")
+
+    # ... other methods
 ```
 
-*Example 2 — a manifest on a non-GitHub host (JSON list you host yourself):*
-```cmd
-# Your own server serves a JSON list of apps anywhere on the internet
-ohub source add mylist https://my-intranet.example.com/apps/manifest.json --type manifest
-# The manifest lists each app's name, version, and asset URLs:
-# [
-#   {"name":"MyApp","version":"1.4.2","url":"https://files.example.com/MyApp-1.4.2.zip","type":"zip"},
-#   {"name":"Helper","version":"0.9","url":"https://files.example.com/Helper-0.9.exe","type":"exe_setup"}
-# ]
-ohub install MyApp
+#### Notifier Plugin
+
+Show desktop notifications when updates are available. Requires `plyer` (`pip install plyer`).
+
+Enable via config:
+
+```powershell
+ohub config set notifier_enabled true
+# Optional: custom command
+ohub config set notifier_cmd "powershell -Command \"[reflection.assembly]::LoadWithPartialName('System.Windows.Forms');[System.Windows.Forms.MessageBox]::Show('Update available for $APP_ID')\""
 ```
 
-### `ohub schedule`
+#### State Export/Import
 
-Manage scheduled background checks. Creates a Windows Task Scheduler task (or cron job on Linux/macOS) that runs `ohub check --all --yes` on a configurable interval.
+Backup or migrate your managed apps list:
 
-```cmd
-ohub schedule status                    # Show schedule status and last run
-ohub schedule enable                    # Enable scheduled checks (creates task)
-ohub schedule disable                   # Disable scheduled checks (removes task)
-ohub schedule run                       # Run check now (immediate)
-ohub schedule run --prerelease          # Run check now including prereleases
+```powershell
+ohub state export C:\backup\ohub_state.json
+ohub state import C:\backup\ohub_state.json
 ```
 
-The interval is configurable via `ohub config set schedule_interval_hours <n>` (default 24). Notification on updates is controlled by `schedule_notify_on_update`.
+Use `ohub state import --dry-run` to preview changes.
 
-### `ohub shim`
-Manage portable shims for folder/zip apps. Creates lightweight `.exe` shims in `config.shim_dir` (default `~/bin/obtainhub`) that forward to the actual app executable.
+#### Package Manager Fallback
 
-```cmd
-ohub shim list                        # List all shims
-ohub shim add owner/repo              # Create a shim for an app
-ohub shim add owner/repo --name myapp # Custom shim name
-ohub shim remove owner/repo           # Remove a shim
-ohub shim path                        # Show shim directory path
+When a GitHub release has no suitable installer, ObtainHub can try Winget, Scoop, or Chocolatey:
+
+```powershell
+ohub config set enable_winget true
+ohub config set enable_scoop true
+ohub config set enable_choco true
+ohub config set prefer_native false  # try package managers first
 ```
 
-Add the shim directory to your PATH to run portable apps from anywhere without modifying system PATH.
+#### Architecture Preferences
 
-### `ohub state`
-Export/import full ohub state (managed apps, manifest cache, check history) as JSON for backup or machine migration.
-
-```cmd
-ohub state export                       # Export to stdout
-ohub state export backup.json           # Export to file
-ohub state import backup.json           # Import (skips same/older versions)
-ohub state import backup.json --dry-run # Preview what would be imported
+```powershell
+ohub config set prefer_x64 false
+ohub config set allow_x86_fallback true
+ohub install owner/repo --arch x86
 ```
 
-### `ohub tui`
-Launch terminal UI dashboard (Textual-based). Lists managed apps with current/latest versions and update status; row selection shows details; keybindings: `r` refresh, `u` update, `c` check, `q` quit, `j/k` navigate.
+#### Self‑Update
 
-```cmd
-ohub tui
+```powershell
+ohub self-update
 ```
 
-### `ohub group`
-Manage named groups of apps for batch operations.
+#### Dry‑Run
 
-```cmd
-ohub group add dev-tools vscode git 7zip
-ohub group list
-ohub group install @dev-tools
-ohub group update @dev-tools
-ohub group check @dev-tools
-ohub group remove dev-tools
+```powershell
+ohub install owner/repo --dry-run
 ```
 
-Search GitHub repositories for applications with releases.
+#### Release Notes
 
-```cmd
-ohub search "text editor" --limit 10 --min-stars 100 --active-only
-ohub search "terminal" --min-stars 50 --include-inactive
+```powershell
+ohub update owner/repo --notes
 ```
-
-**Options:**
-- `--limit <n>` - Maximum results (default: 10)
-- `--min-stars <n>` - Filter repositories with at least N stars (default: 0)
-- `--active-only` - Only show active, non-archived repos with recent activity (default: enabled)
-- `--include-inactive` - Include archived/inactive repositories
-
-**Output format (sorted by stars descending):**
-```
-Name                                      Stars   Latest Release     Updated     Description
-------------------------------------------------------------------------------------------------------------------------
-owner/repo                                1,234   Has releases       2024-01-15  A text editor
-```
-
-### `ohub config`
-Manage configuration.
-
-```cmd
-ohub config show                       # Show all config
-ohub config get github_token           # Get specific value
-ohub config set github_token "ghp_xxx" # Set value
-ohub config edit                       # Open in editor (not yet implemented)
-```
-
-### `ohub self-update`
-Update ObtainHub itself. **Self-update is manual** - ohub no longer checks for updates automatically on every command. Run this when you want to upgrade. The installer is launched detached and ohub exits so it can replace the running `ohub.exe` (no hang); restart ohub once the install finishes.
-
-```cmd
-ohub self-update                       # Check and update
-ohub self-update --prerelease          # Include prereleases
-ohub self-update --force               # Force update
-```
-
-## Global Options
-
-| Option | Description |
-|--------|-------------|
-| `-v`, `--verbose` | Increase verbosity (use `-vv` for debug) |
-| `--version` | Show version |
 
 ## Configuration
 
-Config file: `%USERPROFILE%\.config\obtainhub\config.json`
+Configuration is stored in `%USERPROFILE%\.config\obtainhub\config.json`. All options can be viewed with:
 
-```json
-{
-  "github_token": "",
-  "self_update_enabled": true,
-  "install_dir": "C:\\Users\\<user>\\Applications\\ObtainHub",
-  "download_dir": "C:\\Users\\<user>\\Downloads\\ObtainHub",
-  "config_dir": "C:\\Users\\<user>\\.config\\obtainhub",
-  "state_dir": "C:\\Users\\<user>\\.local\\share\\obtainhub",
-  "update_interval_hours": 24,
-  "auto_update": true,
-  "allow_prerelease": false,
-  "prefer_x64": true,
-  "allow_x86_fallback": false,
-  "auto_attempt_uninstall": false,
-  "manifest_sources": []
-}
+```powershell
+ohub config show
 ```
 
-### Global vs per-user settings
-On a multi-user Windows machine, a config in `%ProgramData%\ObtainHub\config.json` applies to **all** users. Each user's own `%USERPROFILE%\.config\obtainhub\config.json` is overlaid on top, so a user can override any value — most importantly their own `github_token` (always per-user, never read from the global file). The global directory is created automatically on first run if missing. Set `OBTAINHUB_GLOBAL_CONFIG` to point at a custom shared-config path.
+### Key Settings
 
-### Configuration items
+- `github_token`: Personal access token for higher API rate limits.
+- `self_update_enabled`: Toggle self‑update capability.
+- `install_dir`: Where apps are installed (default: `%USERPROFILE%\Applications\ObtainHub`).
+- `download_dir`: Where installers are downloaded (default: `%USERPROFILE%\Downloads\ObtainHub`).
+- `schedule_enabled`: Enable automatic background checks.
+- `schedule_interval_hours`: How often to run checks (in hours).
+- `log_level`: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
+- `log_file`: Path to a log file (optional).
+- `groups`: Define app groups for bulk operations.
+- `manifest_sources`: Add custom manifest sources (GitHub, Winget, Scoop, Chocolatey).
+- `notifier_enabled`: Enable desktop notifications on update.
+- `notifier_cmd`: Custom command to run on notification (optional).
+- `prefer_x64`: Prefer x64 assets when available.
+- `allow_x86_fallback`: Allow x86 if x64 not found.
+- `allow_arm64`: Allow ARM64 assets.
+- `enable_winget`: Enable Winget as fallback source.
+- `enable_scoop`: Enable Scoop as fallback source.
+- `enable_choco`: Enable Chocolatey as fallback source.
+- `prefer_native`: Try GitHub assets first before package managers.
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `github_token` | str | `""` | GitHub PAT; raises API limit 60→5000/hr. Always per-user. |
-| `self_update_enabled` | bool | `true` | Allow `ohub self-update`. |
-| `install_dir` | str | `...\Applications\ObtainHub` | Root for installed/portable apps. |
-| `download_dir` | str | `...\Downloads\ObtainHub` | Where installers are downloaded (reuse prompt applies). |
-| `config_dir` | str | `%USERPROFILE%\.config\obtainhub` | Config file location. |
-| `state_dir` | str | `%USERPROFILE%\.local\share\obtainhub` | `state.json` location. |
-| `update_interval_hours` | int | `24` | Reserved for scheduler cadence. |
-| `auto_update` | bool | `true` | Reserved. |
-| `allow_prerelease` | bool | `false` | Include prereleases in install/update. |
-| `prefer_x64` | bool | `true` | Prefer x64 assets. |
-| `allow_x86_fallback` | bool | `false` | Fall back to x86 if no x64 asset. |
-| `auto_attempt_uninstall` | bool | `false` | Try to run the uninstaller on remove. |
-|| `manifest_sources` | list | `[]` | Custom sources (see below). Each: `{"name","url","enabled","type":"github"|"manifest"}`. |
-|| `shim_dir` | str | `...\bin\obtainhub` | Directory for portable shims. |
-|| `allow_hooks` | bool | `true` | Allow pre/post install hooks. |
-|| `enable_winget` | bool | `true` | Enable winget fallback. |
-|| `enable_scoop` | bool | `true` | Enable scoop fallback. |
-|| `enable_choco` | bool | `true` | Enable chocolatey fallback. |
-|| `prefer_native` | bool | `false` | Try native package managers first. |
-|| `schedule_enabled` | bool | `false` | Enable scheduled background checks. |
-|| `schedule_interval_hours` | int | `24` | Scheduled check interval in hours. |
-|| `schedule_notify_on_update` | bool | `false` | Notify when updates found during scheduled check. |
-|| `schedule_run_on_startup` | bool | `false` | Run scheduled check on startup. |
-|| `proxy` | str | `""` | HTTP(S) proxy URL. |
-| `timeout_seconds` | int | `30` | Network timeout. |
-| `check_timeout_seconds` | int | `90` | Per-app check timeout (10–300). |
-| `check_timeout_retries` | int | `3` | Check retries (1–5). |
-| `max_parallel_downloads` | int | `3` | Reserved. |
-| `log_level` | str | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. |
-| `log_file` | str | `""` | Log destination (empty = stderr). |
+## Troubleshooting
 
-### GitHub Token (Optional)
-Set a GitHub Personal Access Token to avoid rate limits (60/hr → 5000/hr):
-
-```cmd
-ohub config set github_token "ghp_xxx"
-```
-
-Or set `GITHUB_TOKEN` or `OBTAINHUB_TOKEN` environment variable:
-```cmd
-set GITHUB_TOKEN=ghp_xxx
-```
-
-When rate limited without a token, you'll see:
-```
-[!] Error: GitHub API rate limit exceeded.
-[!] Set the GITHUB_TOKEN environment variable (e.g. `$env:GITHUB_TOKEN='your_token'`) to increase limit from 60 to 5000 req/hr.
-```
-
-## State Tracking
-
-Installed apps are tracked in `%APPDATA%\ObtainHub\state.json` (Windows) or `~/.obtainhub/state.json` (other platforms):
-
-```json
-{
-  "installed": {
-    "owner/repo": {
-      "id": "owner/repo",
-      "name": "repo",
-      "version": "1.2.3",
-      "installer_type": "msi",
-      "installer_path": "C:\\Users\\<user>\\Downloads\\ObtainHub\\app.msi",
-      "source_url": "https://github.com/owner/repo/releases/tag/v1.2.3",
-      "tag": "v1.2.3",
-      "app_type": "github",
-      "install_location": "",
-      "asset_pattern": "",
-      "preferred_asset": "",
-      "installed_at": 1700000000,
-      "updated_at": 1700000000,
-      "requires_manual_uninstall": false
-    },
-    "folder:myapp": {
-      "id": "folder:myapp",
-      "name": "myapp",
-      "version": "",
-      "installer_type": "folder",
-      "installer_path": "D:\\Tools\\myapp",
-      "source_url": "",
-      "tag": "",
-      "app_type": "folder",
-      "install_location": "D:\\Tools\\myapp",
-      "asset_pattern": "",
-      "preferred_asset": ""
-    }
-  },
-  "check_history": {}
-}
-```
-
-`app_type` is one of `github`, `zip`, or `folder`. `zip`/`folder` apps record `install_location`; `zip` apps also record `asset_pattern` (saved candidate pattern) and `preferred_asset`.
-
-## System Application Detection
-
-`ohub list --all` scans the Windows Registry for installed applications:
-
-- `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall`
-- `HKLM\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall`
-- `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall`
-
-This enables `ohub check` to match system-installed apps against GitHub repositories for update detection.
-
-## Asset Selection Logic
-
-When multiple assets exist in a release, ObtainHub selects the best match:
-
-1. **Architecture priority**: x64 > ARM64 > x86 (ARM64/x86 only if explicitly allowed)
-2. **Installer priority**: EXE_SETUP (Inno Setup) > MSI > ZIP_INSTALLER
-3. **Portable archives**: a bare `.zip`/`.exe` standalone asset is downloaded and, for `zip` apps, extracted to a folder and tracked (not executed)
-4. **Exclusions**: Checksums (`.sha256`, `.asc`), signatures, non-Windows packages (`.deb`, `.rpm`, `.dmg`, `.tar.gz`), source archives
-5. **Candidate selection**: if no strict installer is found, `ohub install`/`update`/`check` list the available assets and let you pick one; the choice is saved as an asset pattern for future updates
-
-## Candidate Assets & Patterns
-
-For repositories that ship only portable archives (common with archived projects), ObtainHub records the chosen asset's pattern (e.g. `*x64*.zip`). On the next `update`, it re-matches the newest release against that pattern automatically — so you only pick once.
-
-## Manual Uninstall Handling
-
-If an app was installed outside ObtainHub or the installer doesn't support silent uninstall:
-
-```
-Notice: MyApp requires manual uninstallation of the previous version.
-Installer downloaded to: C:\Users\<user>\Downloads\ObtainHub\app-v2.msi
-Options: [1] Attempt auto-uninstall [2] Cancel / Manual uninstall
-```
-
-Use `--force` to skip this check, or uninstall manually first.
-
-## Install / Uninstall: Interactive Mode & Verification
-
-Because installers vary wildly (Inno, NSIS, MSI, custom wizards) and their exit codes
-are not always trustworthy, `ohub` does not blindly believe the installer:
-
-- **Interactive by default (TTY).** When you run `ohub install` / `ohub update` /
-  `ohub uninstall` on a terminal without `--yes`, the installer/uninstaller is launched
-  **visibly** (no `/VERYSILENT` etc.) so you can drive it yourself. `--yes` keeps it
-  fully silent for automation/CI; `--interactive` forces the visible mode explicitly.
-- **Verify against system state.** After the process exits, `ohub` re-reads the
-  Windows Registry (Programs & Features) and/or the recorded install location. Install
-  is only recorded as success if the app is actually present; uninstall is only
-  considered done if the app is gone. A lying exit code, a hung installer, or a spawned
-  child that returns early can no longer produce a false "installed"/"uninstalled" state.
-- **If verification fails:** install reports `not detected` and does not write to
-  `state.json` (re-run `ohub check` to pick it up); uninstall reports `still present`
-  and keeps the app managed so you can retry as administrator.
-
-This is the recommended way to handle the long tail of apps `ohub` can't fully automate:
-let the wizard run, and let `ohub` confirm the result.
+| Symptom | Solution |
+|---------|----------|
+| **"App not detected after installation"** | Some installers spawn child processes and exit early. ObtainHub verifies installation by checking the Windows Registry and install location. If verification fails, run `ohub check` to see if the app installed despite the error. |
+| **Rate limit errors (403)** | Set a GitHub token via `ohub config set github_token <token>` to increase limits from 60 to 5000 requests per hour. |
+| **"No suitable asset found"** | Ensure the release contains an asset matching your architecture preferences (`--arch`) and installer type. Use `--yes` to auto‑pick the first compatible asset, or interactively choose. |
+| **Shim not working** | Remember to add the shim directory (`%USERPROFILE%\bin\obtainhub` by default) to your `PATH` environment variable. |
+| **TUI fails to start** | The TUI requires the `textual` and `rich` Python packages. They are bundled in the installer but may be missing in development environments. Install with `pip install textual rich`. |
+| **Plugin not loading** | Check the console for `[Plugin] Failed to load ...` messages. Ensure the plugin class inherits from `obtainhub.plugins.base.Plugin` and implements all abstract methods. |
+| **Notifier not working** | Ensure `plyer` is installed (`pip install plyer`) and `notifier_enabled` is true. |
 
 ## Building from Source
 
 ### Prerequisites
-- Python 3.11+ (x64)
-- PyInstaller: `pip install pyinstaller`
-- Inno Setup 6 (for .exe installer): https://jrsoftware.org/isinfo.php
-- WiX Toolset v4+ (for .msi): https://wixtoolset.org/
 
-### Build Commands
-```cmd
-# Build everything (exe + installer + MSI + workflow)
-python build_dist.py --all
+- Python 3.9+
+- GitHub account (for token)
+- (Optional) `pyinstaller` for building executables
 
-# Build only executable (onefile)
-python build_dist.py --onefile
+### Steps
 
-# Build onedir executable
-python build_dist.py --onedir
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/DavoudTeimouri/ObtainHub.git
+   cd ObtainHub
+   ```
+2. Create a virtual environment (recommended):
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -e .
+   ```
+4. Run:
+   ```bash
+   python -m obtainhub
+   ```
 
-# Build Inno Setup installer (requires exe)
-python build_dist.py --installer
+### Creating a Release
 
-# Build MSI with Python msilib (stdlib)
-python build_dist.py --msi
+1. Update the version in `obtainhub/__init__.py` and `obtainhub/main.py`.
+2. Add a changelog entry under `## [X.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`.
+3. Commit and tag:
+   ```bash
+   git add .
+   git commit -m "Release vX.Y.Z"
+   git tag vX.Y.Z
+   git push origin main --tags
+   ```
+4. GitHub Actions will build the distributables (MSI, EXE, ZIP) and publish the release.
 
-# Generate GitHub Actions workflow
-python build_dist.py --workflow
+## Contributing
 
-# Clean build artifacts
-python build_dist.py --clean
-```
-
-### Outputs
-- `dist/ohub.exe` — Standalone onefile executable
-- `dist/ohub/ohub.exe` — Onedir executable (directory layout)
-- `installer/ObtainHub-Setup.exe` — Inno Setup installer (no desktop shortcuts, no launch prompt)
-- `installer/ObtainHub.msi` — Python msilib MSI installer
-
-## GitHub Actions
-
-Automated builds on tag push (e.g., `git tag v0.7.5.3 && git push origin v0.7.5.3`):
-
-- Builds on `windows-latest`
-- Runs `tools/sync_versions.py` so the Inno Setup, WiX MSI, and PyPI metadata all carry the version from `obtainhub/__init__.py` (no more desynced installers)
-- Creates `ohub.exe`, `ObtainHub-Setup.exe`, and `ObtainHub.msi`
-- Syncs `CHANGELOG.md` into the release notes automatically
-
-Workflows: `.github/workflows/release.yml`, `.github/workflows/sync-release-notes.yml`
-
-**Note:** Release tags with `beta` or `alpha` are published as pre-releases. Assets are generated for each tag pushed.
-
-## Requirements
-
-- Windows 10/11 x64
-- Python 3.11+ (for development)
-- GitHub API access (token optional, but recommended for higher rate limits)
-
-## Code Signing (Release Binaries)
-
-Release binaries are **code-signed** automatically during the GitHub Actions build (`release.yml`) when signing secrets are configured. This prevents Windows SmartScreen from flagging the installer as an unrecognized app. **Status: not yet enabled — no certificate is configured, so current releases ship unsigned and SmartScreen may warn on first run. Code signing will be enabled later.**
-
-Two signing backends are supported — configure ONE via **Settings → Secrets and variables → Actions → New repository secret**:
-
-### Option A — Azure Trusted Signing (recommended)
-Create a Trusted Signing account in Azure, then add these repository secrets:
-
-| Secret | Value |
-|---|---|
-| `AZURE_TENANT_ID` | Azure tenant ID |
-| `AZURE_CLIENT_ID` | Service principal (app registration) client ID |
-| `AZURE_CLIENT_SECRET` | Service principal secret |
-| `AZURE_ACCOUNT_ENDPOINT` | e.g. `https://eus.codesigning.azure.net/` |
-| `AZURE_CODE_SIGNING_PROFILE` | Code Signing profile name |
-
-The workflow installs `AzureSignTool` (dotnet global tool) and signs `ohub.exe`, `ObtainHub-Setup.exe`, and `ObtainHub.msi` with a trusted timestamp.
-
-### Option B — PFX certificate
-If you already have a code-signing certificate (`.pfx`), add:
-
-| Secret | Value |
-|---|---|
-| `SIGNING_PFX_B64` | Base64-encoded `.pfx` file content (`certutil -encode cert.pfx cert.b64`) |
-| `SIGNING_PFX_PASSWORD` | PFX password |
-
-The workflow decodes it to a temp file, signs with `signtool` (SHA-256 + DigiCert timestamp), then deletes it.
-
-### No secrets configured
-If neither set of secrets is present, the build proceeds **unsigned** and prints a warning — Windows SmartScreen will warn "unrecognized app". This is the current state until you add a certificate. To fix, supply a cert via either option above.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-MIT License — see LICENSE file.
-
-## Author
-
-Davoud Teimouri — https://github.com/DavoudTeimouri
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
