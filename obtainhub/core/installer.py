@@ -1,6 +1,7 @@
 """Windows silent installer engine for ObtainHub."""
 
 import os
+import shlex
 import subprocess
 import time
 from datetime import datetime
@@ -177,9 +178,10 @@ class SilentInstaller:
             return
         logger.info(f"Running {hook_name} hook: {command}")
         try:
+            args = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
