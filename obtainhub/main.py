@@ -63,7 +63,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v1.0.4 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v1.0.5 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
