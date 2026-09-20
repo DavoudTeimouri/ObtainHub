@@ -6,154 +6,211 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.3] - 2026-09-17
+
 ### Added
 - Notifier plugin: desktop notifications on update (requires `plyer`).
 - State export/import: backup and restore full app state.
 - Package manager fallback: Winget, Scoop, Chocolatey as fallback sources.
 - Documentation improvements: expanded README with detailed feature descriptions.
+
 ### Changed
 - Refactored README to be more concise and feature-focused.
 - Updated release workflow to include GPG signing support (conditional on secrets).
 - Improved hook security: use `shlex.split()` + `shell=False` to prevent injection.
 - Added `notifier_enabled` and `notifier_cmd` config options.
+
 ### Fixed
 - Version consistency across all files (1.0.3).
 
 ## [1.0.2] - 2026-09-17
+
 ### Added
 - Bump version to 1.0.2 for release.
 
 ## [1.0.1] - 2026-09-14
+
 ### Added
-- **TUI dependencies bundled in installer** — `textual` and `rich` packages now included as hidden imports in PyInstaller build (`build_dist.py` and `ObtainHub.spec`). The standalone `ohub.exe` and Inno Setup/MSI installers now include TUI dependencies out of the box — `ohub tui` works without requiring `pip install textual`.
-### Fixed
-- **`ohub state import` crash** — Fixed `'Namespace' object has no attribute 'file'` error when running `ohub state import <file>` without the optional `file` argument for export. Used `getattr(parsed, \"file\", None)` for safe attribute access.
-- **Self-update ohub.exe conflict** — Added `CloseApplications=yes`, `CloseApplicationsFilter={#AppExeName}`, `RestartApplications=yes` to Inno Setup script. The installer now detects running `ohub.exe` instances and prompts the user to close them before replacing the binary, eliminating the \"file in use\" error during self-update.
-- **Help text improvements** — Added descriptive help text to all subcommand actions (`schedule enable/disable/status/run`, `group add/remove/delete/install/update/check`, `shim add/remove/list/path`, `state export/import`, `tui --check-deps`) so `ohub <command> --help` shows meaningful descriptions.
+- TUI dependencies bundled in installer** — `textual` and `rich` packages now included as hidden imports in PyInstaller build (`build_dist.py` and `ObtainHub.spec`). The standalone `ohub.exe` and Inno Setup/MSI installers now include TUI dependencies out of the box — `ohub tui` works without requiring `pip install textual`.
+
 ### Changed
 - Version bumped to 1.0.1 (patch) — installer fixes and TUI dependency bundling.
 
+### Fixed
+- `ohub state import` crash** — Fixed `'Namespace' object has no attribute 'file'` error when running `ohub state import <file>` without the optional `file` argument for export. Used `getattr(parsed, \"file\", None)` for safe attribute access.
+- Self-update ohub.exe conflict** — Added `CloseApplications=yes`, `CloseApplicationsFilter={#AppExeName}`, `RestartApplications=yes` to Inno Setup script. The installer now detects running `ohub.exe` instances and prompts the user to close them before replacing the binary, eliminating the \"file in use\" error during self-update.
+- Help text improvements** — Added descriptive help text to all subcommand actions (`schedule enable/disable/status/run`, `group add/remove/delete/install/update/check`, `shim add/remove/list/path`, `state export/import`, `tui --check-deps`) so `ohub <command> --help` shows meaningful descriptions.
+
 ## [1.0.0] - 2026-09-13
+
 ### Added
-- **`ohub shim` subcommand** — portable shims for folder/zip apps. `add`/`remove`/`list`/`path` actions create lightweight `.exe` shims in a user-defined directory (`config.shim_dir`, default `~/bin/obtainhub`) that forward to the actual app executable, enabling PATH-less execution.
-- **`ohub state export/import`** — full state backup/restore. `export` outputs JSON with all managed apps, manifest cache, and check history. `import --dry-run` previews changes; `import` adds/updates apps with conflict handling (skips same/older versions).
-- **`ohub tui`** — terminal UI dashboard (Textual-based). Lists managed apps with current/latest versions and update status; row selection shows details (asset, repo, versions); keybindings: `r` refresh, `u` update, `c` check, `q` quit.
-- **Release notes preview (`--notes` flag)** — `ohub check --notes` and `ohub update --notes` show the GitHub release body (changelog) for available updates before installing. Truncates long bodies with link to full release.
-- **SHA256 from release notes** — `ohub check` parses release body for checksums (code blocks, tables, inline) and verifies downloaded assets against them when present. Falls back to asset hashing if not found.
-- **App groups / profiles (`ohub group`)** — `add`/`list`/`remove`/`install`/`update`/`check` actions. Groups store app lists (owner/repo) with optional versions; `ohub install @dev-tools` installs all; `ohub update @dev-tools` updates all.
-- **Winget/Scoop/Chocolatey fallback** — `ohub install/update/check` now queries Windows package managers when GitHub release has no suitable asset. Config options: `enable_winget`, `enable_scoop`, `enable_choco`, `prefer_native` (try native first). Adds `source: winget|scoop|chocolatey` to state.
-- **Pre/post install hooks** — per-app `pre_install`, `post_install` commands in state; `ohub install/update` run them with `APP_PATH`, `APP_VERSION`, `APP_NAME` env vars. Config `allow_hooks` (default true).
-- **Multi-architecture asset tracking** — `--arch` flag (`x64|arm64|x86|auto`) for `install`/`update`/`check`. Per-app `arch_preference` saved in state so future checks use the same architecture.
-- **`ohub schedule` subcommand** — manage scheduled background checks via Windows Task Scheduler or cron. `enable`/`disable`/`status`/`run` actions. Runs `ohub check --all --yes` on a configurable interval (default 24h). Persists `last_scheduled_check` timestamp in state.
+- `ohub shim` subcommand** — portable shims for folder/zip apps. `add`/`remove`/`list`/`path` actions create lightweight `.exe` shims in a user-defined directory (`config.shim_dir`, default `~/bin/obtainhub`) that forward to the actual app executable, enabling PATH-less execution.
+- `ohub state export/import`** — full state backup/restore. `export` outputs JSON with all managed apps, manifest cache, and check history. `import --dry-run` previews changes; `import` adds/updates apps with conflict handling (skips same/older versions).
+- `ohub tui`** — terminal UI dashboard (Textual-based). Lists managed apps with current/latest versions and update status; row selection shows details (asset, repo, versions); keybindings: `r` refresh, `u` update, `c` check, `q` quit.
+- Release notes preview (`--notes` flag)** — `ohub check --notes` and `ohub update --notes` show the GitHub release body (changelog) for available updates before installing. Truncates long bodies with link to full release.
+- SHA256 from release notes** — `ohub check` parses release body for checksums (code blocks, tables, inline) and verifies downloaded assets against them when present. Falls back to asset hashing if not found.
+- App groups / profiles (`ohub group`)** — `add`/`list`/`remove`/`install`/`update`/`check` actions. Groups store app lists (owner/repo) with optional versions; `ohub install @dev-tools` installs all; `ohub update @dev-tools` updates all.
+- Winget/Scoop/Chocolatey fallback** — `ohub install/update/check` now queries Windows package managers when GitHub release has no suitable asset. Config options: `enable_winget`, `enable_scoop`, `enable_choco`, `prefer_native` (try native first). Adds `source: winget|scoop|chocolatey` to state.
+- Pre/post install hooks** — per-app `pre_install`, `post_install` commands in state; `ohub install/update` run them with `APP_PATH`, `APP_VERSION`, `APP_NAME` env vars. Config `allow_hooks` (default true).
+- Multi-architecture asset tracking** — `--arch` flag (`x64|arm64|x86|auto`) for `install`/`update`/`check`. Per-app `arch_preference` saved in state so future checks use the same architecture.
+- `ohub schedule` subcommand** — manage scheduled background checks via Windows Task Scheduler or cron. `enable`/`disable`/`status`/`run` actions. Runs `ohub check --all --yes` on a configurable interval (default 24h). Persists `last_scheduled_check` timestamp in state.
+
 ### Changed
 - Version bumped to 1.0.0 (major) — feature complete release with all 9 planned features implemented.
 - Config added: `shim_dir`, `allow_hooks`, `enable_winget`, `enable_scoop`, `enable_choco`, `prefer_native`, `schedule_enabled`, `schedule_interval_hours`, `schedule_notify_on_update`, `schedule_run_on_startup`.
+
 ### Fixed
 - All 153 tests pass.
 
 ## [0.7.7.0] - 2026-08-26
+
 ### Added
-- **`ohub schedule` subcommand** — manage scheduled background checks via Windows Task Scheduler or cron. `enable`/`disable`/`status`/`run` actions. Runs `ohub check --all --yes` on a configurable interval (default 24h). Persists `last_scheduled_check` timestamp in state.
-- **Multi-architecture asset tracking** — `--arch` flag (`x64|arm64|x86|auto`) for `install`/`update`/`check`. Per-app `arch_preference` saved in state so future checks use the same architecture. Config options `prefer_x64`, `allow_x86_fallback`, `allow_arm64` now exposed via CLI.
+- `ohub schedule` subcommand** — manage scheduled background checks via Windows Task Scheduler or cron. `enable`/`disable`/`status`/`run` actions. Runs `ohub check --all --yes` on a configurable interval (default 24h). Persists `last_scheduled_check` timestamp in state.
+- Multi-architecture asset tracking** — `--arch` flag (`x64|arm64|x86|auto`) for `install`/`update`/`check`. Per-app `arch_preference` saved in state so future checks use the same architecture. Config options `prefer_x64`, `allow_x86_fallback`, `allow_arm64` now exposed via CLI.
+
 ### Fixed
 - None
 
 ## [0.7.6.10] - 2026-08-23
+
 ### Fixed
-- **Self-version detection with multiple installs (EXE + MSI).** Installing ObtainHub via both the EXE setup and the MSI left two `DisplayName=\"ObtainHub\"` registry entries (different product codes). `ohub check` then read the first one alphabetically, which could be the *older* version, so it wrongly reported \"current 0.7.6.7, latest 0.7.6.9 → UPDATE AVAILABLE\" even though 0.7.6.9 was installed. `_refresh_installed_version` now picks the **highest** version among all matching registry entries, not the first. Regression test added.
-### Fixed
-- **Self-update when ohub is running deferred.** If `ohub self-update` is invoked while `ohub.exe` is the current process, the command now detects the running instance via `tasklist` (stdlib, Windows-only; on other OSes it gracefully skips), prints a clear message that update will be deferred until the next process exit, and returns 0 immediately. The Inno/NSIS installer can then replace the executable when ohub exits. A Windows Task Scheduler trigger can run periodic background checks: `ohub check --all --timeout 300`.
+- Self-update when ohub is running deferred.** If `ohub self-update` is invoked while `ohub.exe` is the current process, the command now detects the running instance via `tasklist` (stdlib, Windows-only; on other OSes it gracefully skips), prints a clear message that update will be deferred until the next process exit, and returns 0 immediately. The Inno/NSIS installer can then replace the executable when ohub exits. A Windows Task Scheduler trigger can run periodic background checks: `ohub check --all --timeout 300`.
+
 ## [0.7.6.8] - 2026-08-22
+
 ### Added
-- **`ohub source verify <name>` subcommand** — validates a custom source by fetching it and confirming it serves installable content. GitHub sources check for releases with assets; manifest sources verify a parseable JSON list. No external tools required; uses the existing Downloader + requests.
-- **Progressive timeout fallback** — the `--timeout` flag (default 90s from config `check_timeout_seconds`) supports progressive query fallbacks via `_progressive_queries()` and `_clean_app_query()` helpers; if the first (cleaned) search times out or returns no results, the loop automatically tries progressively shorter cleaned names, then the raw name, before giving up. Wired into the unmanaged apps loop in `cmd_check`.
-- **`--json` flag on `ohub check`** — already existed; outputs results as JSON via `print(json.dumps(results, indent=2))` instead of human-readable lines. No code change needed; flag was already implemented.
+- `ohub source verify <name>` subcommand** — validates a custom source by fetching it and confirming it serves installable content. GitHub sources check for releases with assets; manifest sources verify a parseable JSON list. No external tools required; uses the existing Downloader + requests.
+- Progressive timeout fallback** — the `--timeout` flag (default 90s from config `check_timeout_seconds`) supports progressive query fallbacks via `_progressive_queries()` and `_clean_app_query()` helpers; if the first (cleaned) search times out or returns no results, the loop automatically tries progressively shorter cleaned names, then the raw name, before giving up. Wired into the unmanaged apps loop in `cmd_check`.
+- `--json` flag on `ohub check`** — already existed; outputs results as JSON via `print(json.dumps(results, indent=2))` instead of human-readable lines. No code change needed; flag was already implemented.
+
 ### Fixed
-- **Installing a ZIP-only release no longer crashes.** `ohub install <owner/repo>` for a repo whose latest release contains only a `.zip` (no MSI/EXE setup) failed with `'Namespace' object has no attribute 'name'` / \"Failed to install archive\". Root cause: the install command read `parsed.name`, but the `install` subparser has no `--name` flag (only `add` does). Fix: fall back to the repo name via `getattr(parsed, \"name\", \"\") or repo`. Regression tests added.
+- Installing a ZIP-only release no longer crashes.** `ohub install <owner/repo>` for a repo whose latest release contains only a `.zip` (no MSI/EXE setup) failed with `'Namespace' object has no attribute 'name'` / \"Failed to install archive\". Root cause: the install command read `parsed.name`, but the `install` subparser has no `--name` flag (only `add` does). Fix: fall back to the repo name via `getattr(parsed, \"name\", \"\") or repo`. Regression tests added.
+
 ## [0.7.6.7] - 2026-08-21
-### Fixed
-- **Installing a ZIP-only release no longer crashes.** `ohub install <owner/repo>` for a repo whose latest release contains only a `.zip` (no MSI/EXE setup) failed with `'Namespace' object has no attribute 'name'` / \"Failed to install archive\". Root cause: the install command read `parsed.name`, but the `install` subparser has no `--name` flag (only `add` does). Fix: fall back to the repo name via `getattr(parsed, \"name\", \"\") or repo`. Regression tests added.
-- **Source `verify` subcommand added.** `ohub source verify <name>` now validates a custom source by fetching it and confirming it serves installable content (GitHub releases with assets, or a valid JSON manifest list). Returns success/failure with a descriptive message. No certificate or external tool required; uses the existing Downloader + requests.
+
 ### Changed
-- **Release binaries remain unsigned (code signing deferred).** The `release.yml` workflow has code-signing support wired in (Azure Trusted Signing or PFX certificate from GitHub secrets), but no certificate is configured yet — so current releases ship unsigned and Windows SmartScreen will warn on first run. Code signing will be enabled later once a certificate is available.
+- Release binaries remain unsigned (code signing deferred).** The `release.yml` workflow has code-signing support wired in (Azure Trusted Signing or PFX certificate from GitHub secrets), but no certificate is configured yet — so current releases ship unsigned and Windows SmartScreen will warn on first run. Code signing will be enabled later once a certificate is available.
+
+### Fixed
+- Installing a ZIP-only release no longer crashes.** `ohub install <owner/repo>` for a repo whose latest release contains only a `.zip` (no MSI/EXE setup) failed with `'Namespace' object has no attribute 'name'` / \"Failed to install archive\". Root cause: the install command read `parsed.name`, but the `install` subparser has no `--name` flag (only `add` does). Fix: fall back to the repo name via `getattr(parsed, \"name\", \"\") or repo`. Regression tests added.
+- Source `verify` subcommand added.** `ohub source verify <name>` now validates a custom source by fetching it and confirming it serves installable content (GitHub releases with assets, or a valid JSON manifest list). Returns success/failure with a descriptive message. No certificate or external tool required; uses the existing Downloader + requests.
+
 ## [0.7.6.5] - 2026-08-13
+
 ### Fixed
-- **Version comparison no longer ignores the 4th segment.** `parse_version` truncated versions to 3 parts (`0.7.6.3` and `0.7.6.4` both became `(0,7,6)`), so `ohub check` reported \"Up to date\" even when a newer patch release existed (e.g. current 0.7.6.3 vs latest 0.7.6.4). Now all segments are kept; short versions still pad (1.2 → (1,2,0)). Regression tests added.
+- Version comparison no longer ignores the 4th segment.** `parse_version` truncated versions to 3 parts (`0.7.6.3` and `0.7.6.4` both became `(0,7,6)`), so `ohub check` reported \"Up to date\" even when a newer patch release existed (e.g. current 0.7.6.3 vs latest 0.7.6.4). Now all segments are kept; short versions still pad (1.2 → (1,2,0)). Regression tests added.
+
 ## [0.7.6.4] - 2026-08-13
+
 ### Fixed
-- **GitHub apps no longer falsely flagged as manually removed.** `ohub check` treated any managed app whose recorded `install_location` was missing on disk as removed. For setup-installed (GitHub) apps that path is often empty or stale, so valid installs were wrongly dropped. `install_location` is now only authoritative for folder/zip apps; GitHub apps are checked against the **system registry** (Programs & Features) instead — present there means keep it. Regression tests added.
+- GitHub apps no longer falsely flagged as manually removed.** `ohub check` treated any managed app whose recorded `install_location` was missing on disk as removed. For setup-installed (GitHub) apps that path is often empty or stale, so valid installs were wrongly dropped. `install_location` is now only authoritative for folder/zip apps; GitHub apps are checked against the **system registry** (Programs & Features) instead — present there means keep it. Regression tests added.
+
 ## [0.7.6.3] - 2026-08-13
-### Fixed
-- **`ohub uninstall` no longer launches the install wizard.** Uninstall ran the cached *setup* exe, which re-opens the install/repair wizard instead of uninstalling. It now reads the real uninstaller from the Windows registry `UninstallString` (e.g. `unins000.exe`) and runs that — both interactively and silently. Falls back to the cached setup exe with uninstall flags only when no registry entry exists. Regression tests added.
-- **`ohub self-update --force` now works.** When already at the latest version, `check_for_update` raised \"already latest\" and the force flag was ignored (no reinstall happened). `--force` now re-fetches the release and reinstalls. Regression test added.
-- **`X` cancels any select list.** Every interactive picker (`ohub check`, asset/version selection, candidate menus) now accepts `X` (in addition to `0`) to exit/cancel cleanly.
-### Docs
-- Removed real app names (`v2rayN`, `OnionHop`, `qBittorrent`, `qimgv`) from README and CHANGELOG; replaced with generic samples (`MyApp`, `MyTool`, `owner/myrepo`, `folder:myapp`).
-## [0.7.6.1] - 2026-08-13
-### Fixed
-- **Folder/zip apps no longer prompt for an asset when already up to date.** `ohub check` was listing available ZIP assets and asking the user to pick one even when the app was already at the latest version (e.g. `MyApp` showing \"Up to date\" yet prompting `Select asset to track`). The asset picker now only appears when an update is actually available.
-### Docs
-- README: added two concrete custom-source examples (a GitHub repo source like `owner/myrepo`, and a non-GitHub JSON manifest source).
-## [0.7.6.0] - 2026-08-13
+
 ### Added
-- **Interactive install / update / uninstall.** On a TTY without `--yes`, ohub launches the installer/uninstaller **visibly** (no silent flags) so you drive the wizard; `--interactive` forces this, `--yes` stays silent for automation. (`ohub install/update/uninstall --interactive`)
-- **Verify by system state, not exit code.** After the installer exits, ohub re-reads the Windows Registry / install location. Install is only recorded in `state.json` if the app is actually present; otherwise it reports `not detected` and does NOT write state. Uninstall already re-checked the registry and keeps the app managed on failure (from 0.7.5.0). This closes the gap for the long tail of apps ohub can't fully automate.
+- Removed real app names (`v2rayN`, `OnionHop`, `qBittorrent`, `qimgv`) from README and CHANGELOG; replaced with generic samples (`MyApp`, `MyTool`, `owner/myrepo`, `folder:myapp`).
+
+### Fixed
+- `ohub uninstall` no longer launches the install wizard.** Uninstall ran the cached *setup* exe, which re-opens the install/repair wizard instead of uninstalling. It now reads the real uninstaller from the Windows registry `UninstallString` (e.g. `unins000.exe`) and runs that — both interactively and silently. Falls back to the cached setup exe with uninstall flags only when no registry entry exists. Regression tests added.
+- `ohub self-update --force` now works.** When already at the latest version, `check_for_update` raised \"already latest\" and the force flag was ignored (no reinstall happened). `--force` now re-fetches the release and reinstalls. Regression test added.
+- `X` cancels any select list.** Every interactive picker (`ohub check`, asset/version selection, candidate menus) now accepts `X` (in addition to `0`) to exit/cancel cleanly.
+
+## [0.7.6.1] - 2026-08-13
+
+### Added
+- README: added two concrete custom-source examples (a GitHub repo source like `owner/myrepo`, and a non-GitHub JSON manifest source).
+
+### Fixed
+- Folder/zip apps no longer prompt for an asset when already up to date.** `ohub check` was listing available ZIP assets and asking the user to pick one even when the app was already at the latest version (e.g. `MyApp` showing \"Up to date\" yet prompting `Select asset to track`). The asset picker now only appears when an update is actually available.
+
+## [0.7.6.0] - 2026-08-13
+
+### Added
+- Interactive install / update / uninstall.** On a TTY without `--yes`, ohub launches the installer/uninstaller **visibly** (no silent flags) so you drive the wizard; `--interactive` forces this, `--yes` stays silent for automation. (`ohub install/update/uninstall --interactive`)
+- Verify by system state, not exit code.** After the installer exits, ohub re-reads the Windows Registry / install location. Install is only recorded in `state.json` if the app is actually present; otherwise it reports `not detected` and does NOT write state. Uninstall already re-checked the registry and keeps the app managed on failure (from 0.7.5.0). This closes the gap for the long tail of apps ohub can't fully automate.
+
 ### Fixed
 - `ohub check` re-reads the installed version from the system registry so updates performed outside ohub (including self-update) are detected (0.7.5.3).
-- **`ohub check` now detects versions updated OUTSIDE ohub.** Previously `ohub check` compared against its own stored version, so if you updated an app manually (or ohub self-updated), the recorded version stayed stale and `check` wrongly reported \"up to date\". `ohub check` now re-reads the actually-installed version from the system registry (Programs & Features) for every managed app and updates its state. Self-update is detected too: after the detached installer replaces `ohub.exe`, the next `ohub check` picks up the new version (registry name \"ObtainHub X.Y.Z\" matched against the stored \"ObtainHub\").
+- `ohub check` now detects versions updated OUTSIDE ohub.** Previously `ohub check` compared against its own stored version, so if you updated an app manually (or ohub self-updated), the recorded version stayed stale and `check` wrongly reported \"up to date\". `ohub check` now re-reads the actually-installed version from the system registry (Programs & Features) for every managed app and updates its state. Self-update is detected too: after the detached installer replaces `ohub.exe`, the next `ohub check` picks up the new version (registry name \"ObtainHub X.Y.Z\" matched against the stored \"ObtainHub\").
+
 ## [0.7.5.2] - 2026-08-13
+
 ### Fixed
-- **`ohub check --all` single-select no longer scans everything.** A post-menu recompute of the unmanaged-app list was clobbering the \"skip unmanaged scan\" flag set when you pick a single managed app. Removed it. Verified by a regression test: selecting one managed app now checks only that app (`search_repositories` is never called for the other 60+ system apps).
-- **`ohub check --all --candidates` timeout raised.** The per-repo GitHub search timeout was hard-capped at 60s (default 20s), so slow/unauthenticated searches timed out before returning candidates. Default is now **90s** and the cap is **300s** (`check_timeout_seconds` config validated 10-300; `--timeout` accepts up to 300). Pass `--timeout 180` for very slow links.
+- `ohub check --all` single-select no longer scans everything.** A post-menu recompute of the unmanaged-app list was clobbering the \"skip unmanaged scan\" flag set when you pick a single managed app. Removed it. Verified by a regression test: selecting one managed app now checks only that app (`search_repositories` is never called for the other 60+ system apps).
+- `ohub check --all --candidates` timeout raised.** The per-repo GitHub search timeout was hard-capped at 60s (default 20s), so slow/unauthenticated searches timed out before returning candidates. Default is now **90s** and the cap is **300s** (`check_timeout_seconds` config validated 10-300; `--timeout` accepts up to 300). Pass `--timeout 180` for very slow links.
+
 ## [0.7.5.1] - 2026-08-13
+
 ### Fixed
-- **`ohub self-update` no longer hangs.** The update installer is now launched **detached** (non-blocking) and `ohub` exits immediately afterward, so the installer can replace the running `ohub.exe` (which it couldn't while ohub was still running). Previously `ohub` waited on the installer, which waited on `ohub` to exit — a deadlock. The command now prints \"Update started — ohub will exit\" and you restart ohub once the install finishes.
+- `ohub self-update` no longer hangs.** The update installer is now launched **detached** (non-blocking) and `ohub` exits immediately afterward, so the installer can replace the running `ohub.exe` (which it couldn't while ohub was still running). Previously `ohub` waited on the installer, which waited on `ohub` to exit — a deadlock. The command now prints \"Update started — ohub will exit\" and you restart ohub once the install finishes.
+
 ## [0.7.5.0] - 2026-08-13
+
 ### Fixed
-- **Manual removal of managed apps is now detected.** `ohub check` checks each managed app's install location (any type) and, for GitHub apps, also cross-checks the system registry (Programs & Features). A managed app that's gone is removed from ohub state with a clear message instead of being silently kept / erroring.
-- **`ohub install` detects an already-installed app.** If the app is already in the system (installed by the user, not ohub), `ohub install` now says so and tells the user to run `ohub check` to let ohub manage it — instead of reinstalling and reporting false success. Use `ohub install owner/repo --force` to reinstall anyway.
-- **`ohub uninstall` verifies completion.** After the uninstaller runs, ohub re-checks the system registry; if the app is still present it reports \"still present / permission issue - run as administrator\" and keeps it in ohub management so you can retry, instead of claiming success.
+- Manual removal of managed apps is now detected.** `ohub check` checks each managed app's install location (any type) and, for GitHub apps, also cross-checks the system registry (Programs & Features). A managed app that's gone is removed from ohub state with a clear message instead of being silently kept / erroring.
+- `ohub install` detects an already-installed app.** If the app is already in the system (installed by the user, not ohub), `ohub install` now says so and tells the user to run `ohub check` to let ohub manage it — instead of reinstalling and reporting false success. Use `ohub install owner/repo --force` to reinstall anyway.
+- `ohub uninstall` verifies completion.** After the uninstaller runs, ohub re-checks the system registry; if the app is still present it reports \"still present / permission issue - run as administrator\" and keeps it in ohub management so you can retry, instead of claiming success.
+
 ## [0.7.4.4] - 2026-08-13
+
 ### Fixed
-- **Apps with messy names reliably found (hardening).** `search_repositories` no longer drops GitHub-matched results when the strict case-insensitive substring filter would leave zero hits — it now trusts GitHub's relevance ranking instead of nuking valid matches. `ohub check`'s progressive-query fallback also no longer aborts on a transient non-rate-limit error, so it keeps trying cleaner/shorter/raw-name queries.
+- Apps with messy names reliably found (hardening).** `search_repositories` no longer drops GitHub-matched results when the strict case-insensitive substring filter would leave zero hits — it now trusts GitHub's relevance ranking instead of nuking valid matches. `ohub check`'s progressive-query fallback also no longer aborts on a transient non-rate-limit error, so it keeps trying cleaner/shorter/raw-name queries.
 - Verified end-to-end: `MyTool V3 version 3.7.10` -> cleaned `mytool` -> exact match `owner/MyTool` -> linked.
+
 ## [0.7.4.3] - 2026-08-13
+
 ### Fixed
-- **`ohub check --all` no longer lists ohub itself.** The unmanaged-app filter now excludes any registry entry whose name starts with a managed app's name (so \"ObtainHub 0.7.4.3\" is hidden even though the managed name is \"ObtainHub\").
-- **Apps with messy names are now found.** `ohub check` cleans the registry name before searching GitHub — stripping all version-like tokens (e.g. \"MyTool V3 version 3.7.10\" -> \"MyTool\") — and falls back through progressively shorter queries, then the raw name, until a repository is found. Names that mix letters and digits (e.g. \"MyTool2\") are kept.
+- `ohub check --all` no longer lists ohub itself.** The unmanaged-app filter now excludes any registry entry whose name starts with a managed app's name (so \"ObtainHub 0.7.4.3\" is hidden even though the managed name is \"ObtainHub\").
+- Apps with messy names are now found.** `ohub check` cleans the registry name before searching GitHub — stripping all version-like tokens (e.g. \"MyTool V3 version 3.7.10\" -> \"MyTool\") — and falls back through progressively shorter queries, then the raw name, until a repository is found. Names that mix letters and digits (e.g. \"MyTool2\") are kept.
+
 ## [0.7.4.2] - 2026-08-13
+
 ### Fixed
-- **`ohub check --all --candidates` now works.** The candidate list is always shown when repositories are found (the exact-match fast path no longer skipped it). The exact match is marked with `<=` in the list.
-- **Version numbers in app names no longer block matching.** The exact-match comparison now uses the version-stripped name (e.g. \"MyTool 6.0\" matches repo `MyTool`). A fallback search with the raw name runs when the stripped query finds nothing.
+- `ohub check --all --candidates` now works.** The candidate list is always shown when repositories are found (the exact-match fast path no longer skipped it). The exact match is marked with `<=` in the list.
+- Version numbers in app names no longer block matching.** The exact-match comparison now uses the version-stripped name (e.g. \"MyTool 6.0\" matches repo `MyTool`). A fallback search with the raw name runs when the stripped query finds nothing.
+
 ## [0.7.4.1] - 2026-08-13
+
 ### Fixed
-- **`ohub check` crash** (`NameError: name 'a' is not defined`) — the unmanaged-app filter built its install-location set as a literal referencing an undefined comprehension variable. Now computed via proper comprehensions over the managed apps.
+- `ohub check` crash** (`NameError: name 'a' is not defined`) — the unmanaged-app filter built its install-location set as a literal referencing an undefined comprehension variable. Now computed via proper comprehensions over the managed apps.
+
 ## [0.7.4.0] - 2026-08-13
+
 ### Fixed
-- **Ohub now appears in the managed list.** Its own repo (`DavoudTeimouri/ObtainHub`) is registered as a managed app on startup, so `ohub list` / `ohub check` / `ohub update` include it and self-update stays consistent.
-- **`ohub check` crash** (\"cannot access local variable 'app'\") fixed — renamed the leaked comprehension variable that shadowed the managed-app loop variable.
-- **Cancel now aborts.** In `ohub update` and `ohub install`, selecting cancel (0) at the installer-choice prompt stops that app instead of continuing with a default.
+- Ohub now appears in the managed list.** Its own repo (`DavoudTeimouri/ObtainHub`) is registered as a managed app on startup, so `ohub list` / `ohub check` / `ohub update` include it and self-update stays consistent.
+- `ohub check` crash** (\"cannot access local variable 'app'\") fixed — renamed the leaked comprehension variable that shadowed the managed-app loop variable.
+- Cancel now aborts.** In `ohub update` and `ohub install`, selecting cancel (0) at the installer-choice prompt stops that app instead of continuing with a default.
+
 ## [0.7.3.0] - 2026-08-13
+
 ### Fixed
-- **Self-managed apps no longer re-detected as unmanaged.** In `ohub check --all`, apps ohub already manages (by name or install location) are excluded from the system scan.
-- **`ohub check` now handles folder/portable apps** like `ohub update` does — it searches GitHub by the app's name when no `owner/repo` is linked, instead of reporting \"cannot resolve remote\".
-- **`ohub check` candidate fallback:** search query now strips version numbers (e.g. \"App 1.2.3\" -> \"App\"). Without `--candidates`, the best-starred repo is offered as the match; with `--candidates` a numbered list is shown.
+- Self-managed apps no longer re-detected as unmanaged.** In `ohub check --all`, apps ohub already manages (by name or install location) are excluded from the system scan.
+- `ohub check` now handles folder/portable apps** like `ohub update` does — it searches GitHub by the app's name when no `owner/repo` is linked, instead of reporting \"cannot resolve remote\".
+- `ohub check` candidate fallback:** search query now strips version numbers (e.g. \"App 1.2.3\" -> \"App\"). Without `--candidates`, the best-starred repo is offered as the match; with `--candidates` a numbered list is shown.
+
 ## [0.7.2.0] - 2026-08-13
+
+### Changed
+- Every interactive selection now offers a numbered **Cancel/Skip** option.
+
 ### Fixed
 - Extraction `PermissionError` now tells the user to **close the running app** and retry (or run as admin / pick an owned folder).
 - Custom sources in the legacy top-level `sources` key are now migrated into `manifest_sources` (they were previously ignored). The bogus built-in `default` manifest source was removed.
 - `ohub source add --type` is now stored; sources without installable content (no releases/assets, or non-JSON) are rejected.
 - Global config directory (`%ProgramData%\\ObtainHub`) is created automatically if missing.
-### Changed
-- Every interactive selection now offers a numbered **Cancel/Skip** option.
+
 ## [0.7.1.0] - 2026-08-13
+
 ### Added
 - `ohub check` now also discovers unmanaged system apps in **custom sources** (non-GitHub). When a registry app's name matches a source entry, ohub offers to install/update it from that source; the match is recorded so future checks skip it.
+
 ## [0.7.0.0] - 2026-08-13
+
 ### Added
-- **Install/update from custom sources (non-GitHub).** `ohub source add <name> <url> --type github|manifest` registers a source; `ohub install` / `ohub update` now fall back to these sources when a `owner/repo` is not found on GitHub.
-  - `--type github` sources read releases/assets from any GitHub repo URL or `.../releases` API.
-  - `--type manifest` sources read a JSON list of apps (`[{\"name\",\"version\",\"url\",\"installer_type\",\"sha256?\",\"size?\"}]`) served over HTTP.
+- Install/update from custom sources (non-GitHub).** `ohub source add <name> <url> --type github|manifest` registers a source; `ohub install` / `ohub update` now fall back to these sources when a `owner/repo` is not found on GitHub.
+- `--type github` sources read releases/assets from any GitHub repo URL or `.../releases` API.
+- `--type manifest` sources read a JSON list of apps (`[{\"name\",\"version\",\"url\",\"installer_type\",\"sha256?\",\"size?\"}]`) served over HTTP.
 - Apps installed from a source are recorded with their `source` name; `ohub update` checks them against the source for newer versions. `ohub uninstall`/`ohub remove` drops them from ohub (the shared source stays).
+
 ### Changed
 - `ohub source add` now stores the source `type` and validates reachability/contents before accepting it.
+

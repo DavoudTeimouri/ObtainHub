@@ -63,7 +63,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v1.0.1 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v1.0.4 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -1032,15 +1032,6 @@ def cmd_install(
             return _install_from_source(entry, source_name, parsed, config_manager, state_manager)
         print(f"Error: No release found for {app_id}", file=sys.stderr)
         return 1
-
-    # Check prerelease
-    if release.get('prerelease') and not parsed.prerelease:
-        print(f"Warning: {release.tag_name} is a prerelease. Use --prerelease to install.")
-        if not parsed.yes:
-            confirm = input("Continue anyway? [y/N]: ").strip().lower()
-            if confirm != "y":
-                print("Cancelled.")
-                return 1
 
     # Check prerelease
     if release.get('prerelease') and not parsed.prerelease:
