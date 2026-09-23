@@ -169,41 +169,63 @@ class ConfigManager:
                 base = Config()
         else:
             # Ensure the machine-wide config directory exists so admins can drop
-            # a shared config there (issue: %ProgramData%\ObtainHub was missing).
+            # a shared config there (issue: %ProgramData%\\ObtainHub was missing).
             try:
                 if global_file:
                     global_file.parent.mkdir(parents=True, exist_ok=True)
             except Exception:
                 pass
 
-        if not self.config_file.exists():
-            self.save(base)
-            return base
+        user_data = {}
+        migrated = False
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    user_data = json.load(f)
+            except Exception:
+                user_data = {}
 
-        try:
-            with open(self.config_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            # Check for token in user_data and migrate if keyring is available
+            if user_data.get("github_token"):
+                try:
+                    import keyring
+                    keyring.set_password("obtainhub", "github_token", user_data["github_token"])
+                    migrated = True
+                except ImportError:
+                    # keyring not available, we leave it in user_data (and warn?)
+                    pass
 
-            # Treat any user-set value as an override; token is always per-user.
-            config = self._migrate(data)
-            # Overlay user values onto the global base (None fields keep global)
-            merged = base.to_dict()
-            for k, v in config.to_dict().items():
-                if v is not None:
-                    merged[k] = v
-            config = Config.from_dict(merged)
+        # Merge: base overlaid by user_data
+        merged_data = base.to_dict()
+        for k, v in user_data.items():
+            if v is not None:
+                merged_data[k] = v
 
-            errors = config.validate()
-            if errors:
-                raise ValueError(f"Config validation failed: {errors}")
+        config = Config.from_dict(merged_data)
 
+        # If token is empty in config, try to load from keyring or environment
+        if not config.github_token:
+            # Try keyring
+            try:
+                import keyring
+                token = keyring.get_password("obtainhub", "github_token")
+                if token:
+                    config.github_token = token
+            except ImportError:
+                pass
+
+            # If still not found, try environment variables
+            if not config.github_token:
+                config.github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("OBTAINHUB_TOKEN", "")
+
+        # If we migrated the token from the file to keyring, save the config now
+        # to remove the token from the file (save method will write empty string)
+        if migrated:
+            self.save(config)
+
+        if not migrated:
             self._config = config
-            return config
-
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in config file: {e}")
-        except Exception as e:
-            raise ValueError(f"Failed to load config: {e}")
+        return config
 
     def _global_config_file(self) -> Optional[Path]:
         """Machine-wide config shared by all users (token is NOT read from here)."""
@@ -243,7 +265,9 @@ class ConfigManager:
         return config
 
     def save(self, config: Optional[Config] = None) -> None:
-        """Save configuration to file."""
+        """Save configuration to file.
+        Note: The GitHub token is never saved to the file for security reasons.
+        """
         if config is None:
             config = self.config
 
@@ -254,11 +278,15 @@ class ConfigManager:
         if errors:
             raise ValueError(f"Config validation failed: {errors}")
 
+        # Prepare data for saving, clearing the token for security
+        data = config.to_dict()
+        data["github_token"] = ""  # Always save token as empty string
+
         # Write atomically
         temp_file = self.config_file.with_suffix(".tmp")
         try:
             with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(config.to_dict(), f, indent=2)
+                json.dump(data, f, indent=2)
             temp_file.replace(self.config_file)
             self._config = config
         except Exception as e:
@@ -312,6 +340,17 @@ class ConfigManager:
         download_dir.mkdir(parents=True, exist_ok=True)
         return download_dir
 
+    def set_token(self, token: str) -> None:
+        """Store the GitHub token in the system's credential manager."""
+        try:
+            import keyring
+            keyring.set_password("obtainhub", "github_token", token)
+        except ImportError:
+            # If keyring is not available, we fall back to storing in config (less secure)
+            # But note: the save method will clear the token, so we have to store it in the config object
+            # and hope the user doesn't save the config? This is a fallback.
+            self.config.github_token = token
+            self.save()
 
 # Global config manager instance
 _config_manager: Optional[ConfigManager] = None

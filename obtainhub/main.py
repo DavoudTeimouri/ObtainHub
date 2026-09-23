@@ -1,3 +1,10 @@
+try:
+    import keyring
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
+    keyring = None
+
 """ObtainHub CLI entry point."""
 
 import sys
@@ -6,10 +13,12 @@ import argparse
 import signal
 import time
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import logging
 from obtainhub.core.config import get_config_manager, ConfigManager, ManifestSource
 from obtainhub.core.state import get_state_manager, StateManager, CheckHistoryEntry
 from obtainhub.core.logger import setup_logging, get_logger, LogLevel
@@ -63,7 +72,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v1.0.5 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v1.0.6 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -332,6 +341,24 @@ def main(args: Optional[List[str]] = None) -> int:
     tui_parser = subparsers.add_parser("tui", help="Launch terminal UI dashboard (requires 'textual' package)")
     tui_parser.add_argument("--check-deps", action="store_true", help="Check if TUI dependencies are installed")
 
+    # reset
+    reset_parser = subparsers.add_parser("reset", help="Reset ohub state and configuration")
+    reset_parser.add_argument(
+        "--backup",
+        metavar="PATH",
+        help="Directory to backup state and config files (default: timestamped directory in state file location)"
+    )
+    reset_parser.add_argument(
+        "--keep-token",
+        action="store_true",
+        help="Keep the GitHub token in the config after reset"
+    )
+    reset_parser.add_argument(
+        "--move-token",
+        metavar="PATH",
+        help="Move the GitHub token to the specified file (removed from config)"
+    )
+
     parsed = parser.parse_args(args)
 
     if not parsed.command:
@@ -421,6 +448,8 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_state(parsed, config_manager, state_manager, logger)
         elif parsed.command == "tui":
             return cmd_tui(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "reset":
+            return cmd_reset(parsed, config_manager, state_manager, logger)
         else:
             parser.print_help()
             return 1
@@ -3019,6 +3048,78 @@ Status: {app_data['status']}
     app.run()
     return 0
 
+
+def cmd_reset(parsed: argparse.Namespace, config_manager: ConfigManager, state_manager: StateManager, logger: logging.Logger) -> int:
+    """Reset ohub state and configuration."""
+    backup_dir = parsed.backup
+    if backup_dir is None:
+        # Default: timestamped directory in the state file location
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_dir = state_manager.state_file.parent / f"obhub_backup_{timestamp}"
+    backup_dir = Path(backup_dir)
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Backup state.json and config.json
+    state_file = state_manager.state_file
+    config_file = config_manager.config_file
+    
+    if state_file.exists():
+        shutil.copy2(state_file, backup_dir / state_file.name)
+        logger.info(f"Backed up state to {backup_dir / state_file.name}")
+    if config_file.exists():
+        shutil.copy2(config_file, backup_dir / config_file.name)
+        logger.info(f"Backed up config to {backup_dir / config_file.name}")
+    
+    # Handle GitHub token from keyring
+    github_token = ""
+    if KEYRING_AVAILABLE:
+        try:
+            github_token = keyring.get_password("obtainhub", "github_token")
+            if github_token is None:
+                github_token = ""
+        except Exception:
+            github_token = ""
+    
+    # Handle token flags
+    if parsed.move_token:
+        # Move token to the specified file
+        token_file = Path(parsed.move_token)
+        token_file.write_text(github_token, encoding="utf-8")
+        logger.info(f"Moved GitHub token to {token_file}")
+        # Remove token from keyring
+        if KEYRING_AVAILABLE:
+            try:
+                keyring.delete_password("obtainhub", "github_token")
+            except Exception:
+                pass
+    elif not parsed.keep_token:
+        # If not keeping token, remove it from keyring
+        if KEYRING_AVAILABLE:
+            try:
+                keyring.delete_password("obtainhub", "github_token")
+            except Exception:
+                pass
+    # If keep_token, we leave the token in keyring (do nothing)
+    
+    # Create a new default config
+    new_config = Config()
+    # Note: The github_token field in new_config will be empty (default), 
+    # but the actual token is kept in keyring (if --keep-token) or moved.
+    # The ConfigManager.load will read the token from keyring on next startup.
+    
+    # Save the new config (this will overwrite the config file with empty token)
+    config_manager._config = new_config
+    config_manager.save()
+    
+    # Reset state to default
+    new_state_manager = StateManager()
+    state_manager.data = new_state_manager.data
+    state_manager.state_file = new_state_manager.state_file
+    state_manager.save()
+    
+    logger.info(f"Ohub state and configuration have been reset. Backup stored in: {backup_dir}")
+    print(f"Ohub state and configuration have been reset. Backup stored in: {backup_dir}")
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main())

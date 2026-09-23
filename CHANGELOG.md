@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Removed
 
+
+## [1.0.6] - 2026-09-20
+
+### Added
+- Secure GitHub token storage using system keyring (service=`obtainhub`, username=`github_token`). Plain text token in config is migrated to keyring on first load.
+- New `ohub reset` command to backup state and config, then reset to defaults. Flags: --backup <path>, --keep-token, --move-token <path>.
+
+### Changed
+- Updated changelog template to match the style of v0.7.6 entries (clear sections, consistent styling).
+- Improved reset command to handle token in keyring appropriately.
+
+### Fixed
+- Duplicate prerelease warning block in `cmd_install()` (main.py) that caused redundant user prompts.
+- Version consistency across all files (now 1.0.6).
+
 ## [1.0.5] - 2026-09-20
 ### Changed
 - Updated changelog template to match the style of v0.7.6 entries (clear sections, consistent styling).

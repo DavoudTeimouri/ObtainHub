@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "obtainhub"
-version = "1.0.5"
+version = "1.0.6"
 description = "GitHub-based Package Updater and Manager for Windows"
 readme = "README.md"
 license = {text = "MIT"}
@@ -22,7 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
 ]
-dependencies = []
+dependencies = ["keyring"]
 
 [project.optional-dependencies]
 dev = [
