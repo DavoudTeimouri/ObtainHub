@@ -77,10 +77,10 @@ Define scripts in your config or via manifest sources:
 ```json
 {
   "hooks": {
-    "pre_install": "echo \"Installing $APP_ID\"",
-    "post_install": "echo \"Done installing $APP_ID\"",
-    "pre_uninstall": "echo \"Preparing to uninstall $APP_ID\"",
-    "post_uninstall": "echo \"Uninstalled $APP_ID\""
+    "pre_install": "echo \\\"Installing $APP_ID\\\"",
+    "post_install": "echo \\\"Done installing $APP_ID\\\"",
+    "pre_uninstall": "echo \\\"Preparing to uninstall $APP_ID\\\"",
+    "post_uninstall": "echo \\\"Uninstalled $APP_ID\\\""
   }
 }
 ```
@@ -88,8 +88,7 @@ Define scripts in your config or via manifest sources:
 #### Groups
 
 ```powershell
-ohub config set groups.devtools=\"git-for-windows/vscode,PowerShell/PowerShell\"
-ohub install devtools  # installs all apps in the devtools group
+ohub config set groups.devtools=\\\"git-for-windows/vscode,PowerShell/PowerShell\\\"\nohub install devtools  # installs all apps in the devtools group
 ```
 
 #### Plugin System
@@ -103,10 +102,10 @@ from obtainhub.plugins.base import Plugin
 
 class ExamplePlugin(Plugin):
     def on_load(self):
-        print(f"[Plugin] {self.name} loaded")
+        print(f\"[Plugin] {self.name} loaded\")
 
     def on_update(self, app_id: str, current_version: str, latest_version: str):
-        print(f"[Plugin] {self.name}: {app_id} updated {current_version} -> {latest_version}")
+        print(f\"[Plugin] {self.name}: {app_id} updated {current_version} -> {latest_version}\")
 
     # ... other methods
 ```
@@ -120,7 +119,7 @@ Enable via config:
 ```powershell
 ohub config set notifier_enabled true
 # Optional: custom command
-ohub config set notifier_cmd "powershell -Command \"[reflection.assembly]::LoadWithPartialName('System.Windows.Forms');[System.Windows.Forms.MessageBox]::Show('Update available for $APP_ID')\""
+ohub config set notifier_cmd \"powershell -Command \\\"[reflection.assembly]::LoadWithPartialName('System.Windows.Forms');[System.Windows.Forms.MessageBox]::Show('Update available for $APP_ID')\\\"\"
 ```
 
 #### State Export/Import
@@ -128,8 +127,8 @@ ohub config set notifier_cmd "powershell -Command \"[reflection.assembly]::LoadW
 Backup or migrate your managed apps list:
 
 ```powershell
-ohub state export C:\backup\ohub_state.json
-ohub state import C:\backup\ohub_state.json
+ohub state export C:\\backup\\ohub_state.json
+ohub state import C:\\backup\\ohub_state.json
 ```
 
 Use `ohub state import --dry-run` to preview changes.
@@ -153,6 +152,83 @@ ohub config set allow_x86_fallback true
 ohub install owner/repo --arch x86
 ```
 
+#### Scheduled Checks
+
+Enable automatic background checks for updates via Windows Task Scheduler (or cron on other OSes).
+
+```powershell
+ohub schedule enable
+ohub schedule set-interval 12   # hours
+ohub schedule status
+```
+
+Configuration options:
+- `schedule_enabled`: boolean
+- `schedule_interval_hours`: integer (default 24)
+- `schedule_notify_on_update`: boolean (default false) - send a notification when updates are found
+- `schedule_run_on_startup`: boolean (default false) - run a check at user login
+
+See [Configuration](#configuration) for details.
+
+#### Shims
+
+Create portable shims (`.exe` files) that allow running apps from anywhere without adding their install directory to `PATH`.
+
+```powershell
+ohub shim add <app>   # create shim for managed app
+ohub shim remove <app> # remove shim
+ohub shim list        # list all shims
+ohub shim path        # show shim directory
+```
+
+Shims are created in the directory configured by `shim_dir` (default: `%USERPROFILE%\\bin\\obtainhub`). Add this directory to your `PATH` to use shims from any command line.
+
+#### TUI Dashboard
+
+Launch an interactive terminal user interface to browse, install, update, and remove apps.
+
+```powershell
+ohub tui
+```
+
+Keybindings:
+- `r`: refresh list
+- `u`: update selected app
+- `c`: check for updates
+- `x` or `Esc`: exit
+- `Enter`: view app details
+
+The TUI requires the `textual` and `rich` packages, which are bundled in the installer. In development environments, install them with `pip install textual rich`.
+
+#### Asset Caching
+
+Reduce GitHub API calls by caching release metadata using ETag and Last-Modified headers. This speeds up repeated checks and helps avoid rate limiting.
+
+The cache is stored in `%USERPROFILE%\\.cache\\obtainhub\\` and is automatically managed. No configuration is required.
+
+#### Parallel Checks
+
+Speed up `ohub check --all` by processing multiple repositories concurrently.
+
+The number of parallel workers is derived from the system's CPU count but can be influenced by the `check_timeout_seconds` configuration (higher timeout allows more retries, indirectly affecting parallelism). No direct configuration is needed; the feature is enabled by default.
+
+#### Incremental State
+
+State updates are performed incrementally, meaning only changed parts of the state file are rewritten. This reduces I/O and prevents corruption during concurrent access.
+
+No user action is required; this is an internal optimization.
+
+#### Structured Logging
+
+Enable JSON-formatted log output for easier integration with log aggregation tools.
+
+```powershell
+ohub config set log_file C:\\logs\\obtainhub.json
+ohub config set log_level JSON
+```
+
+Setting `log_level` to `JSON` will output logs in JSON format to the file specified by `log_file`. The console will still display human-readable logs unless `log_file` is set and `log_level` is set to `JSON` (or a custom setup). Refer to the `log_level` and `log_file` configuration options.
+
 #### Self‑Update
 
 ```powershell
@@ -173,7 +249,7 @@ ohub update owner/repo --notes
 
 ## Configuration
 
-Configuration is stored in `%USERPROFILE%\.config\obtainhub\config.json`. All options can be viewed with:
+Configuration is stored in `%USERPROFILE%\\.config\\obtainhub\\config.json`. All options can be viewed with:
 
 ```powershell
 ohub config show
@@ -183,11 +259,15 @@ ohub config show
 
 - `github_token`: Personal access token for higher API rate limits.
 - `self_update_enabled`: Toggle self‑update capability.
-- `install_dir`: Where apps are installed (default: `%USERPROFILE%\Applications\ObtainHub`).
-- `download_dir`: Where installers are downloaded (default: `%USERPROFILE%\Downloads\ObtainHub`).
+- `install_dir`: Where apps are installed (default: `%USERPROFILE%\\Applications\\ObtainHub`).
+- `download_dir`: Where installers are downloaded (default: `%USERPROFILE%\\Downloads\\ObtainHub`).
 - `schedule_enabled`: Enable automatic background checks.
 - `schedule_interval_hours`: How often to run checks (in hours).
-- `log_level`: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
+- `schedule_notify_on_update`: Send a notification when scheduled checks find updates (default: false).
+- `schedule_run_on_startup`: Run a scheduled check at user login (default: false).
+- `shim_dir`: Directory where shims are created (default: `%USERPROFILE%\\bin\\obtainhub`).
+- `allow_hooks`: Enable or disable hook execution (default: true).
+- `log_level`: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`, or `JSON` for structured logging.
 - `log_file`: Path to a log file (optional).
 - `groups`: Define app groups for bulk operations.
 - `manifest_sources`: Add custom manifest sources (GitHub, Winget, Scoop, Chocolatey).
@@ -205,10 +285,10 @@ ohub config show
 
 | Symptom | Solution |
 |---------|----------|
-| **"App not detected after installation"** | Some installers spawn child processes and exit early. ObtainHub verifies installation by checking the Windows Registry and install location. If verification fails, run `ohub check` to see if the app installed despite the error. |
+| **\"App not detected after installation\"** | Some installers spawn child processes and exit early. ObtainHub verifies installation by checking the Windows Registry and install location. If verification fails, run `ohub check` to see if the app installed despite the error. |
 | **Rate limit errors (403)** | Set a GitHub token via `ohub config set github_token <token>` to increase limits from 60 to 5000 requests per hour. |
-| **"No suitable asset found"** | Ensure the release contains an asset matching your architecture preferences (`--arch`) and installer type. Use `--yes` to auto‑pick the first compatible asset, or interactively choose. |
-| **Shim not working** | Remember to add the shim directory (`%USERPROFILE%\bin\obtainhub` by default) to your `PATH` environment variable. |
+| **\"No suitable asset found\"** | Ensure the release contains an asset matching your architecture preferences (`--arch`) and installer type. Use `--yes` to auto‑pick the first compatible asset, or interactively choose. |
+| **Shim not working** | Remember to add the shim directory (`%USERPROFILE%\\bin\\obtainhub` by default) to your `PATH` environment variable. |
 | **TUI fails to start** | The TUI requires the `textual` and `rich` Python packages. They are bundled in the installer but may be missing in development environments. Install with `pip install textual rich`. |
 | **Plugin not loading** | Check the console for `[Plugin] Failed to load ...` messages. Ensure the plugin class inherits from `obtainhub.plugins.base.Plugin` and implements all abstract methods. |
 | **Notifier not working** | Ensure `plyer` is installed (`pip install plyer`) and `notifier_enabled` is true. |
@@ -231,7 +311,7 @@ ohub config show
 2. Create a virtual environment (recommended):
    ```bash
    python -m venv venv
-   venv\Scripts\activate
+   venv\\Scripts\\activate
    ```
 3. Install dependencies:
    ```bash
@@ -249,7 +329,7 @@ ohub config show
 3. Commit and tag:
    ```bash
    git add .
-   git commit -m "Release vX.Y.Z"
+   git commit -m \"Release vX.Y.Z\"
    git tag vX.Y.Z
    git push origin main --tags
    ```

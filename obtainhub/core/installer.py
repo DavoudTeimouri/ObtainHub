@@ -74,83 +74,90 @@ class SilentInstaller:
         self.state_manager = get_state_manager()
 
     def install(
-        self,
-        file_path: Path,
-        installer_type: InstallerType,
-        app_id: str,
-        force: bool = False,
-        download_only: bool = False,
-        interactive: bool = False,
-        hooks: Optional[Dict[str, str]] = None,
-    ) -> Tuple[InstallResult, str]:
-        """
-        Install an application.
+            self,
+            file_path: Path,
+            installer_type: InstallerType,
+            app_id: str,
+            force: bool = False,
+            download_only: bool = False,
+            interactive: bool = False,
+            hooks: Optional[Dict[str, str]] = None,
+        ) -> Tuple[InstallResult, str]:
+            """
+            Install an application.
 
-        Args:
-            file_path: Path to installer file
-            installer_type: Type of installer
-            app_id: App identifier (owner/repo)
-            force: Force reinstall even if already installed
-            download_only: Only download, don't install
-            interactive: Launch the installer visibly (no silent flags) and let the
-                user drive it; ohub then verifies the result against system state.
-            hooks: Optional dict of hook commands (pre_install, post_install, etc.)
+            Args:
+                file_path: Path to installer file
+                installer_type: Type of installer
+                app_id: App identifier (owner/repo)
+                force: Force reinstall even if already installed
+                download_only: Only download, don't install
+                interactive: Launch the installer visibly (no silent flags) and let the
+                    user drive it; ohub then verifies the result against system state.
+                hooks: Optional dict of hook commands (pre_install, post_install, etc.)
 
-        Returns:
-            Tuple of (InstallResult, message)
-        """
-        if not file_path.exists():
-            return InstallResult.FAILED, f"Installer not found: {file_path}"
+            Returns:
+                Tuple of (InstallResult, message)
+            """
+            if not file_path.exists():
+                return InstallResult.FAILED, f"Installer not found: {file_path}"
 
-        # Check for existing installation
-        existing = self.state_manager.get_installed_app(app_id)
-        if existing and not force:
-            # Check if manual uninstall is required
-            if existing.requires_manual_uninstall:
-                return InstallResult.MANUAL_UNINSTALL_REQUIRED, (
-                    f"Notice: {existing.name} requires manual uninstallation of the previous version.\n"
-                    f"Installer downloaded to: {file_path}\n"
-                    f"Options: [1] Attempt auto-uninstall [2] Cancel / Manual uninstall"
+            # Warn if the installer is outside the configured download directory
+            if not self.dry_run:
+                try:
+                    file_path.resolve().relative_to(self.download_dir.resolve())
+                except ValueError:
+                    logger.warning(f"Installer is located outside the configured download directory: {file_path}")
+
+            # Check for existing installation
+            existing = self.state_manager.get_installed_app(app_id)
+            if existing and not force:
+                # Check if manual uninstall is required
+                if existing.requires_manual_uninstall:
+                    return InstallResult.MANUAL_UNINSTALL_REQUIRED, (
+                        f"Notice: {existing.name} requires manual uninstallation of the previous version.\n"
+                        f"Installer downloaded to: {file_path}\n"
+                        f"Options: [1] Attempt auto-uninstall [2] Cancel / Manual uninstall"
+                    )
+
+            # Run pre-install hook
+            if hooks and "pre_install" in hooks:
+                self._run_hook(hooks["pre_install"], file_path.parent, "pre_install")
+
+            # Handle download-only mode
+            if download_only or installer_type == InstallerType.ZIP:
+                return InstallResult.DOWNLOAD_ONLY, (
+                    f"Downloaded {file_path.name} to {file_path}. "
+                    f"ZIP files are download-only."
                 )
 
-        # Run pre-install hook
-        if hooks and "pre_install" in hooks:
-            self._run_hook(hooks["pre_install"], file_path.parent, "pre_install")
+            # Execute installer based on type
+            if installer_type == InstallerType.MSI:
+                result, message = self._install_msi(file_path, app_id, interactive=interactive)
+            elif installer_type in (InstallerType.EXE_SETUP, InstallerType.EXE_STANDALONE):
+                result, message = self._install_exe(file_path, app_id, interactive=interactive)
+            else:
+                return InstallResult.FAILED, f"Unsupported installer type: {installer_type}"
 
-        # Handle download-only mode
-        if download_only or installer_type == InstallerType.ZIP:
-            return InstallResult.DOWNLOAD_ONLY, (
-                f"Downloaded {file_path.name} to {file_path}. "
-                f"ZIP files are download-only."
-            )
+            # Trust reality, not the exit code: verify the app is actually present
+            # in the system before reporting success (installers can lie / hang / spawn).
+            # Dry runs skip verification (nothing was actually installed).
+            if not self.dry_run and result == InstallResult.SUCCESS:
+                ok, detected = self._verify_installed(app_id)
+                if not ok:
+                    return InstallResult.FAILED, (
+                        f"Installer exited but {app_id} was not detected in the system "
+                        f"(registry / install location). State not changed - re-run "
+                        f"'ohub check' if it did install."
+                    )
+                if detected:
+                    message = f"Successfully installed {file_path.name} (system version {detected})"
 
-        # Execute installer based on type
-        if installer_type == InstallerType.MSI:
-            result, message = self._install_msi(file_path, app_id, interactive=interactive)
-        elif installer_type in (InstallerType.EXE_SETUP, InstallerType.EXE_STANDALONE):
-            result, message = self._install_exe(file_path, app_id, interactive=interactive)
-        else:
-            return InstallResult.FAILED, f"Unsupported installer type: {installer_type}"
+            # Run post-install hook
+            if hooks and "post_install" in hooks and result == InstallResult.SUCCESS:
+                self._run_hook(hooks["post_install"], file_path.parent, "post_install")
 
-        # Trust reality, not the exit code: verify the app is actually present
-        # in the system before reporting success (installers can lie / hang / spawn).
-        # Dry runs skip verification (nothing was actually installed).
-        if not self.dry_run and result == InstallResult.SUCCESS:
-            ok, detected = self._verify_installed(app_id)
-            if not ok:
-                return InstallResult.FAILED, (
-                    f"Installer exited but {app_id} was not detected in the system "
-                    f"(registry / install location). State not changed - re-run "
-                    f"'ohub check' if it did install."
-                )
-            if detected:
-                message = f"Successfully installed {file_path.name} (system version {detected})"
-
-        # Run post-install hook
-        if hooks and "post_install" in hooks and result == InstallResult.SUCCESS:
-            self._run_hook(hooks["post_install"], file_path.parent, "post_install")
-
-        return result, message
+            return result, message
 
     def _verify_installed(self, app_id: str):
         """Check the system (registry / install location) for the installed app.

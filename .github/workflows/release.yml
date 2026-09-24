@@ -15,6 +15,21 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up GPG
+        if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_KEY_ID != ''
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+          git config --global user.signingkey ${{ secrets.GPG_KEY_ID }}
+
+      - name: Sign and push tag
+        if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_KEY_ID != ''
+        run: |
+          git checkout ${{ github.ref_name }}
+          git tag -f -s ${{ github.ref_name }} -m "Release ${{ github.ref_name }}"
+          git push -f origin ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,18 +51,22 @@ jobs:
           Write-Host "PyInstaller completed"
           Get-ChildItem dist\
 
+      - name: Verify built EXE runs (basic check)
+        run: |
+          dist\ohub.exe --help
+          Write-Host "EXE runs successfully"
+
       - name: Build WiX MSI
         shell: powershell
         run: |
           Write-Host "=== WiX MSI Build Debug ==="
-          # Try to find WiX on the system
           $wixPaths = @(
-            "C:\Program Files (x86)\WiX Toolset v3.11\bin",
-            "C:\Program Files\WiX Toolset v3.11\bin",
-            "C:\Program Files (x86)\WiX Toolset v4.0\bin",
-            "C:\Program Files\WiX Toolset v4.0\bin",
-            "C:\Program Files (x86)\WiX Toolset*\bin",
-            "C:\Program Files\WiX Toolset*\bin"
+            "C:\\Program Files (x86)\\WiX Toolset v3.11\\bin",
+            "C:\\Program Files\\WiX Toolset v3.11\\bin",
+            "C:\\Program Files (x86)\\WiX Toolset v4.0\\bin",
+            "C:\\Program Files\\WiX Toolset v4.0\\bin",
+            "C:\\Program Files (x86)\\WiX Toolset*\\bin",
+            "C:\\Program Files\\WiX Toolset*\\bin"
           )
           $wixBin = $null
           foreach ($path in $wixPaths) {
@@ -71,8 +90,8 @@ jobs:
             $light = Join-Path $wixBin "light.exe"
             Write-Host "candle: $candle (exists: $(Test-Path $candle))"
             Write-Host "light: $light (exists: $(Test-Path $light))"
-            Write-Host "setup.wxs: $(Test-Path installer\setup.wxs)"
-            Write-Host "ohub.exe: $(Test-Path dist\ohub.exe)"
+            Write-Host "setup.wxs: $(Test-Path installer\\setup.wxs)"
+            Write-Host "ohub.exe: $(Test-Path dist\\ohub.exe)"
             Write-Host "Running candle..."
             & $candle -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
             Write-Host "candle exit code: $LASTEXITCODE"
@@ -83,9 +102,9 @@ jobs:
             Get-ChildItem dist/
           } else {
             Write-Host "WiX Toolset NOT FOUND anywhere on system - skipping MSI build"
-            Get-ChildItem "C:\Program Files (x86)" -Filter "*WiX*" -ErrorAction SilentlyContinue
-            Get-ChildItem "C:\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
-            Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "*wix*" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue }
+            Get-ChildItem "C:\\Program Files (x86)" -Filter "*WiX*" -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\\ProgramData\\chocolatey\\lib" -Filter "*wix*" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue }
           }
           exit 0
 
@@ -96,8 +115,6 @@ jobs:
           Write-Host "=== Installing Inno Setup via Chocolatey ==="
           choco install innosetup -y --verbose --limit-output --execution-timeout=300
           Write-Host "=== Verifying Inno Setup Installation ==="
-          
-          # Find ISCC - try PATH first
           $isccCmd = Get-Command iscc -ErrorAction SilentlyContinue
           if ($isccCmd) {
             $isccPath = $isccCmd.Path
@@ -105,19 +122,17 @@ jobs:
           }
           if (-not $isccPath) {
             Write-Host "ISCC not in PATH, checking Chocolatey lib..."
-            $isccFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\innosetup" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
+            $isccFiles = Get-ChildItem "C:\\ProgramData\\chocolatey\\lib\\innosetup" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
             if ($isccFiles) {
               $isccPath = $isccFiles[0].FullName
               Write-Host "Found ISCC in Chocolatey lib: $isccPath"
             }
           }
-          
-          # Fallback to default locations
           if (-not $isccPath) {
             Write-Host "ISCC not found, checking default locations..."
             $defaultPaths = @(
-              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-              "C:\Program Files\Inno Setup 6\ISCC.exe"
+              "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe",
+              "C:\\Program Files\\Inno Setup 6\\ISCC.exe"
             )
             foreach ($p in $defaultPaths) {
               if (Test-Path $p) {
@@ -127,25 +142,20 @@ jobs:
               }
             }
           }
-          
           if (-not $isccPath -or -not (Test-Path $isccPath)) {
             Write-Host "ISCC NOT FOUND anywhere!"
             exit 1
           }
-          
           Write-Host "ISCC_PATH resolved to: $isccPath"
-          
           Write-Host "=== Inno Setup Build Debug ==="
           Write-Host "Current directory: $(Get-Location)"
           Write-Host "Files in installer: $(Get-ChildItem)"
-          
-          $ohubPath = "..\dist\ohub.exe"
+          $ohubPath = "..\\dist\\ohub.exe"
           Write-Host "Looking for ohub.exe at: $ohubPath"
           if (-not (Test-Path $ohubPath)) {
             Write-Host "ohub.exe NOT FOUND"
             exit 1
           }
-          
           Write-Host "Checking setup.iss exists: $(Test-Path setup.iss)"
           Write-Host "Running ISCC: $isccPath setup.iss"
           & $isccPath setup.iss 2>&1
@@ -155,18 +165,16 @@ jobs:
             Write-Host "Inno Setup FAILED with exit code $exitCode"
             exit $exitCode
           }
-          
           Write-Host "=== Checking Output directory ==="
           if (Test-Path "Output") {
             Get-ChildItem Output\
           } else {
             Write-Host "Output directory does NOT exist"
           }
-          
           $outputPaths = @(
-            "Output\ObtainHub-Setup.exe",
-            "..\dist\ObtainHub-Setup.exe",
-            ".\ObtainHub-Setup.exe"
+            "Output\\ObtainHub-Setup.exe",
+            "..\\dist\\ObtainHub-Setup.exe",
+            ".\\ObtainHub-Setup.exe"
           )
           $found = $false
           foreach ($p in $outputPaths) {
@@ -187,19 +195,19 @@ jobs:
         shell: powershell
         run: |
           Write-Host "=== Checking installer/Output ==="
-          Get-ChildItem installer\Output\ -ErrorAction SilentlyContinue
+          Get-ChildItem installer\\Output\\ -ErrorAction SilentlyContinue
           Write-Host "=== Checking dist before copy ==="
-          Get-ChildItem dist\
-          if (Test-Path "installer\Output\ObtainHub-Setup.exe") {
-            Copy-Item "installer\Output\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
-            Write-Host "Copied to dist\ObtainHub-Setup.exe"
-          } elseif (Test-Path "dist\ObtainHub-Setup.exe") {
-            Write-Host "Found at dist\ObtainHub-Setup.exe (already in root)"
+          Get-ChildItem dist\\
+          if (Test-Path "installer\\Output\\ObtainHub-Setup.exe") {
+            Copy-Item "installer\\Output\\ObtainHub-Setup.exe" "dist\\ObtainHub-Setup.exe" -Force
+            Write-Host "Copied to dist\\ObtainHub-Setup.exe"
+          } elseif (Test-Path "dist\\ObtainHub-Setup.exe") {
+            Write-Host "Found at dist\\ObtainHub-Setup.exe (already in root)"
           } else {
-            Write-Host "Source not found: installer\Output\ObtainHub-Setup.exe"
-            Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "*Setup*"}
+            Write-Host "Source not found: installer\\Output\\ObtainHub-Setup.exe"
+            Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like \"*Setup*\"}
           }
-          Get-ChildItem dist\
+          Get-ChildItem dist\\
 
       - name: Upload Inno Setup EXE artifact
         if: always()
@@ -226,20 +234,20 @@ jobs:
         shell: powershell
         run: |
           Write-Host "=== Final dist directory listing ==="
-          Get-ChildItem dist\
+          Get-ChildItem dist\\
 
       - name: Verify asset exists
         shell: powershell
         run: |
-          if (Test-Path "dist\ObtainHub-Setup.exe") {
+          if (Test-Path "dist\\ObtainHub-Setup.exe") {
             Write-Host "ObtainHub-Setup.exe EXISTS in dist"
-            Get-ChildItem dist\ObtainHub-Setup.exe
+            Get-ChildItem dist\\ObtainHub-Setup.exe
           } else {
             Write-Host "ObtainHub-Setup.exe NOT FOUND in dist"
           }
-          if (Test-Path "dist\ObtainHub.msi") {
+          if (Test-Path "dist\\ObtainHub.msi") {
             Write-Host "ObtainHub.msi EXISTS in dist"
-            Get-ChildItem dist\ObtainHub.msi
+            Get-ChildItem dist\\ObtainHub.msi
           } else {
             Write-Host "ObtainHub.msi NOT FOUND in dist"
           }
@@ -251,16 +259,10 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           Write-Host "Tag: $tag"
-          
-          # Determine if prerelease
           $prerelease = $tag -match 'beta|alpha|rc'
           Write-Host "Prerelease: $prerelease"
-          
-          # List what's in dist before upload
           Write-Host "=== Assets in dist before upload ==="
-          Get-ChildItem dist\
-          
-          # Delete existing release if it exists
+          Get-ChildItem dist\\
           try {
             $existingRelease = gh release view $tag --json id --jq .id 2>$null
             if ($LASTEXITCODE -eq 0 -and $existingRelease) {
@@ -270,28 +272,22 @@ jobs:
           } catch {
             Write-Host "No existing release to delete (or error checking): $($_.Exception.Message)"
           }
-          
-          # Create new release
           Write-Host "Creating release..."
           $releaseArgs = @("release", "create", $tag, "--title", "Release $tag", "--generate-notes")
           if ($prerelease) { $releaseArgs += "--prerelease" }
           gh $releaseArgs 2>&1
-          
-          # Upload assets - ONLY MSI and Setup EXE
           $assets = @(
             "dist/ObtainHub.msi",
             "dist/ObtainHub-Setup.exe"
           )
-          
           foreach ($asset in $assets) {
             if (Test-Path $asset) {
               Write-Host "Uploading $asset..."
               gh release upload $tag $asset --clobber
-            }
-            else {
+            } else {
               Write-Host "Asset NOT FOUND: $asset"
               Write-Host "Current dist contents:"
-              Get-ChildItem dist\
+              Get-ChildItem dist\\
             }
           }
 
