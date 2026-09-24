@@ -72,7 +72,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v1.0.6 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v1.0.7 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -3102,8 +3102,7 @@ def cmd_reset(parsed: argparse.Namespace, config_manager: ConfigManager, state_m
     # If keep_token, we leave the token in keyring (do nothing)
     
     # Create a new default config
-    new_config = Config()
-    # Note: The github_token field in new_config will be empty (default), 
+    new_config = Config()\n    # Note: The github_token field in new_config will be empty (default), 
     # but the actual token is kept in keyring (if --keep-token) or moved.
     # The ConfigManager.load will read the token from keyring on next startup.
     
