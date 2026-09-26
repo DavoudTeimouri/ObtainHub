@@ -1,10 +1,10 @@
 name: Build and Release Windows Binaries
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,13 +18,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up GPG
+      - name: Set up GPG (if keys provided)
         if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_KEY_ID != ''
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
           git config --global user.signingkey ${{ secrets.GPG_KEY_ID }}
 
-      - name: Sign and push tag
+      - name: Sign and push tag (if GPG keys provided)
         if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_KEY_ID != ''
         run: |
           git checkout ${{ github.ref_name }}
@@ -49,12 +49,15 @@ jobs:
         run: |
           python -m PyInstaller --onefile --name ohub --clean obtainhub/main.py
           Write-Host "PyInstaller completed"
-          Get-ChildItem dist\
+          Get-ChildItem dist\\
 
       - name: Verify built EXE runs (basic check)
         run: |
-          dist\ohub.exe --help
+          dist\\ohub.exe --help
           Write-Host "EXE runs successfully"
+
+      - name: Install WiX
+        run: choco install wixtoolset
 
       - name: Build WiX MSI
         shell: powershell
@@ -78,35 +81,24 @@ jobs:
             }
           }
           if (-not $wixBin) {
-            $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
-            if ($candlePath) {
-              $wixBin = Split-Path $candlePath
-              Write-Host "Found candle.exe at: $candlePath, using dir: $wixBin"
-            }
+            Write-Host "WiX Toolset NOT FOUND anywhere on system - failing build"
+            exit 1
           }
-          if ($wixBin) {
-            Write-Host "Using WiX bin: $wixBin"
-            $candle = Join-Path $wixBin "candle.exe"
-            $light = Join-Path $wixBin "light.exe"
-            Write-Host "candle: $candle (exists: $(Test-Path $candle))"
-            Write-Host "light: $light (exists: $(Test-Path $light))"
-            Write-Host "setup.wxs: $(Test-Path installer\\setup.wxs)"
-            Write-Host "ohub.exe: $(Test-Path dist\\ohub.exe)"
-            Write-Host "Running candle..."
-            & $candle -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
-            Write-Host "candle exit code: $LASTEXITCODE"
-            Write-Host "Running light..."
-            & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj 2>&1
-            Write-Host "light exit code: $LASTEXITCODE"
-            Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
-            Get-ChildItem dist/
-          } else {
-            Write-Host "WiX Toolset NOT FOUND anywhere on system - skipping MSI build"
-            Get-ChildItem "C:\\Program Files (x86)" -Filter "*WiX*" -ErrorAction SilentlyContinue
-            Get-ChildItem "C:\\Program Files" -Filter "*WiX*" -ErrorAction SilentlyContinue
-            Get-ChildItem "C:\\ProgramData\\chocolatey\\lib" -Filter "*wix*" -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue }
-          }
-          exit 0
+          Write-Host "Using WiX bin: $wixBin"
+          $candle = Join-Path $wixBin "candle.exe"
+          $light = Join-Path $wixBin "light.exe"
+          Write-Host "candle: $candle (exists: $(Test-Path $candle))"
+          Write-Host "light: $light (exists: $(Test-Path $light))"
+          Write-Host "setup.wxs: $(Test-Path installer\\setup.wxs)"
+          Write-Host "ohub.exe: $(Test-Path dist\\ohub.exe)"
+          Write-Host "Running candle..."
+          & $candle -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
+          Write-Host "candle exit code: $LASTEXITCODE"
+          Write-Host "Running light..."
+          & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj 2>&1
+          Write-Host "light exit code: $LASTEXITCODE"
+          Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
+          Get-ChildItem dist/
 
       - name: Install Inno Setup and Build EXE
         shell: powershell
@@ -157,17 +149,17 @@ jobs:
             exit 1
           }
           Write-Host "Checking setup.iss exists: $(Test-Path setup.iss)"
-          Write-Host "Running ISCC: $isccPath setup.iss"
+          Write-Host "Running ISCC: $isccPath setup.iss 2>&1"
           & $isccPath setup.iss 2>&1
           $exitCode = $LASTEXITCODE
           Write-Host "ISCC exit code: $exitCode"
           if ($exitCode -ne 0) {
             Write-Host "Inno Setup FAILED with exit code $exitCode"
-            exit $exitCode
+            exit 1
           }
           Write-Host "=== Checking Output directory ==="
           if (Test-Path "Output") {
-            Get-ChildItem Output\
+            Get-ChildItem Output\\
           } else {
             Write-Host "Output directory does NOT exist"
           }
@@ -200,99 +192,48 @@ jobs:
           Get-ChildItem dist\\
           if (Test-Path "installer\\Output\\ObtainHub-Setup.exe") {
             Copy-Item "installer\\Output\\ObtainHub-Setup.exe" "dist\\ObtainHub-Setup.exe" -Force
-            Write-Host "Copied to dist\\ObtainHub-Setup.exe"
-          } elseif (Test-Path "dist\\ObtainHub-Setup.exe") {
-            Write-Host "Found at dist\\ObtainHub-Setup.exe (already in root)"
-          } else {
-            Write-Host "Source not found: installer\\Output\\ObtainHub-Setup.exe"
-            Get-ChildItem . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like \"*Setup*\"}
+            Write-Host "Inno Setup output copied to dist"
           }
-          Get-ChildItem dist\\
 
-      - name: Upload Inno Setup EXE artifact
-        if: always()
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: innosetup-output
-          path: dist/ObtainHub-Setup.exe
+          name: ObtainHub-Windows-Binaries
+          path: |
+            dist/ohub.exe
+            dist/ObtainHub.msi
+            dist/ObtainHub-Setup.exe
           retention-days: 5
 
-      - name: Code-sign release binaries
-        shell: powershell
-        continue-on-error: true
-        env:
-          SIGNING_PFX_B64: ${{ secrets.SIGNING_PFX_B64 }}
-          SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_ACCOUNT_ENDPOINT: ${{ secrets.AZURE_ACCOUNT_ENDPOINT }}
-          AZURE_CODE_SIGNING_PROFILE: ${{ secrets.AZURE_CODE_SIGNING_PROFILE }}
-        run: pwsh .github/scripts/sign.ps1
-
-      - name: List dist directory
+      - name: Install GitHub CLI
         shell: powershell
         run: |
-          Write-Host "=== Final dist directory listing ==="
-          Get-ChildItem dist\\
+          choco install github-cli -y
 
-      - name: Verify asset exists
+      - name: Create GitHub Release
         shell: powershell
-        run: |
-          if (Test-Path "dist\\ObtainHub-Setup.exe") {
-            Write-Host "ObtainHub-Setup.exe EXISTS in dist"
-            Get-ChildItem dist\\ObtainHub-Setup.exe
-          } else {
-            Write-Host "ObtainHub-Setup.exe NOT FOUND in dist"
-          }
-          if (Test-Path "dist\\ObtainHub.msi") {
-            Write-Host "ObtainHub.msi EXISTS in dist"
-            Get-ChildItem dist\\ObtainHub.msi
-          } else {
-            Write-Host "ObtainHub.msi NOT FOUND in dist"
-          }
-
-      - name: Create/Update Release and Upload Assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: powershell
         run: |
-          $tag = "${{ github.ref_name }}"
-          Write-Host "Tag: $tag"
-          $prerelease = $tag -match 'beta|alpha|rc'
-          Write-Host "Prerelease: $prerelease"
-          Write-Host "=== Assets in dist before upload ==="
-          Get-ChildItem dist\\
-          try {
-            $existingRelease = gh release view $tag --json id --jq .id 2>$null
-            if ($LASTEXITCODE -eq 0 -and $existingRelease) {
-              Write-Host "Deleting existing release: $existingRelease"
-              gh release delete $tag --yes --cleanup-tag
-            }
-          } catch {
-            Write-Host "No existing release to delete (or error checking): $($_.Exception.Message)"
-          }
-          Write-Host "Creating release..."
-          $releaseArgs = @("release", "create", $tag, "--title", "Release $tag", "--generate-notes")
-          if ($prerelease) { $releaseArgs += "--prerelease" }
-          gh $releaseArgs 2>&1
-          $assets = @(
-            "dist/ObtainHub.msi",
-            "dist/ObtainHub-Setup.exe"
-          )
-          foreach ($asset in $assets) {
-            if (Test-Path $asset) {
-              Write-Host "Uploading $asset..."
-              gh release upload $tag $asset --clobber
+          $VERSION = "${{ github.ref_name }}"
+          # Prepare release notes
+          "## Changelog for $VERSION" | Out-File -FilePath release_notes.md -Encoding utf8
+          if (Test-Path CHANGELOG.md) {
+            $content = Get-Content CHANGELOG.md
+            $pattern = "^## \\[$VERSION\\]"
+            $startIndex = $($content | Where-Object { $_ -match $pattern }).IndexOf($content[0])
+            if ($startIndex -ge 0) {
+              $endIndex = $startIndex
+              while ($endIndex -lt $content.Count -and -not ($content[$endIndex] -match "^## \\[")) {
+                $endIndex++
+              }
+              $section = $content[$startIndex..($endIndex-1)]
+              $section | Set-Content -Path release_notes.md -Encoding utf8
             } else {
-              Write-Host "Asset NOT FOUND: $asset"
-              Write-Host "Current dist contents:"
-              Get-ChildItem dist\\
+              "No changelog found" | Set-Content -Path release_notes.md -Encoding utf8
             }
+          } else {
+            "No changelog found" | Set-Content -Path release_notes.md -Encoding utf8
           }
-
-      - name: Sync CHANGELOG.md into release notes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: python .github/scripts/sync_release_notes.py
+          # Create release
+          gh release create $VERSION dist/ohub.exe dist/ObtainHub.msi dist/ObtainHub-Setup.exe --title "ObtainHub $VERSION" --notes-file release_notes.md --verify-tag
