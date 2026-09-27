@@ -13,227 +13,48 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up GPG (if keys provided)
-        if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_KEY_ID != ''
-        run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
-          git config --global user.signingkey ${{ secrets.GPG_KEY_ID }}
-
-      - name: Sign and push tag (if GPG keys provided)
-        if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_KEY_ID != ''
-        run: |
-          git checkout ${{ github.ref_name }}
-          git tag -f -s ${{ github.ref_name }} -m "Release ${{ github.ref_name }}"
-          git push -f origin ${{ github.ref_name }}
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Python Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller keyring
+          pip install pyinstaller
 
-      - name: Sync version into installer/manifest files
-        run: python tools/sync_versions.py
-
-      - name: Build with PyInstaller
+      - name: Build executable
         run: |
           python -m PyInstaller --onefile --name ohub --clean obtainhub/main.py
-          Write-Host "PyInstaller completed"
-          Get-ChildItem dist\\
 
-      - name: Verify built EXE runs (basic check)
+      - name: List dist directory
         run: |
-          dist\\ohub.exe --help
-          Write-Host "EXE runs successfully"
+          Get-ChildItem dist\
 
-      - name: Install WiX
-        run: choco install wixtoolset
-
-      - name: Build WiX MSI
-        shell: powershell
-        run: |
-          Write-Host "=== WiX MSI Build Debug ==="
-          $wixPaths = @(
-            "C:\\Program Files (x86)\\WiX Toolset v3.11\\bin",
-            "C:\\Program Files\\WiX Toolset v3.11\\bin",
-            "C:\\Program Files (x86)\\WiX Toolset v4.0\\bin",
-            "C:\\Program Files\\WiX Toolset v4.0\\bin",
-            "C:\\Program Files (x86)\\WiX Toolset*\\bin",
-            "C:\\Program Files\\WiX Toolset*\\bin"
-          )
-          $wixBin = $null
-          foreach ($path in $wixPaths) {
-            $resolved = Get-ChildItem $path -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($resolved -and (Test-Path (Join-Path $resolved.FullName "candle.exe"))) {
-              $wixBin = $resolved.FullName
-              Write-Host "Found WiX at: $wixBin"
-              break
-            }
-          }
-          if (-not $wixBin) {
-            Write-Host "WiX Toolset NOT FOUND anywhere on system - failing build"
-            exit 1
-          }
-          Write-Host "Using WiX bin: $wixBin"
-          $candle = Join-Path $wixBin "candle.exe"
-          $light = Join-Path $wixBin "light.exe"
-          Write-Host "candle: $candle (exists: $(Test-Path $candle))"
-          Write-Host "light: $light (exists: $(Test-Path $light))"
-          Write-Host "setup.wxs: $(Test-Path installer\\setup.wxs)"
-          Write-Host "ohub.exe: $(Test-Path dist\\ohub.exe)"
-          Write-Host "Running candle..."
-          & $candle -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
-          Write-Host "candle exit code: $LASTEXITCODE"
-          Write-Host "Running light..."
-          & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj 2>&1
-          Write-Host "light exit code: $LASTEXITCODE"
-          Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
-          Get-ChildItem dist/
-
-      - name: Install Inno Setup and Build EXE
-        shell: powershell
-        working-directory: installer
-        run: |
-          Write-Host "=== Installing Inno Setup via Chocolatey ==="
-          choco install innosetup -y --verbose --limit-output --execution-timeout=300
-          Write-Host "=== Verifying Inno Setup Installation ==="
-          $isccCmd = Get-Command iscc -ErrorAction SilentlyContinue
-          if ($isccCmd) {
-            $isccPath = $isccCmd.Path
-            Write-Host "Found ISCC in PATH: $isccPath"
-          }
-          if (-not $isccPath) {
-            Write-Host "ISCC not in PATH, checking Chocolatey lib..."
-            $isccFiles = Get-ChildItem "C:\\ProgramData\\chocolatey\\lib\\innosetup" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
-            if ($isccFiles) {
-              $isccPath = $isccFiles[0].FullName
-              Write-Host "Found ISCC in Chocolatey lib: $isccPath"
-            }
-          }
-          if (-not $isccPath) {
-            Write-Host "ISCC not found, checking default locations..."
-            $defaultPaths = @(
-              "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe",
-              "C:\\Program Files\\Inno Setup 6\\ISCC.exe"
-            )
-            foreach ($p in $defaultPaths) {
-              if (Test-Path $p) {
-                $isccPath = $p
-                Write-Host "Found ISCC at fallback: $isccPath"
-                break
-              }
-            }
-          }
-          if (-not $isccPath -or -not (Test-Path $isccPath)) {
-            Write-Host "ISCC NOT FOUND anywhere!"
-            exit 1
-          }
-          Write-Host "ISCC_PATH resolved to: $isccPath"
-          Write-Host "=== Inno Setup Build Debug ==="
-          Write-Host "Current directory: $(Get-Location)"
-          Write-Host "Files in installer: $(Get-ChildItem)"
-          $ohubPath = "..\\dist\\ohub.exe"
-          Write-Host "Looking for ohub.exe at: $ohubPath"
-          if (-not (Test-Path $ohubPath)) {
-            Write-Host "ohub.exe NOT FOUND"
-            exit 1
-          }
-          Write-Host "Checking setup.iss exists: $(Test-Path setup.iss)"
-          Write-Host "Running ISCC: $isccPath setup.iss 2>&1"
-          & $isccPath setup.iss 2>&1
-          $exitCode = $LASTEXITCODE
-          Write-Host "ISCC exit code: $exitCode"
-          if ($exitCode -ne 0) {
-            Write-Host "Inno Setup FAILED with exit code $exitCode"
-            exit 1
-          }
-          Write-Host "=== Checking Output directory ==="
-          if (Test-Path "Output") {
-            Get-ChildItem Output\\
-          } else {
-            Write-Host "Output directory does NOT exist"
-          }
-          $outputPaths = @(
-            "Output\\ObtainHub-Setup.exe",
-            "..\\dist\\ObtainHub-Setup.exe",
-            ".\\ObtainHub-Setup.exe"
-          )
-          $found = $false
-          foreach ($p in $outputPaths) {
-            if (Test-Path $p) {
-              Write-Host "Inno Setup output FOUND at: $p"
-              Get-ChildItem $p
-              $found = $true
-              break
-            }
-          }
-          if (-not $found) {
-            Write-Host "Inno Setup output NOT FOUND!"
-            exit 1
-          }
-          exit 0
-
-      - name: Copy Inno Setup output to root dist
-        shell: powershell
-        run: |
-          Write-Host "=== Checking installer/Output ==="
-          Get-ChildItem installer\\Output\\ -ErrorAction SilentlyContinue
-          Write-Host "=== Checking dist before copy ==="
-          Get-ChildItem dist\\
-          if (Test-Path "installer\\Output\\ObtainHub-Setup.exe") {
-            Copy-Item "installer\\Output\\ObtainHub-Setup.exe" "dist\\ObtainHub-Setup.exe" -Force
-            Write-Host "Inno Setup output copied to dist"
-          }
-
-      - name: Upload artifacts
+      - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: ObtainHub-Windows-Binaries
-          path: |
-            dist/ohub.exe
-            dist/ObtainHub.msi
-            dist/ObtainHub-Setup.exe
-          retention-days: 5
-
-      - name: Install GitHub CLI
-        shell: powershell
-        run: |
-          choco install github-cli -y
+          name: ohub-exe
+          path: dist/ohub.exe
 
       - name: Create GitHub Release
-        shell: powershell
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $VERSION = "${{ github.ref_name }}"
-          # Prepare release notes
-          "## Changelog for $VERSION" | Out-File -FilePath release_notes.md -Encoding utf8
-          if (Test-Path CHANGELOG.md) {
-            $content = Get-Content CHANGELOG.md
-            $pattern = "^## \\[$VERSION\\]"
-            $startIndex = $($content | Where-Object { $_ -match $pattern }).IndexOf($content[0])
-            if ($startIndex -ge 0) {
-              $endIndex = $startIndex
-              while ($endIndex -lt $content.Count -and -not ($content[$endIndex] -match "^## \\[")) {
-                $endIndex++
-              }
-              $section = $content[$startIndex..($endIndex-1)]
-              $section | Set-Content -Path release_notes.md -Encoding utf8
-            } else {
-              "No changelog found" | Set-Content -Path release_notes.md -Encoding utf8
-            }
-          } else {
-            "No changelog found" | Set-Content -Path release_notes.md -Encoding utf8
-          }
-          # Create release
-          gh release create $VERSION dist/ohub.exe dist/ObtainHub.msi dist/ObtainHub-Setup.exe --title "ObtainHub $VERSION" --notes-file release_notes.md --verify-tag
+
+      - name: Upload executable to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/ohub.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
