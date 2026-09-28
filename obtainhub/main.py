@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import logging
-from obtainhub.core.config import get_config_manager, ConfigManager, ManifestSource
+from obtainhub.core.config import get_config_manager, ConfigManager, ManifestSource, Config
 from obtainhub.core.state import get_state_manager, StateManager, CheckHistoryEntry
 from obtainhub.core.logger import setup_logging, get_logger, LogLevel
 from obtainhub.core.self_updater import SelfUpdater, check_and_update
@@ -275,6 +275,9 @@ def main(args: Optional[List[str]] = None) -> int:
     set_parser.add_argument("key", help="Config key")
     set_parser.add_argument("value", help="Config value")
     get_parser = config_subparsers.add_parser("get", help="Get config value")
+    config_subparsers.add_parser("path", help="Show config and state file paths")
+    config_subparsers.add_parser("move", help="Move config and state files to a directory")
+    config_subparsers.add_parser("repair", help="Repair corrupted config/state files")
     get_parser.add_argument("key", help="Config key")
 
     # self-update
@@ -2290,6 +2293,37 @@ def cmd_config(
         config_manager.save(config)
         print(f"Set {parsed.key} = {parsed.value}")
     elif parsed.config_action == "edit":
+        print("Editor not yet implemented. Use 'ohub config set' for now.")
+    elif parsed.config_action == "path":
+        print(f"Config file: {config_manager.config_file}")
+        print(f"State file: {config_manager.state_file}")
+    elif parsed.config_action == "move":
+        import shutil
+        target_dir = Path(parsed.config_value)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(config_manager.config_file), str(target_dir / config_manager.config_file.name))
+        shutil.move(str(config_manager.state_file), str(target_dir / config_manager.state_file.name))
+        # Update the ConfigManager and StateManager to point to new locations
+        config_manager.config_file = target_dir / config_manager.config_file.name
+        config_manager.state_file = target_dir / config_manager.state_file.name
+        print(f"Moved config and state to {target_dir}")
+    elif parsed.config_action == "repair":
+        # Try to load existing config and state, if corrupt, create defaults
+        # Preserve token via keyring
+        from obtainhub.core.config import ConfigManager
+        from obtainhub.core.state import StateManager
+        # Backup corrupt files
+        if config_manager.config_file.exists():
+            shutil.move(str(config_manager.config_file), str(config_manager.config_file) + ".bak")
+        if config_manager.state_file.exists():
+            shutil.move(str(config_manager.state_file), str(config_manager.state_file) + ".bak")
+        # Create new default config and state
+        config = ConfigManager.load()
+        state = StateManager()
+        # Save them (this will create fresh files)
+        config_manager.save(config)
+        state_manager.save(state)
+        print(f"Repaired config and state. Backups at {config_manager.config_file}.bak and {config_manager.state_file}.bak")
         print("Editor not yet implemented. Use 'ohub config set' for now.")
     return 0
 

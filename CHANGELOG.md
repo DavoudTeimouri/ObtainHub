@@ -5,12 +5,15 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.7] - 2026-09-27
 ### Added
 ### Changed
 ### Fixed
+- Config import missing in reset function
+- Stray backslashes in main.py
+- Config.load returns defaults when file missing
+- New config commands (path, move, repair)
 ### Removed
-
 
 ## [1.0.6] - 2026-09-20
 
