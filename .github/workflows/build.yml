@@ -49,8 +49,9 @@ jobs:
           python build_dist.py --onedir
         working-directory: ${{ github.workspace }}
 
-      - name: Install Inno Setup
+      - name: Install build tools
         run: |
+          choco install wixtool
           choco install innosetup --version=6.2.2 --force
 
       - name: Build installer

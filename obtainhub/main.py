@@ -72,7 +72,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v1.0.7 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v1.0.8 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -276,7 +276,8 @@ def main(args: Optional[List[str]] = None) -> int:
     set_parser.add_argument("value", help="Config value")
     get_parser = config_subparsers.add_parser("get", help="Get config value")
     config_subparsers.add_parser("path", help="Show config and state file paths")
-    config_subparsers.add_parser("move", help="Move config and state files to a directory")
+    move_parser = config_subparsers.add_parser("move", help="Move config and state files to a directory")
+    move_parser.add_argument("config_value", help="Target directory")
     config_subparsers.add_parser("repair", help="Repair corrupted config/state files")
     get_parser.add_argument("key", help="Config key")
 
@@ -438,7 +439,7 @@ def main(args: Optional[List[str]] = None) -> int:
         elif parsed.command == "search":
             return cmd_search(parsed, config_manager, logger)
         elif parsed.command == "config":
-            return cmd_config(parsed, config_manager)
+            return cmd_config(parsed, config_manager, state_manager)
         elif parsed.command == "self-update":
             return cmd_self_update(parsed, config_manager, state_manager, logger)
         elif parsed.command == "schedule":
@@ -2279,6 +2280,7 @@ def cmd_search(
 def cmd_config(
     parsed: argparse.Namespace,
     config_manager: ConfigManager,
+    state_manager: StateManager,
 ) -> int:
     """Handle config command."""
     config = config_manager.load()
@@ -2296,35 +2298,36 @@ def cmd_config(
         print("Editor not yet implemented. Use 'ohub config set' for now.")
     elif parsed.config_action == "path":
         print(f"Config file: {config_manager.config_file}")
-        print(f"State file: {config_manager.state_file}")
+        print(f"State file: {state_manager.state_file}")
     elif parsed.config_action == "move":
         import shutil
         target_dir = Path(parsed.config_value)
         target_dir.mkdir(parents=True, exist_ok=True)
         shutil.move(str(config_manager.config_file), str(target_dir / config_manager.config_file.name))
-        shutil.move(str(config_manager.state_file), str(target_dir / config_manager.state_file.name))
+        shutil.move(str(state_manager.state_file), str(target_dir / state_manager.state_file.name))
         # Update the ConfigManager and StateManager to point to new locations
         config_manager.config_file = target_dir / config_manager.config_file.name
-        config_manager.state_file = target_dir / config_manager.state_file.name
+        config_manager.config_dir = target_dir
+        state_manager.state_file = target_dir / state_manager.state_file.name
+        # Update config object's config_dir field so it gets saved
+        config = config_manager.config
+        config.config_dir = str(target_dir)
+        config_manager.save(config)
         print(f"Moved config and state to {target_dir}")
     elif parsed.config_action == "repair":
-        # Try to load existing config and state, if corrupt, create defaults
-        # Preserve token via keyring
-        from obtainhub.core.config import ConfigManager
-        from obtainhub.core.state import StateManager
+        import shutil
         # Backup corrupt files
         if config_manager.config_file.exists():
             shutil.move(str(config_manager.config_file), str(config_manager.config_file) + ".bak")
-        if config_manager.state_file.exists():
-            shutil.move(str(config_manager.state_file), str(config_manager.state_file) + ".bak")
+        if state_manager.state_file.exists():
+            shutil.move(str(state_manager.state_file), str(state_manager.state_file) + ".bak")
         # Create new default config and state
-        config = ConfigManager.load()
+        config = Config()
         state = StateManager()
         # Save them (this will create fresh files)
         config_manager.save(config)
-        state_manager.save(state)
-        print(f"Repaired config and state. Backups at {config_manager.config_file}.bak and {config_manager.state_file}.bak")
-        print("Editor not yet implemented. Use 'ohub config set' for now.")
+        state_manager.save()
+        print(f"Repaired config and state. Backups at {config_manager.config_file}.bak and {state_manager.state_file}.bak")
     return 0
 
 

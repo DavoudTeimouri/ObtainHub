@@ -1,344 +1,217 @@
 # ObtainHub
 
-A cross-platform, open-source package manager for Windows that simplifies installing and updating applications from GitHub releases.
+A cross-platform, open-source CLI tool for managing and updating GitHub-based applications on Windows with support for EXE, MSI, and ZIP installers, self-update mechanism, and custom manifest sources.
 
 ## Features
 
-- **GitHub Integration**: Install and update apps directly from GitHub releases.
-- **Cross-Platform**: Primarily Windows x64, with support for other architectures via configuration.
-- **Multiple Installer Types**: Supports MSI, EXE (Inno Setup, NSIS, Wise, InstallShield, generic silent), ZIP, and portable folder apps.
-- **Scheduled Checks**: Automatically check for updates on a schedule.
-- **Self‑Update**: ObtainHub can update itself.
-- **Shims**: Create portable shims (`ohub shim <app>`) to run apps from anywhere.
-- **TUI Dashboard**: Interactive terminal UI (`ohub tui`) to browse, install, update, and remove apps.
-- **Hooks**: Run custom scripts before/after install/uninstall (`pre_install`, `post_install`, `pre_uninstall`, `post_uninstall`).
-- **Groups**: Organize apps into groups for bulk operations.
-- **Architecture Preferences**: Prefer x64, allow x86 fallback, or force ARM64.
-- **Plugin System**: Extend functionality with plugins (see `obtainhub/plugins`).
-- **Notifier Plugin**: Desktop notifications on update (requires `plyer`).
-- **State Export/Import**: Backup and restore full app state via `ohub state export` and `ohub state import`.
-- **Package Manager Fallback**: When GitHub release lacks a suitable asset, fall back to Winget, Scoop, or Chocolatey.
-- **Asset Caching**: Reduce GitHub API calls with ETag/Last-Modified caching.
-- **Parallel Checks**: Speed up `--all` checks with concurrent processing.
-- **Incremental State**: Efficient state file updates.
-- **Structured Logging**: Optional JSON log output.
+- **GitHub Release Management**: Search, install, update, and manage applications from GitHub releases
+- **Multiple Installer Types**: MSI, EXE, NSIS, InstallShield, ZIP, and portable apps
+- **Scheduled Checks**: Automated background update checks with configurable schedule
+- **Self-Update**: ObtainHub can update itself from GitHub releases
+- **Cross-Platform Architecture**: Supports x64, ARM64, and x86 architectures
+- **Terminal UI (TUI)**: Interactive terminal interface for managing apps
+- **Hooks System**: Custom scripts before/after install/uninstall (`pre_install`, `post_install`, `pre_uninstall`, `post_uninstall`)
+- **State Export/Import**: Backup and restore ObtainHub state anywhere
+- **Plugin System**: Extensible plugin architecture (`obtainhub/plugins`)
+- **Desktop Notifications**: Optional notifications via `plyer`
+- **State Import/Export**: `ohub state export` and `ohub state import`
+- **Package Manager Fallback**: Winget, Scoop, Chocolatey via `ohub install --fallback`
+- **GitHub API Caching**: ETag/Last-Modified caching to reduce API calls
+- **Batch Operations**: `--all` flag for bulk operations
+- **Automatic Updates**: Scheduled background checks and updates
 
-## Installation
+## Quick Start
 
-Download the latest release from the [Releases page](https://github.com/DavoudTeimouri/ObtainHub/releases) and run the installer, or use the ZIP portable version.
-
-### Quick Start (Windows)
+### Install via GitHub Releases (recommended)
 
 ```powershell
-# Install ObtainHub (run as Administrator)
+# Download and run the installer
+# Or install via package manager:
 ohub install owner/repo
 ```
 
-### First‑time Setup
-
-After installation, you may want to:
-
-1. Set your GitHub token for higher rate limits:
-   ```powershell
-   ohub config set github_token <your_personal_token>
-   ```
-2. Enable scheduled checks:
-   ```powershell
-   ohub config set schedule_enabled true
-   ohub config set schedule_interval_hours 12
-   ```
-3. Try the TUI:
-   ```powershell
-   ohub tui
-   ```
-
-## Usage
-
-### Core Commands
-
-| Command | Description |
-|---------|-------------|
-| `ohub add <repo> [options]` | Add a GitHub repo for management. |
-| `ohub install <app> [options]` | Install or update an app. |
-| `ohub check [options]` | Check for updates without installing. |
-| `ohub update <app> [options]` | Update specific app(s). |
-| `ohub remove <app>` | Remove app from management (does not uninstall). |
-| `ohub shim <app>` | Create a shim executable for portable apps. |
-| `ohub tui` | Launch the terminal user interface. |
-| `ohub config <action>` | View or modify configuration. |
-| `ohub schedule <action>` | Enable/disable/view scheduled checks. |
-
-### Advanced Features
-
-#### Hooks
-
-Define scripts in your config or via manifest sources:
-
-```json
-{
-  "hooks": {
-    "pre_install": "echo \\\"Installing $APP_ID\\\"",
-    "post_install": "echo \\\"Done installing $APP_ID\\\"",
-    "pre_uninstall": "echo \\\"Preparing to uninstall $APP_ID\\\"",
-    "post_uninstall": "echo \\\"Uninstalled $APP_ID\\\""
-  }
-}
-```
-
-#### Groups
+### TUI:
 
 ```powershell
-ohub config set groups.devtools=\\\"git-for-windows/vscode,PowerShell/PowerShell\\\"\nohub install devtools  # installs all apps in the devtools group
+ohub tui
 ```
 
-#### Plugin System
+### GitHub Search and Install:
 
-Place Python plugins in `obtainhub/plugins/`. They must subclass `obtainhub.plugins.base.Plugin` and implement the lifecycle methods.
+```powershell
+ohub search "vscode" --limit 5
+ohub install Microsoft/vscode
+ohub update Microsoft/vscode
+ohub list
+ohub uninstall Microsoft/vscode
+```
 
-Example plugin (`obtainhub/plugins/example.py`):
+### Config Management:
+
+```powershell
+ohub config show
+ohub config path
+ohub config move "C:\new\config\dir"
+ohub config repair
+```
+
+### Groups:
+
+```powershell
+ohub group add devtools "git-for-windows/git,vscode/vscode"
+ohub group list
+ohub group install devtools
+ohub group update devtools
+```
+
+### Plugin Development:
+
+Place plugins in `obtainhub/plugins/`. Each plugin must implement `obtainhub.plugins.base.Plugin` and its methods.
+
+Example (`obtainhub/plugins/example.py`):
 
 ```python
 from obtainhub.plugins.base import Plugin
 
 class ExamplePlugin(Plugin):
     def on_load(self):
-        print(f\"[Plugin] {self.name} loaded\")
+        print(f"Plugin {self.name} loaded")
 
-    def on_update(self, app_id: str, current_version: str, latest_version: str):
-        print(f\"[Plugin] {self.name}: {app_id} updated {current_version} -> {latest_version}\")
+    def on_install(self, app_id: str, latest_version: str):
+        print(f"Installing {app_id}: {latest_version}")
 
-    # ... other methods
+    def on_update(self, app_id: str, latest_version: str):
+        print(f"Updating {app_id}: {latest_version}")
+
+    def on_uninstall(self, app_id: str):
+        print(f"Uninstalling {app_id}")
 ```
 
-#### Notifier Plugin
-
-Show desktop notifications when updates are available. Requires `plyer` (`pip install plyer`).
-
-Enable via config:
+### State Export/Import:
 
 ```powershell
-ohub config set notifier_enabled true
-# Optional: custom command
-ohub config set notifier_cmd \"powershell -Command \\\"[reflection.assembly]::LoadWithPartialName('System.Windows.Forms');[System.Windows.Forms.MessageBox]::Show('Update available for $APP_ID')\\\"\"
+ohub state export C:\backup\ohub_state.json
+ohub state import C:\backup\ohub_state.json
 ```
 
-#### State Export/Import
-
-Backup or migrate your managed apps list:
-
-```powershell
-ohub state export C:\\backup\\ohub_state.json
-ohub state import C:\\backup\\ohub_state.json
-```
-
-Use `ohub state import --dry-run` to preview changes.
-
-#### Package Manager Fallback
-
-When a GitHub release has no suitable installer, ObtainHub can try Winget, Scoop, or Chocolatey:
-
-```powershell
-ohub config set enable_winget true
-ohub config set enable_scoop true
-ohub config set enable_choco true
-ohub config set prefer_native false  # try package managers first
-```
-
-#### Architecture Preferences
-
-```powershell
-ohub config set prefer_x64 false
-ohub config set allow_x86_fallback true
-ohub install owner/repo --arch x86
-```
-
-#### Scheduled Checks
-
-Enable automatic background checks for updates via Windows Task Scheduler (or cron on other OSes).
+### Schedule:
 
 ```powershell
 ohub schedule enable
-ohub schedule set-interval 12   # hours
+ohub schedule disable
 ohub schedule status
+ohub schedule run --prerelease
 ```
 
-Configuration options:
-- `schedule_enabled`: boolean
-- `schedule_interval_hours`: integer (default 24)
-- `schedule_notify_on_update`: boolean (default false) - send a notification when updates are found
-- `schedule_run_on_startup`: boolean (default false) - run a check at user login
-
-See [Configuration](#configuration) for details.
-
-#### Shims
-
-Create portable shims (`.exe` files) that allow running apps from anywhere without adding their install directory to `PATH`.
+### Architecture Preferences:
 
 ```powershell
-ohub shim add <app>   # create shim for managed app
-ohub shim remove <app> # remove shim
-ohub shim list        # list all shims
-ohub shim path        # show shim directory
+ohub config set arch_preference "x64"
+# or per-app:
+ohub install owner/repo --arch x64
 ```
 
-Shims are created in the directory configured by `shim_dir` (default: `%USERPROFILE%\\bin\\obtainhub`). Add this directory to your `PATH` to use shims from any command line.
-
-#### TUI Dashboard
-
-Launch an interactive terminal user interface to browse, install, update, and remove apps.
+### Package Manager Fallback:
 
 ```powershell
-ohub tui
+ohub install owner/repo --fallback
 ```
 
-Keybindings:
-- `r`: refresh list
-- `u`: update selected app
-- `c`: check for updates
-- `x` or `Esc`: exit
-- `Enter`: view app details
+### Caching:
 
-The TUI requires the `textual` and `rich` packages, which are bundled in the installer. In development environments, install them with `pip install textual rich`.
+Reduce GitHub API calls with ETag and Last-Modified headers. Cache stored in `%USERPROFILE%\.cache\obhub\`. No auth required.
 
-#### Asset Caching
+### Parallel Checks:
 
-Reduce GitHub API calls by caching release metadata using ETag and Last-Modified headers. This speeds up repeated checks and helps avoid rate limiting.
-
-The cache is stored in `%USERPROFILE%\\.cache\\obtainhub\\` and is automatically managed. No configuration is required.
-
-#### Parallel Checks
-
-Speed up `ohub check --all` by processing multiple repositories concurrently.
-
-The number of parallel workers is derived from the system's CPU count but can be influenced by the `check_timeout_seconds` configuration (higher timeout allows more retries, indirectly affecting parallelism). No direct configuration is needed; the feature is enabled by default.
-
-#### Incremental State
-
-State updates are performed incrementally, meaning only changed parts of the state file are rewritten. This reduces I/O and prevents corruption during concurrent access.
-
-No user action is required; this is an internal optimization.
-
-#### Structured Logging
-
-Enable JSON-formatted log output for easier integration with log aggregation tools.
+Speed up batch operations with `--all` and `--workers` (default: CPU count).
 
 ```powershell
-ohub config set log_file C:\\logs\\obtainhub.json
-ohub config set log_level JSON
+ohub check --all --workers 8
 ```
 
-Setting `log_level` to `JSON` will output logs in JSON format to the file specified by `log_file`. The console will still display human-readable logs unless `log_file` is set and `log_level` is set to `JSON` (or a custom setup). Refer to the `log_level` and `log_file` configuration options.
+### State Management:
 
-#### Self‑Update
+State tracks installed apps, versions, and metadata. Read-only access, no encryption required; optimization only.
+
+### Logging:
+
+Enable JSON-formatted logging for CI/CD and log aggregation tools.
 
 ```powershell
-ohub self-update
+ohub config set log_file "C:\logs\obtainhub.json"
+ohub config set log_format JSON
 ```
 
-#### Dry‑Run
+Setting `log_format` to `JSON` outputs structured logs; human-readable unless `JSON` specified. `log_file` and `log_format` work together (both set).
+
+### Dry Run:
+
+Preview operations without executing.
 
 ```powershell
 ohub install owner/repo --dry-run
+ohub update owner/repo --dry-run
 ```
 
-#### Release Notes
+### Release Notes:
 
 ```powershell
-ohub update owner/repo --notes
+ohub install owner/repo --notes
 ```
 
 ## Configuration
 
-Configuration is stored in `%USERPROFILE%\\.config\\obtainhub\\config.json`. All options can be viewed with:
+Config file: `%USERPROFILE%\.config\obtainhub\config.json`. Key settings:
 
-```powershell
-ohub config show
-```
-
-### Key Settings
-
-- `github_token`: Personal access token for higher API rate limits.
-- `self_update_enabled`: Toggle self‑update capability.
-- `install_dir`: Where apps are installed (default: `%USERPROFILE%\\Applications\\ObtainHub`).
-- `download_dir`: Where installers are downloaded (default: `%USERPROFILE%\\Downloads\\ObtainHub`).
-- `schedule_enabled`: Enable automatic background checks.
-- `schedule_interval_hours`: How often to run checks (in hours).
-- `schedule_notify_on_update`: Send a notification when scheduled checks find updates (default: false).
-- `schedule_run_on_startup`: Run a scheduled check at user login (default: false).
-- `shim_dir`: Directory where shims are created (default: `%USERPROFILE%\\bin\\obtainhub`).
-- `allow_hooks`: Enable or disable hook execution (default: true).
-- `log_level`: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`, or `JSON` for structured logging.
-- `log_file`: Path to a log file (optional).
-- `groups`: Define app groups for bulk operations.
-- `manifest_sources`: Add custom manifest sources (GitHub, Winget, Scoop, Chocolatey).
-- `notifier_enabled`: Enable desktop notifications on update.
-- `notifier_cmd`: Custom command to run on notification (optional).
-- `prefer_x64`: Prefer x64 assets when available.
-- `allow_x86_fallback`: Allow x86 if x64 not found.
-- `allow_arm64`: Allow ARM64 assets.
-- `enable_winget`: Enable Winget as fallback source.
-- `enable_scoop`: Enable Scoop as fallback source.
-- `enable_choco`: Enable Chocolatey as fallback source.
-- `prefer_native`: Try GitHub assets first before package managers.
+- `github_token`: GitHub API token (optional, stored in system keyring)
+- `install_dir`: Default install directory (`%USERPROFILE%\Applications\ObtainHub`)
+- `download_dir`: Download location (`%USERPROFILE%\Downloads\ObtainHub`)
+- `bin_dir`: Shim directory (`%USERPROFILE%\bin\obtainhub`)
+- `log_level`: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`, or `JSON` logging
+- `log_file`: Path to log file (optional)
+- `log_format`: `text` or `JSON`
+- `fallback_managers`: List of fallback package managers (GitHub, Chocolatey)
+- `check_interval_hours`: Background check interval
+- `prefer_x64`: Prefer x64 assets when available
+- `allow_prerelease`: Allow prereleases in updates
+- `prefer_native`: Prefer native GitHub releases over package managers
 
 ## Troubleshooting
 
-| Symptom | Solution |
-|---------|----------|
-| **\"App not detected after installation\"** | Some installers spawn child processes and exit early. ObtainHub verifies installation by checking the Windows Registry and install location. If verification fails, run `ohub check` to see if the app installed despite the error. |
-| **Rate limit errors (403)** | Set a GitHub token via `ohub config set github_token <token>` to increase limits from 60 to 5000 requests per hour. |
-| **\"No suitable asset found\"** | Ensure the release contains an asset matching your architecture preferences (`--arch`) and installer type. Use `--yes` to auto‑pick the first compatible asset, or interactively choose. |
-| **Shim not working** | Remember to add the shim directory (`%USERPROFILE%\\bin\\obtainhub` by default) to your `PATH` environment variable. |
-| **TUI fails to start** | The TUI requires the `textual` and `rich` Python packages. They are bundled in the installer but may be missing in development environments. Install with `pip install textual rich`. |
-| **Plugin not loading** | Check the console for `[Plugin] Failed to load ...` messages. Ensure the plugin class inherits from `obtainhub.plugins.base.Plugin` and implements all abstract methods. |
-| **Notifier not working** | Ensure `plyer` is installed (`pip install plyer`) and `notifier_enabled` is true. |
+| Issue | Solution |
+|-------|----------|
+| App not found | Verify repo name and that ObtainHub has access |
+| Rate limited (403) | Set `github_token` in config or wait for rate limit reset (60 req/hr unauth, 5000 auth) |
+| Architecture mismatch | Use `--arch x64|arm64|x86|auto` |
+| TUI not rendering | Ensure terminal supports ANSI and `textual` is installed |
+| Shim not in PATH | Add `%USERPROFILE%\bin\obtainhub` to PATH |
 
-## Building from Source
+## Development
 
-### Prerequisites
+```powershell
+git clone https://github.com/DavoudTeimouri/ObtainHub.git
+cd ObtainHub
+python -m pip install -e .[dev]
+python -m pytest tests/
+```
 
-- Python 3.9+
-- GitHub account (for token)
-- (Optional) `pyinstaller` for building executables
+Version managed in `obtainhub/__init__.py` and `obtainhub/main.py`.
 
-### Steps
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/DavoudTeimouri/ObtainHub.git
-   cd ObtainHub
-   ```
-2. Create a virtual environment (recommended):
-   ```bash
-   python -m venv venv
-   venv\\Scripts\\activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -e .
-   ```
-4. Run:
-   ```bash
-   python -m obtainhub
-   ```
-
-### Creating a Release
-
-1. Update the version in `obtainhub/__init__.py` and `obtainhub/main.py`.
-2. Add a changelog entry under `## [X.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`.
+Release process:
+1. Update version in `obtainhub/__init__.py` and `obtainhub/main.py`
+2. Update `CHANGELOG.md` with `YYYY-MM-DD` date
 3. Commit and tag:
    ```bash
-   git add .
-   git commit -m \"Release vX.Y.Z\"
+   git commit -m "Release vX.Y.Z"
    git tag vX.Y.Z
    git push origin main --tags
    ```
-4. GitHub Actions will build the distributables (MSI, EXE, ZIP) and publish the release.
+4. GitHub Actions builds and publishes release (MSI, EXE, ZIP)
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT © [ObtainHub Contributors](LICENSE)

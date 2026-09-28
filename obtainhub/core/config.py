@@ -168,6 +168,8 @@ class ConfigManager:
                 with open(global_file, "r", encoding="utf-8") as f:
                     gdata = json.load(f)
                 base = self._migrate(gdata)
+                # Global config should NOT provide the token (per comment in _global_config_file)
+                base.github_token = ""
             except Exception:
                 base = Config()
         else:
@@ -204,8 +206,8 @@ class ConfigManager:
                 except Exception:
                     token_from_keyring = None
 
-            # If we have a token in keyring, use it.
-            if token_from_keyring is not None:
+            # If we have a token in keyring (non-empty), use it.
+            if token_from_keyring:
                 config.github_token = token_from_keyring
             else:
                 # Fallback to environment variables

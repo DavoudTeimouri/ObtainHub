@@ -106,6 +106,16 @@ class TestConfigManager:
     @pytest.fixture
     def config_manager(self, temp_dir):
         """Create a ConfigManager with temp directory."""
+        # Clear keyring to avoid interference from other tests
+        import keyring
+        try:
+            keyring.delete_password("obtainhub", "github_token")
+        except Exception:
+            pass
+        # Clear env vars that affect token loading
+        import os
+        os.environ.pop("GITHUB_TOKEN", None)
+        os.environ.pop("OBTAINHUB_TOKEN", None)
         return ConfigManager(config_dir=temp_dir / "config")
 
     def test_load_creates_default_when_no_file(self, config_manager):
