@@ -399,6 +399,19 @@ def main(args: Optional[List[str]] = None) -> int:
     state_import.add_argument("file", nargs="?", help="Input file (required for import)")
     state_import.add_argument("--dry-run", action="store_true", help="Show what would be imported without applying")
 
+    # apps - backup/restore application folders
+    apps_parser = subparsers.add_parser("apps", help="Backup/restore application folders")
+    apps_subparsers = apps_parser.add_subparsers(dest="apps_action")
+    apps_backup = apps_subparsers.add_parser("backup", help="Backup application folder(s) to zip")
+    apps_backup.add_argument("output", help="Output zip file path")
+    apps_backup.add_argument("--app", nargs="*", help="App identifier(s) to backup (default: all)")
+    apps_backup.add_argument("--include-downloads", action="store_true", help="Include download folder in backup")
+    apps_restore = apps_subparsers.add_parser("restore", help="Restore application folder(s) from zip")
+    apps_restore.add_argument("input", help="Input zip file path")
+    apps_restore.add_argument("--app", nargs="*", help="App identifier(s) to restore (default: all)")
+    apps_restore.add_argument("--target-dir", metavar="DIR", help="Target base directory for apps")
+    apps_restore.add_argument("--dry-run", action="store_true", help="Show what would be restored without applying")
+
     # tui
     tui_parser = subparsers.add_parser("tui", help="Launch terminal UI dashboard (requires 'textual' package)")
     tui_parser.add_argument("--check-deps", action="store_true", help="Check if TUI dependencies are installed")
@@ -519,6 +532,8 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_shim(parsed, config_manager, state_manager, logger)
         elif parsed.command == "state":
             return cmd_state(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "apps":
+            return cmd_apps(parsed, config_manager, state_manager, logger)
         elif parsed.command == "tui":
             return cmd_tui(parsed, config_manager, state_manager, logger)
         elif parsed.command == "reset":
@@ -2869,6 +2884,170 @@ def cmd_state(
         else:
             print(f"\n[dry-run] Would add/update {imported}, skip {skipped}. Run without --dry-run to apply.")
         
+        return 0
+
+    return 0
+
+
+def cmd_apps(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle apps backup/restore command."""
+    from obtainhub.core.self_uninstall import SelfUninstaller
+    import zipfile
+    import tempfile
+    from datetime import datetime
+
+    action = parsed.apps_action or "backup"
+
+    if action == "backup":
+        output_path = Path(parsed.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        uninstaller = SelfUninstaller(config_manager, state_manager)
+        paths = uninstaller.get_ohub_paths()
+        download_dir = paths["download_dir"]
+
+        # Determine which apps to backup
+        app_ids = parsed.app if parsed.app else None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            files_to_zip = {}
+
+            if app_ids:
+                # Backup specific apps
+                for app_id in app_ids:
+                    app = state_manager.get_app(app_id)
+                    if not app:
+                        print(f"Warning: App not found in state: {app_id}")
+                        continue
+                    # Find app folder in downloads
+                    if download_dir.exists():
+                        for app_folder in download_dir.iterdir():
+                            if app_folder.is_dir() and app_id.replace("/", "_") in app_folder.name:
+                                for file_path in app_folder.rglob("*"):
+                                    if file_path.is_file():
+                                        rel_path = file_path.relative_to(download_dir)
+                                        files_to_zip[f"apps/{rel_path}"] = file_path
+            else:
+                # Backup all apps from downloads folder
+                if download_dir.exists():
+                    for app_folder in download_dir.iterdir():
+                        if app_folder.is_dir():
+                            for file_path in app_folder.rglob("*"):
+                                if file_path.is_file():
+                                    rel_path = file_path.relative_to(download_dir)
+                                    files_to_zip[f"apps/{rel_path}"] = file_path
+
+            if not files_to_zip:
+                print("No app files found to backup")
+                return 1
+
+            # Copy files to temp dir
+            for rel_path, src_path in files_to_zip.items():
+                dest = tmpdir_path / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_path, dest)
+
+            # Create metadata
+            metadata = {
+                "version": "1.0",
+                "ohub_version": __version__,
+                "created": datetime.now().isoformat(),
+                "type": "apps_backup",
+                "apps": list(set(f.split("/")[1] for f in files_to_zip.keys() if "/" in f)),
+                "includes_downloads": parsed.include_downloads,
+            }
+            meta_path = tmpdir_path / "metadata.json"
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2)
+
+            # Create zip
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for root, dirs, files in os.walk(tmpdir_path):
+                    for file in files:
+                        file_path = Path(root) / file
+                        arc_path = file_path.relative_to(tmpdir_path)
+                        zf.write(file_path, arc_path)
+
+        print(f"Apps backup created: {output_path}")
+        return 0
+
+    elif action == "restore":
+        input_path = Path(parsed.input)
+        if not input_path.exists():
+            print(f"Error: Backup file not found: {input_path}")
+            return 1
+
+        target_base = Path(parsed.target_dir) if parsed.target_dir else None
+        app_ids = parsed.app if parsed.app else None
+        dry_run = parsed.dry_run
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+
+            # Extract zip
+            with zipfile.ZipFile(input_path, "r") as zf:
+                zf.extractall(tmpdir_path)
+
+            # Read metadata
+            meta_file = tmpdir_path / "metadata.json"
+            metadata = {}
+            if meta_file.exists():
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+
+            # Find apps directory in extracted files
+            apps_dir = tmpdir_path / "apps"
+            if not apps_dir.exists():
+                print("Error: No apps directory in backup")
+                return 1
+
+            # Determine target downloads directory
+            if target_base:
+                target_downloads = target_base
+            else:
+                uninstaller = SelfUninstaller(config_manager, state_manager)
+                paths = uninstaller.get_ohub_paths()
+                target_downloads = paths["download_dir"]
+
+            target_downloads.mkdir(parents=True, exist_ok=True)
+
+            # Restore files
+            restored = 0
+            for app_folder in apps_dir.iterdir():
+                if not app_folder.is_dir():
+                    continue
+
+                # Filter by app_id if specified
+                if app_ids:
+                    match = False
+                    for aid in app_ids:
+                        if aid.replace("/", "_") in app_folder.name:
+                            match = True
+                            break
+                    if not match:
+                        continue
+
+                target_app_folder = target_downloads / app_folder.name
+                if dry_run:
+                    print(f"[DRY RUN] Would restore: {app_folder.name} -> {target_app_folder}")
+                else:
+                    if target_app_folder.exists():
+                        shutil.rmtree(target_app_folder)
+                    shutil.copytree(app_folder, target_app_folder)
+                    print(f"Restored: {app_folder.name}")
+                restored += 1
+
+        if dry_run:
+            print(f"\n[dry-run] Would restore {restored} app folder(s). Run without --dry-run to apply.")
+        else:
+            print(f"Restore complete: {restored} app folder(s) restored.")
+
         return 0
 
     return 0
