@@ -50,6 +50,10 @@ from obtainhub.utils.helpers import is_newer, is_windows_x64, parse_version
 # Global flag for graceful shutdown
 _shutdown_requested = False
 
+# Self-repo identifier for self-detection
+_SELF_REPO_ID = "DavoudTeimouri/ObtainHub"
+_SELF_EXE_NAMES = ("ohub.exe", "ObtainHub.exe", "ohub")
+
 def _signal_handler(signum, frame):
     """Handle Ctrl+C gracefully."""
     global _shutdown_requested
@@ -59,6 +63,22 @@ def _signal_handler(signum, frame):
 
 signal.signal(signal.SIGINT, _signal_handler)
 signal.signal(signal.SIGTERM, _signal_handler)
+
+
+def _is_self_app(app_id: str, app) -> bool:
+    """Check if an app is ObtainHub itself (self-targeting prevention)."""
+    if app_id == _SELF_REPO_ID:
+        return True
+    if app and getattr(app, 'github_repo', '') == _SELF_REPO_ID:
+        return True
+    if app and getattr(app, 'name', '').lower() == 'obtainhub':
+        return True
+    # Also check by installer path if it's ohub.exe
+    if app and getattr(app, 'installer_path', ''):
+        installer_name = Path(app.installer_path).name.lower()
+        if installer_name in _SELF_EXE_NAMES:
+            return True
+    return False
 
 
 def main(args: Optional[List[str]] = None) -> int:
@@ -72,7 +92,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v1.0.8 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v1.0.9 - GitHub-based Package Updater and Manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -269,6 +289,8 @@ def main(args: Optional[List[str]] = None) -> int:
     # config
     config_parser = subparsers.add_parser("config", help="Manage configuration")
     config_subparsers = config_parser.add_subparsers(dest="config_action")
+    config_parser.set_defaults(config_action="show")
+    config_parser.add_argument("--json", action="store_true", help="Output as JSON")
     config_subparsers.add_parser("show", help="Show current config")
     config_subparsers.add_parser("edit", help="Open config in editor")
     set_parser = config_subparsers.add_parser("set", help="Set config value")
@@ -288,6 +310,33 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     self_update_parser.add_argument(
         "--force", action="store_true", help="Force update even if same version"
+    )
+
+    # self-uninstall
+    self_uninstall_parser = subparsers.add_parser("self-uninstall", help="Completely remove ohub from the system")
+    self_uninstall_parser.add_argument(
+        "--backup", metavar="PATH", help="Create backup zip before uninstalling"
+    )
+    self_uninstall_parser.add_argument(
+        "--include-downloads", action="store_true", help="Include download folder in backup"
+    )
+    self_uninstall_parser.add_argument(
+        "--force", "-y", action="store_true", help="Skip confirmation prompt"
+    )
+    self_uninstall_parser.add_argument(
+        "--restore", metavar="PATH", help="Restore from a backup zip instead of uninstalling"
+    )
+    self_uninstall_parser.add_argument(
+        "--target-config", metavar="DIR", help="Target config directory for restore (default: current)"
+    )
+    self_uninstall_parser.add_argument(
+        "--target-state", metavar="DIR", help="Target state directory for restore (default: current)"
+    )
+    self_uninstall_parser.add_argument(
+        "--target-downloads", metavar="DIR", help="Target downloads directory for restore (default: current)"
+    )
+    self_uninstall_parser.add_argument(
+        "--no-token", action="store_true", help="Don't restore GitHub token to keyring"
     )
 
     # schedule
@@ -421,10 +470,18 @@ def main(args: Optional[List[str]] = None) -> int:
         elif parsed.command == "list":
             return cmd_list(parsed, state_manager)
         elif parsed.command == "uninstall":
+            # Self-protection: block uninstall on ohub itself
+            if parsed.app and _is_self_app(parsed.app, state_manager):
+                print("Error: Cannot uninstall ohub itself. Use 'ohub self-uninstall' to remove ohub.", file=sys.stderr)
+                return 1
             return cmd_uninstall(
                 parsed, config_manager, state_manager, logger
             )
         elif parsed.command == "remove":
+            # Self-protection: block remove on ohub itself
+            if parsed.app and _is_self_app(parsed.app, state_manager):
+                print("Error: Cannot remove ohub itself from management. Use 'ohub self-uninstall' to remove ohub.", file=sys.stderr)
+                return 1
             return cmd_remove(
                 parsed, config_manager, state_manager, logger
             )
@@ -442,6 +499,9 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_config(parsed, config_manager, state_manager)
         elif parsed.command == "self-update":
             return cmd_self_update(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "self-uninstall":
+            from obtainhub.core.self_uninstall import cmd_self_uninstall
+            return cmd_self_uninstall(parsed, config_manager, state_manager)
         elif parsed.command == "schedule":
             return cmd_schedule(parsed, config_manager, state_manager, logger)
         elif parsed.command == "group":
@@ -2285,15 +2345,41 @@ def cmd_config(
     """Handle config command."""
     config = config_manager.load()
 
+    # Self-protection: block config set/edit on ohub itself (via manifest source name)
+    # The config command doesn't take an app argument, but we can check if user is
+    # trying to modify ohub-related config. For now, we allow all config operations
+    # since they don't directly remove ohub.
+
     if parsed.config_action == "show":
         import json
-        print(json.dumps(config.to_dict(), indent=2))
+        if getattr(parsed, "json", False):
+            print(json.dumps(config.to_dict(), indent=2))
+        else:
+            for key, value in config.to_dict().items():
+                print(f"{key}: {value}")
     elif parsed.config_action == "get":
         print(getattr(config, parsed.key, "Not found"))
     elif parsed.config_action == "set":
-        setattr(config, parsed.key, parsed.value)
+        # Type conversion for known config fields
+        value = parsed.value
+        field_type = type(getattr(config, parsed.key, str))
+        if field_type == int:
+            try:
+                value = int(parsed.value)
+            except ValueError:
+                print(f"Error: {parsed.key} must be an integer")
+                return 1
+        elif field_type == bool:
+            value = parsed.value.lower() in ("true", "1", "yes", "on")
+        elif field_type == float:
+            try:
+                value = float(parsed.value)
+            except ValueError:
+                print(f"Error: {parsed.key} must be a float")
+                return 1
+        setattr(config, parsed.key, value)
         config_manager.save(config)
-        print(f"Set {parsed.key} = {parsed.value}")
+        print(f"Set {parsed.key} = {value}")
     elif parsed.config_action == "edit":
         print("Editor not yet implemented. Use 'ohub config set' for now.")
     elif parsed.config_action == "path":
@@ -2303,31 +2389,50 @@ def cmd_config(
         import shutil
         target_dir = Path(parsed.config_value)
         target_dir.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(config_manager.config_file), str(target_dir / config_manager.config_file.name))
-        shutil.move(str(state_manager.state_file), str(target_dir / state_manager.state_file.name))
-        # Update the ConfigManager and StateManager to point to new locations
-        config_manager.config_file = target_dir / config_manager.config_file.name
+        
+        # Move config and state files to new location
+        new_config_file = target_dir / config_manager.config_file.name
+        new_state_file = target_dir / state_manager.state_file.name
+        
+        shutil.move(str(config_manager.config_file), str(new_config_file))
+        shutil.move(str(state_manager.state_file), str(new_state_file))
+        
+        # Update ConfigManager and StateManager to point to new locations
+        config_manager.config_file = new_config_file
         config_manager.config_dir = target_dir
-        state_manager.state_file = target_dir / state_manager.state_file.name
+        state_manager.state_file = new_state_file
+        
         # Update config object's config_dir field so it gets saved
         config = config_manager.config
         config.config_dir = str(target_dir)
         config_manager.save(config)
         print(f"Moved config and state to {target_dir}")
     elif parsed.config_action == "repair":
-        import shutil
-        # Backup corrupt files
-        if config_manager.config_file.exists():
-            shutil.move(str(config_manager.config_file), str(config_manager.config_file) + ".bak")
-        if state_manager.state_file.exists():
-            shutil.move(str(state_manager.state_file), str(state_manager.state_file) + ".bak")
+        from obtainhub.utils.backup import create_backups
+        # Backup corrupt files using rotation
+        backed_up = create_backups([
+            config_manager.config_file,
+            state_manager.state_file
+        ])
+        if backed_up:
+            print(f"Repaired config and state. Backups: {', '.join(str(b) for b in backed_up)}")
+        else:
+            print("No existing config/state files to backup.")
         # Create new default config and state
         config = Config()
         state = StateManager()
+        # Preserve GitHub token from keyring
+        try:
+            import keyring
+            token = keyring.get_password("obtainhub", "github_token")
+            if token:
+                config.github_token = token
+                print("GitHub token preserved from keyring.")
+        except Exception:
+            pass
         # Save them (this will create fresh files)
         config_manager.save(config)
         state_manager.save()
-        print(f"Repaired config and state. Backups at {config_manager.config_file}.bak and {state_manager.state_file}.bak")
     return 0
 
 
@@ -2339,27 +2444,6 @@ def cmd_self_update(
 ) -> int:
     """Handle self-update command."""
     from obtainhub import __version__
-    import subprocess
-
-    # Best-effort check: is ohub.exe already the running process?
-    running = False
-    try:
-        result = subprocess.run(
-            ['tasklist', '/FI', 'IMAGENAME eq ohub.exe', '/FO', 'LIST'],
-            capture_output=True, text=True, timeout=10
-        )
-        running = 'ohub.exe' in result.stdout
-    except Exception:
-        running = False
-
-    if running:
-        print(
-            'ohub is already running. Self-update will be performed the next '
-            'time ohub exits. To check for updates in the background, add a '
-            'Windows Task Scheduler trigger running '
-            '"ohub check --all --timeout 300" periodically.'
-        )
-        return 0
 
     updater = SelfUpdater(config_manager, state_manager, current_version=__version__)
     result = updater.check_and_update(parsed.prerelease, parsed.force)

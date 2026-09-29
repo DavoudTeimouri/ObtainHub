@@ -80,6 +80,9 @@ class Config:
     log_level: str = "INFO"
     log_file: str = ""
 
+    # Backup
+    backup_retention_count: int = 2
+
     # Manifest sources (custom GitHub repos or JSON manifests)
     manifest_sources: List[ManifestSource] = field(default_factory=list)
 
@@ -131,6 +134,9 @@ class Config:
         valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if self.log_level.upper() not in valid_log_levels:
             errors.append(f"log_level must be one of: {valid_log_levels}")
+
+        if not (1 <= self.backup_retention_count <= 10):
+            errors.append("backup_retention_count must be between 1 and 10")
 
         return errors
 
