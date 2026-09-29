@@ -61,48 +61,48 @@ class SelfUninstaller:
         
         return paths
     
-    def collect_files_to_backup(self) -> Dict[str, Path]:
-        """Collect all files that should be backed up."""
-        paths = self.get_ohub_paths()
-        to_backup = {}
-        
-        # Config and state files
-        if paths["config_file"].exists():
-            to_backup["config.json"] = paths["config_file"]
-        if paths["state_file"].exists():
-            to_backup["state.json"] = paths["state_file"]
-        
-        # Check for other config/state files in the directories
-        for config_file in paths["config_dir"].glob("*.json"):
-            if config_file.name not in ("config.json",):
-                to_backup[f"config_extra/{config_file.name}"] = config_file
-        
-        for state_file in paths["state_dir"].glob("*.json"):
-            if state_file.name not in ("state.json",):
-                to_backup[f"state_extra/{state_file.name}"] = state_file
-        
-        return to_backup
+    def collect_files_to_backup(self, include_downloads: bool = False) -> Dict[str, Path]:
+            """Collect all files that should be backed up."""
+            paths = self.get_ohub_paths()
+            to_backup = {}
+
+            # Config and state files
+            if paths["config_file"].exists():
+                to_backup["config.json"] = paths["config_file"]
+            if paths["state_file"].exists():
+                to_backup["state.json"] = paths["state_file"]
+
+            # Check for other config/state files in the directories
+            for config_file in paths["config_dir"].glob("*.json"):
+                if config_file.name not in ("config.json",):
+                    to_backup[f"config_extra/{config_file.name}"] = config_file
+
+            for state_file in paths["state_dir"].glob("*.json"):
+                if state_file.name not in ("state.json",):
+                    to_backup[f"state_extra/{state_file.name}"] = state_file
+
+            if include_downloads:
+                download_dir = paths["download_dir"]
+                if download_dir.exists():
+                    for file_path in download_dir.rglob("*"):
+                        if file_path.is_file():
+                            rel_path = file_path.relative_to(download_dir)
+                            to_backup[f"downloads/{rel_path}"] = file_path
+
+            return to_backup
     
     def create_backup_zip(self, output_path: Path, include_downloads: bool = False) -> bool:
-        """
-        Create a zip backup of ObtainHub data.
-        
-        Args:
-            output_path: Path to the output zip file
-            include_downloads: Whether to include the download folder
-            
-        Returns:
-            True if successful
-        """
-        files = self.collect_files_to_backup()
-        
-        if include_downloads:
-            download_dir = self.get_ohub_paths()["download_dir"]
-            if download_dir.exists():
-                for file_path in download_dir.rglob("*"):
-                    if file_path.is_file():
-                        rel_path = file_path.relative_to(download_dir)
-                        files[f"downloads/{rel_path}"] = file_path
+            """
+            Create a zip backup of ObtainHub data.
+
+            Args:
+                output_path: Path to the output zip file
+                include_downloads: Whether to include the download folder
+
+            Returns:
+                True if successful
+            """
+            files = self.collect_files_to_backup(include_downloads=include_downloads)
         
         # Add metadata
         metadata = {

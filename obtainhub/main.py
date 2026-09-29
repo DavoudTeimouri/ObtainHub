@@ -297,11 +297,20 @@ def main(args: Optional[List[str]] = None) -> int:
     set_parser.add_argument("key", help="Config key")
     set_parser.add_argument("value", help="Config value")
     get_parser = config_subparsers.add_parser("get", help="Get config value")
+    get_parser.add_argument("key", help="Config key")
     config_subparsers.add_parser("path", help="Show config and state file paths")
     move_parser = config_subparsers.add_parser("move", help="Move config and state files to a directory")
     move_parser.add_argument("config_value", help="Target directory")
     config_subparsers.add_parser("repair", help="Repair corrupted config/state files")
-    get_parser.add_argument("key", help="Config key")
+    backup_parser = config_subparsers.add_parser("backup", help="Backup config and state to zip file")
+    backup_parser.add_argument("output", help="Output zip file path")
+    backup_parser.add_argument("--include-downloads", action="store_true", help="Include download folder in backup")
+    restore_parser = config_subparsers.add_parser("restore", help="Restore config and state from zip file")
+    restore_parser.add_argument("input", help="Input zip file path")
+    restore_parser.add_argument("--target-config", metavar="DIR", help="Target config directory (default: current)")
+    restore_parser.add_argument("--target-state", metavar="DIR", help="Target state directory (default: current)")
+    restore_parser.add_argument("--target-downloads", metavar="DIR", help="Target downloads directory (default: current)")
+    restore_parser.add_argument("--no-token", action="store_true", help="Don't restore GitHub token to keyring")
 
     # self-update
     self_update_parser = subparsers.add_parser("self-update", help="Update ohub itself")
@@ -2433,6 +2442,79 @@ def cmd_config(
         # Save them (this will create fresh files)
         config_manager.save(config)
         state_manager.save()
+    elif parsed.config_action == "backup":
+        from obtainhub.utils.backup import create_backups
+        from obtainhub.core.self_uninstall import SelfUninstaller
+        import zipfile
+        import tempfile
+        from datetime import datetime
+
+        output_path = Path(parsed.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Use SelfUninstaller's backup collection logic
+        uninstaller = SelfUninstaller(config_manager, state_manager)
+        files_to_backup = uninstaller.collect_files_to_backup(include_downloads=parsed.include_downloads)
+
+        # Create temp dir and copy files
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            for rel_path, src_path in files_to_backup.items():
+                dest = tmpdir_path / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_path, dest)
+
+            # Create metadata
+            metadata = {
+                "version": "1.0",
+                "ohub_version": __version__,
+                "created": datetime.now().isoformat(),
+                "files": list(files_to_backup.keys()),
+                "includes_downloads": parsed.include_downloads,
+                "github_token": config.github_token,
+            }
+            meta_path = tmpdir_path / "metadata.json"
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2)
+
+            # Create zip
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for root, dirs, files in os.walk(tmpdir_path):
+                    for file in files:
+                        file_path = Path(root) / file
+                        arc_path = file_path.relative_to(tmpdir_path)
+                        zf.write(file_path, arc_path)
+
+        print(f"Backup created: {output_path}")
+
+    elif parsed.config_action == "restore":
+        from obtainhub.core.self_uninstall import SelfUninstaller
+
+        input_path = Path(parsed.input)
+        if not input_path.exists():
+            print(f"Error: Backup file not found: {input_path}")
+            return 1
+
+        uninstaller = SelfUninstaller(config_manager, state_manager)
+
+        # Override target directories if provided
+        target_config = Path(parsed.target_config) if parsed.target_config else None
+        target_state = Path(parsed.target_state) if parsed.target_state else None
+        target_downloads = Path(parsed.target_downloads) if getattr(parsed, "target_downloads", None) else None
+
+        success = uninstaller.restore_from_zip(
+            input_path,
+            target_config=target_config,
+            target_state=target_state,
+            target_downloads=target_downloads,
+            restore_token=not parsed.no_token,
+        )
+        if success:
+            print("Restore completed successfully.")
+            return 0
+        else:
+            print("Restore failed.")
+            return 1
     return 0
 
 
