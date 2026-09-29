@@ -412,6 +412,14 @@ def main(args: Optional[List[str]] = None) -> int:
     apps_restore.add_argument("--target-dir", metavar="DIR", help="Target base directory for apps")
     apps_restore.add_argument("--dry-run", action="store_true", help="Show what would be restored without applying")
 
+    # cleanup
+    cleanup_parser = subparsers.add_parser("cleanup", help="Clean up leftover files and tasks")
+    cleanup_subparsers = cleanup_parser.add_subparsers(dest="cleanup_action")
+    cleanup_subparsers.add_parser("all", help="Run all cleanup operations")
+    cleanup_subparsers.add_parser("tasks", help="Clean up leftover scheduled tasks")
+    cleanup_subparsers.add_parser("downloads", help="Clean up incomplete downloads")
+    cleanup_subparsers.add_parser("cache", help="Clean up old manifest cache entries")
+
     # tui
     tui_parser = subparsers.add_parser("tui", help="Launch terminal UI dashboard (requires 'textual' package)")
     tui_parser.add_argument("--check-deps", action="store_true", help="Check if TUI dependencies are installed")
@@ -534,6 +542,8 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_state(parsed, config_manager, state_manager, logger)
         elif parsed.command == "apps":
             return cmd_apps(parsed, config_manager, state_manager, logger)
+        elif parsed.command == "cleanup":
+            return cmd_cleanup(parsed, config_manager, state_manager, logger)
         elif parsed.command == "tui":
             return cmd_tui(parsed, config_manager, state_manager, logger)
         elif parsed.command == "reset":
@@ -3228,6 +3238,97 @@ def _check_cron_job_exists() -> None:
             print("Cron job: NOT FOUND")
     except Exception:
         print("Cron job: UNKNOWN")
+
+
+def cmd_cleanup(
+    parsed: argparse.Namespace,
+    config_manager: ConfigManager,
+    state_manager: StateManager,
+    logger,
+) -> int:
+    """Handle cleanup command."""
+    action = parsed.cleanup_action or "all"
+
+    # Determine config and state managers
+    config = config_manager.load()
+    download_dir = Path(config.download_dir).expanduser() if config.download_dir else Path.home() / "ObtainHub"
+
+    cleaned_any = False
+
+    if action in ("all", "tasks"):
+        # Clean up leftover scheduled tasks
+        if os.name == "nt":
+            task_name = "ObtainHubScheduledCheck"
+            try:
+                import subprocess
+                result = subprocess.run(["schtasks", "/Query", "/TN", task_name, "/FO", "LIST"],
+                                        capture_output=True, text=True)
+                if result.returncode == 0:
+                    # Check if ohub is still installed at the expected location
+                    ohub_path = state_manager.get_app("DavoudTeimouri/ObtainHub")
+                    if not ohub_path:
+                        # ohub not in state, remove the task
+                        subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"],
+                                       check=True, capture_output=True)
+                        print(f"Removed orphaned Windows Task Scheduler task: {task_name}")
+                        cleaned_any = True
+            except Exception:
+                pass
+        else:
+            # Check cron
+            try:
+                import subprocess
+                result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+                if result.returncode == 0 and "ObtainHub scheduled check" in result.stdout:
+                    ohub_path = state_manager.get_app("DavoudTeimouri/ObtainHub")
+                    if not ohub_path:
+                        lines = [l for l in result.stdout.splitlines() if "ObtainHub scheduled check" not in l]
+                        subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n",
+                                       text=True, check=True)
+                        print("Removed orphaned cron job")
+                        cleaned_any = True
+            except Exception:
+                pass
+
+    if action in ("all", "downloads"):
+        # Clean up incomplete downloads (.part files)
+        if download_dir.exists():
+            part_files = list(download_dir.rglob("*.part"))
+            for part_file in part_files:
+                try:
+                    part_file.unlink()
+                    print(f"Removed incomplete download: {part_file}")
+                    cleaned_any = True
+                except Exception:
+                    pass
+
+    if action in ("all", "cache"):
+        # Clean up old manifest cache entries (older than 30 days)
+        import time
+        now = time.time()
+        thirty_days = 30 * 24 * 60 * 60
+        cache = state_manager.data.get("manifest_cache", {})
+        to_remove = []
+        for key, entry in cache.items():
+            if isinstance(entry, dict) and "cached_at" in entry:
+                if now - entry["cached_at"] > thirty_days:
+                    to_remove.append(key)
+            elif isinstance(entry, (int, float)):
+                if now - entry > thirty_days:
+                    to_remove.append(key)
+
+        for key in to_remove:
+            del cache[key]
+            cleaned_any = True
+
+        if to_remove:
+            state_manager.save()
+            print(f"Cleaned {len(to_remove)} old manifest cache entries")
+
+    if not cleaned_any:
+        print("Nothing to clean up.")
+
+    return 0
 
 
 def cmd_tui(
