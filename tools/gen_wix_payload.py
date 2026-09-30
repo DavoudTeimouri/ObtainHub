@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the onedir payload into installer/setup.wxs.
 
-Two facts force this to be generated rather than hand-written:
+Three WiX rules force this to be generated rather than hand-written:
 
 1. WiX rejects a directory as a <File Source=...>, and a PyInstaller onedir
    tree is a directory of loose files whose contents depend on the Python
@@ -9,10 +9,16 @@ Two facts force this to be generated rather than hand-written:
 2. The tree has to keep its shape. PyInstaller imports from _internal\\ at
    runtime, so flattening _internal\\keyrings\\alt\\ into _internal\\ would
    produce an MSI that installs but does not run.
+3. A Component may not carry @Directory when it sits in a ComponentGroup
+   (CNDL0062). So each Component is nested inside its own <Directory> and
+   the Feature pulls it in with <ComponentRef>.
 
-So this emits the real directory tree, one Component per directory (each
-carrying a stable GUID so upgrades replace files correctly), and wires the
-result into a Feature. Run after PyInstaller, before candle:
+Ids are restricted to the characters Windows Installer accepts: letters,
+digits, underscore and period only, starting with a letter or underscore.
+Package names like keyring-25_7_0.dist-info contain hyphens, so a naive
+join produces CNDL0014.
+
+Run after PyInstaller, before candle:
 
     python tools/gen_wix_payload.py
 """
@@ -25,22 +31,25 @@ from xml.sax.saxutils import escape
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist" / "ohub"
 WXS = ROOT / "installer" / "setup.wxs"
-MARKER = "  <!-- GENERATED PAYLOAD:"
+
+REFS_MARKER = "    <!-- GENERATED COMPONENT REFS -->"
+PAYLOAD_MARKER = "  <!-- GENERATED PAYLOAD -->"
 
 # Deterministic namespace so component GUIDs are stable across rebuilds:
 # a changed GUID makes Windows Installer install a second copy instead of
 # upgrading the first.
 GUID_NS = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 
-# A Windows Installer Id must start with a letter or underscore, stay within
-# 72 characters, and be unique across the package.
+# CNDL0014: a Windows Installer Id may contain only A-Z, a-z, 0-9, "_" and
+# ".", and must start with a letter or underscore. 72 chars is the cap.
+LEGAL = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.")
 MAX_ID = 60
 
 
 def sanitise(stem: str, taken: set) -> str:
-    cleaned = "".join(c if (c.isalnum() or c in "_-") else "_" for c in stem)
+    cleaned = "".join(c if c in LEGAL else "_" for c in stem)
     if not cleaned or not (cleaned[0].isalpha() or cleaned[0] == "_"):
-        cleaned = "f_" + cleaned
+        cleaned = "_" + cleaned
     base = cleaned[:MAX_ID]
     candidate, n = base, 1
     while candidate in taken:
@@ -51,11 +60,18 @@ def sanitise(stem: str, taken: set) -> str:
     return candidate
 
 
+def component_guid(directory: Path) -> str:
+    return str(
+        uuid.uuid5(GUID_NS, "obtainhub/onedir/" + str(directory).replace("\\", "/"))
+    ).upper()
+
+
 def group_by_dir(payload):
-    """{relative parent dir: [files]} plus the set of every dir in the tree.
+    """{relative parent dir: [files]}, plus every directory in the tree.
 
     Parents are added even when they hold no files of their own:
-    _internal\\keyrings\\alt\\__init__.py implies _internal and _internal\\keyrings.
+    _internal\\keyrings\\alt\\__init__.py implies _internal and
+    _internal\\keyrings.
     """
     tree: dict = {}
     for path in payload:
@@ -70,106 +86,127 @@ def group_by_dir(payload):
     return tree, all_dirs
 
 
-def directory_id(directory: Path, taken: set) -> str:
-    return "d_" + sanitise("_".join(directory.parts), taken)
+def file_id(relative: Path, taken: set) -> str:
+    return sanitise("_".join(relative.with_suffix("").parts), taken)
 
 
-def component_id(directory: Path, taken: set) -> str:
-    return "c_" + sanitise("_".join(directory.parts), taken)
+def component_lines(parent, files, ids_taken, indent="      "):
+    """One Component holding `files`, nested under its own Directory."""
+    if parent == Path("."):
+        cid = "c_root"
+    else:
+        cid = "c_" + sanitise("_".join(parent.parts), ids_taken)
+
+    out = [
+        '%s<Component Id="%s" Guid="%s">'
+        % (indent, cid, component_guid(parent))
+    ]
+    taken = {"ohub.exe"}
+    for index, relative in enumerate(sorted(files, key=lambda p: p.name)):
+        fid = file_id(relative, taken)
+        source = str(Path("dist") / "ohub" / relative).replace("/", "\\")
+        keypath = ' KeyPath="yes"' if index == 0 else ""
+        out.append(
+            '%s  <File Id="%s" Name="%s" Source="%s"%s />'
+            % (indent, fid, escape(relative.name), escape(source), keypath)
+        )
+    out.append("%s</Component>" % indent)
+    return cid, out
 
 
-class Ids:
-    """One id per directory, memoised so the DirectoryRef and the Component
-    that targets it always name the same Directory."""
-
-    def __init__(self):
-        self._dirs: dict = {}
-        self._comps: dict = {}
-        self._taken_dirs: set = set()
-        self._taken_comps: set = set()
-
-    def directory(self, path: Path) -> str:
-        if path not in self._dirs:
-            self._dirs[path] = directory_id(path, self._taken_dirs)
-        return self._dirs[path]
-
-    def component(self, path: Path) -> str:
-        if path not in self._comps:
-            self._comps[path] = component_id(path, self._taken_comps)
-        return self._comps[path]
-
-
-def component_guid(directory: Path) -> str:
-    return str(
-        uuid.uuid5(GUID_NS, "obtainhub/onedir/" + str(directory).replace("\\", "/"))
-    ).upper()
-
-
-def render(payload) -> str:
-    ids = Ids()
-    taken_files = {"ohub.exe"}
+def render(payload):
     tree, all_dirs = group_by_dir(payload)
+    ids_taken: set = set()
+    dir_taken: set = set()
+    taken_files = {"ohub.exe"}
 
-    # Every directory except the root, shallowest first so nesting is legal.
     nested = sorted(
         (d for d in all_dirs if d != Path(".")),
         key=lambda p: (len(p.parts), str(p)),
     )
 
-    out = [
-        MARKER + " %d file(s) by tools/gen_wix_payload.py - do not hand-edit."
-        % len(payload),
-        "  -->",
-        "",
-        "  <Fragment>",
-        '    <DirectoryRef Id="INSTALLFOLDER">',
-    ]
+    def directory_name(path: Path) -> str:
+        return "d_" + sanitise("_".join(path.parts), dir_taken)
 
+    body = []
+    refs = []
     open_stack: list = []
+
     for directory in nested:
-        # Close anything that is not an ancestor of this directory.
         while open_stack and open_stack[-1] not in directory.parents:
-            out.append("      " + "  " * (len(open_stack) - 1) + "</Directory>")
+            body.append("      " + "  " * (len(open_stack) - 1) + "</Directory>")
             open_stack.pop()
 
         indent = "      " + "  " * len(open_stack)
-        out.append(
+        body.append(
             '%s<Directory Id="%s" Name="%s">'
-            % (indent, ids.directory(directory), escape(directory.name))
+            % (indent, directory_name(directory), escape(directory.name))
         )
         open_stack.append(directory)
 
+        if directory in tree:
+            cid, lines = component_lines(
+                directory, tree[directory], ids_taken, indent + "  "
+            )
+            body.extend(lines)
+            refs.append(cid)
+
     while open_stack:
-        out.append("      " + "  " * (len(open_stack) - 1) + "</Directory>")
+        body.append("      " + "  " * (len(open_stack) - 1) + "</Directory>")
         open_stack.pop()
 
-    out.append("    </DirectoryRef>")
-    out.append("")
-    out.append('    <ComponentGroup Id="OnedirPayload" Directory="INSTALLFOLDER">')
-
-    # One component per directory holding files, KeyPath on its first file.
-    for parent in sorted(tree, key=lambda p: (len(p.parts), str(p))):
-        cid = "c_root" if parent == Path(".") else ids.component(parent)
-        did = "INSTALLFOLDER" if parent == Path(".") else ids.directory(parent)
-        out.append(
-            '      <Component Id="%s" Guid="%s" Directory="%s">'
-            % (cid, component_guid(parent), did)
+    # Files sitting at the top of dist\\ohub cannot be nested under a generated
+    # Directory, so they go in a ComponentGroup that sets @Directory instead.
+    root_group = []
+    if Path(".") in tree:
+        cid, lines = component_lines(
+            Path("."), tree[Path(".")], ids_taken, "        "
         )
-        files = sorted(tree[parent], key=lambda p: p.name)
-        for index, relative in enumerate(files):
-            fid = sanitise("_".join(relative.with_suffix("").parts), taken_files)
-            source = str(Path("dist") / "ohub" / relative).replace("/", "\\")
-            # Windows Installer needs exactly one KeyPath per component.
-            keypath = ' KeyPath="yes"' if index == 0 else ""
-            out.append(
-                '        <File Id="%s" Name="%s" Source="%s"%s />'
-                % (fid, escape(relative.name), escape(source), keypath)
-            )
-        out.append("      </Component>")
+        root_group = [
+            '    <ComponentGroup Id="OnedirRoot" Directory="INSTALLFOLDER">'
+        ] + lines + [
+            "    </ComponentGroup>"
+        ]
+        refs.append(cid)
 
-    out.append("    </ComponentGroup>")
-    out.append("  </Fragment>")
-    return "\n".join(out)
+    if root_group:
+        body.extend([""] + root_group)
+
+    refs_block = "\n".join(
+        ['      <ComponentRef Id="%s" />' % c for c in sorted(refs)]
+    )
+    payload_block = "\n".join(
+        [
+            PAYLOAD_MARKER + " %d file(s) by tools/gen_wix_payload.py - do not hand-edit."
+            % len(payload),
+            "  -->",
+            "",
+            "  <Fragment>",
+            '    <DirectoryRef Id="INSTALLFOLDER">',
+        ]
+        + body
+        + [
+            "    </DirectoryRef>",
+            "  </Fragment>",
+        ]
+    )
+    return refs_block, payload_block
+
+
+def splice(text: str, marker: str, block: str, after: str) -> str:
+    """Replace [marker, after) with `block` plus a fresh marker.
+
+    The marker is re-emitted so the generator is idempotent: a second run
+    finds it again instead of tripping over a missing substring.
+    """
+    if marker not in text:
+        # Already generated; re-insert the marker just above the closing tag.
+        at = text.index(after)
+        return text[:at] + block + "\n" + marker + "\n" + text[at:]
+
+    start = text.index(marker)
+    end = text.index(after, start)
+    return text[:start] + block + "\n" + marker + "\n" + text[end:]
 
 
 def main() -> int:
@@ -182,10 +219,11 @@ def main() -> int:
         print("ERROR: onedir payload is empty (only ohub.exe found)", file=sys.stderr)
         return 1
 
+    refs_block, payload_block = render(payload)
     text = WXS.read_text(encoding="utf-8")
-    start = text.index(MARKER)
-    end = text.index("</Wix>", start)
-    WXS.write_text(text[:start] + render(payload) + "\n" + text[end:], encoding="utf-8")
+    text = splice(text, REFS_MARKER, refs_block, "</Feature>")
+    text = splice(text, PAYLOAD_MARKER, payload_block, "</Wix>")
+    WXS.write_text(text, encoding="utf-8")
 
     tree, _ = group_by_dir(payload)
     print(

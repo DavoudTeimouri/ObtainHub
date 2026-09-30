@@ -15,18 +15,9 @@
 
     <Feature Id="ProductFeature" Title="ObtainHub" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
-      <ComponentGroupRef Id="OnedirPayload" />
+      <ComponentRef Id="PathEnvironment" />
+      <!-- GENERATED COMPONENT REFS -->
     </Feature>
-
-    <!-- Add to user PATH -->
-    <Property Id="PATH_ACTION" Value="set" />
-    <Environment Id="AddToPath"
-                 Name="PATH"
-                 Value="[INSTALLFOLDER]"
-                 Action="set"
-                 Part="last"
-                 Permanent="no"
-                 System="no" />
   </Product>
 
   <Fragment>
@@ -40,6 +31,19 @@
     </Directory>
   </Fragment>
 
+  <!-- CNDL0005: Environment is only legal inside a Fragment, not under Product. -->
+  <Fragment>
+    <Component Id="PathEnvironment" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567893">
+      <Environment Id="AddToPath"
+                   Name="PATH"
+                   Value="[INSTALLFOLDER]"
+                   Action="set"
+                   Part="last"
+                   Permanent="no"
+                   System="no" />
+    </Component>
+  </Fragment>
+
   <Fragment>
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567891">
@@ -51,9 +55,7 @@
                   WorkingDirectory="INSTALLFOLDER" />
       </Component>
     </ComponentGroup>
-
   </Fragment>
 
-    <!-- GENERATED PAYLOAD: replaced by tools/gen_wix_payload.py at build time. -->
-
+  <!-- GENERATED PAYLOAD -->
 </Wix>
