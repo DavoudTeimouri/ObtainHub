@@ -15,6 +15,7 @@
 
     <Feature Id="ProductFeature" Title="ObtainHub" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="OnedirPayload" />
     </Feature>
 
     <!-- Add to user PATH -->
@@ -32,10 +33,6 @@
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
         <Directory Id="INSTALLFOLDER" Name="ObtainHub" />
-        <!-- onedir payload: PyInstaller puts the bundled .dll/.pyd under
-             _internal\; the layout is generated at build time by
-             tools/gen_wix_payload.py, which regenerates this block. -->
-        <Directory Id="INTERNALFOLDER" Name="_internal" />
       </Directory>
       <Directory Id="ProgramMenuFolder">
         <Directory Id="ApplicationProgramsFolder" Name="ObtainHub" />
@@ -55,6 +52,8 @@
       </Component>
     </ComponentGroup>
 
-    <!-- GENERATED PAYLOAD: replaced by tools/gen_wix_payload.py at build time. -->
   </Fragment>
+
+    <!-- GENERATED PAYLOAD: replaced by tools/gen_wix_payload.py at build time. -->
+
 </Wix>
