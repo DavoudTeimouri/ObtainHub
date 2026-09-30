@@ -36,7 +36,7 @@ CloseApplicationsFilter={#AppExeName}
 RestartApplications=yes
 
 [Files]
-Source: "..\dist\ohub.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\ohub\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Code]
 function AppendToPath(const APath: String): Boolean;
@@ -45,31 +45,38 @@ var
   NewPath: String;
 begin
   Result := False;
-  
+
   // Read current PATH from user registry
   if not RegQueryStringValue(HKCU, 'Environment', 'PATH', CurrentPath) then
     CurrentPath := '';
-  
-  // Check if already in PATH
-  if Pos(APath, CurrentPath) > 0 then begin
+
+  // Check if already present
+  if Pos(';' + APath + ';', ';' + CurrentPath + ';') > 0 then
+  begin
     Result := True;
     Exit;
   end;
-  
-  // Append to PATH
-  if Length(CurrentPath) > 0 then
-    NewPath := CurrentPath + ';' + APath
+
+  // Build new PATH
+  if Length(CurrentPath) = 0 then
+    NewPath := APath
   else
-    NewPath := APath;
-  
-  // Write back to user registry (safe, no admin required)
-  Result := RegWriteStringValue(HKCU, 'Environment', 'PATH', NewPath);
+    NewPath := CurrentPath + ';' + APath;
+
+  // Write back
+  if RegWriteStringValue(HKCU, 'Environment', 'PATH', NewPath) then
+  begin
+    Result := True;
+    // Broadcast environment change
+    SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0, PChar('Environment'), SMTO_ABORTIFHUNG, 5000, @Result);
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then begin
-    // Add to user PATH (safe, no admin required)
+  if CurStep = ssPostInstall then
+  begin
+    // Only add to PATH if the user didn't disable it (no checkbox, always add for CLI tools)
     AppendToPath(ExpandConstant('{app}'));
   end;
 end;
