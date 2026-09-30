@@ -1,0 +1,25 @@
+# Plugin Manifest Schema for ObtainHub
+# Save as plugin.yaml in plugin package root
+
+name: "example-plugin"
+version: "1.0.0"
+description: "Example plugin demonstrating capability-based sandboxing"
+entry_point: "obtainhub.plugins.example:ExamplePlugin"
+author: "ObtainHub Team"
+license: "MIT"
+homepage: "https://github.com/DavoudTeimouri/ObtainHub"
+min_obtainhub_version: "1.0.12"
+
+# Required capabilities - plugin will fail to load if not granted
+required_capabilities:
+  - "read_config"
+  - "fs_read"
+
+# Optional capabilities - plugin can request these at runtime
+optional_capabilities:
+  - "write_config"
+  - "network"
+  - "execute"
+
+# Signature (base64 encoded) for verification - filled in by signing tool
+signature: ""

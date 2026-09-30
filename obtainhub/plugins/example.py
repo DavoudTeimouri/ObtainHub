@@ -1,16 +1,36 @@
-"""Example plugin that logs update events."""
-from obtainhub.plugins.base import Plugin
+"""Example plugin for demonstration purposes."""
+
+from obtainhub.plugins import Plugin, PluginContext
 
 
 class ExamplePlugin(Plugin):
-    def on_load(self):
-        print(f"[Plugin] {self.name} loaded")
+    """Example plugin that adds a 'hello' command."""
 
-    def on_update(self, app_id: str, current_version: str, latest_version: str):
-        print(f"[Plugin] {self.name}: {app_id} updated {current_version} -> {latest_version}")
+    name = "example"
+    version = "1.0.0"
+    description = "Example plugin demonstrating the plugin system"
 
-    def on_install(self, app_id: str, version: str):
-        print(f"[Plugin] {self.name}: {app_id} installed version {version}")
+    required_capabilities = ["can_fs_read"]
 
-    def on_uninstall(self, app_id: str):
-        print(f"[Plugin] {self.name}: {app_id} uninstalled")
+    def initialize(self) -> None:
+        print(f"[ExamplePlugin] Initialized with config_dir: {self.context.config_dir}")
+
+    def shutdown(self) -> None:
+        print("[ExamplePlugin] Shutdown")
+
+    def get_commands(self) -> dict:
+        return {
+            "hello": self.cmd_hello,
+        }
+
+    def cmd_hello(self, args, context) -> int:
+        print("Hello from ExamplePlugin!")
+        return 0
+
+    def get_hooks(self) -> dict:
+        return {
+            "app_installed": [self.on_app_installed],
+        }
+
+    def on_app_installed(self, data: dict) -> None:
+        print(f"[ExamplePlugin] App installed: {data.get('name')}")
