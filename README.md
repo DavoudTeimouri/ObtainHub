@@ -7,25 +7,30 @@ A cross-platform, open-source CLI tool for managing and updating GitHub-based ap
 - **GitHub Release Management**: Search, install, update, and manage applications from GitHub releases
 - **Multiple Installer Types**: MSI, EXE, NSIS, InstallShield, ZIP, and portable apps
 - **Scheduled Checks**: Automated background update checks with configurable schedule
-- **Self-Update**: ObtainHub can update itself from GitHub releases
+- **Self-Update**: ObtainHub can update itself from GitHub releases (detached installer)
+- **Self-Protection**: Prevents accidental removal of ObtainHub itself
+- **Self-Uninstaller**: Complete removal with optional backup/restore to zip
 - **Cross-Platform Architecture**: Supports x64, ARM64, and x86 architectures
 - **Terminal UI (TUI)**: Interactive terminal interface for managing apps
 - **Hooks System**: Custom scripts before/after install/uninstall (`pre_install`, `post_install`, `pre_uninstall`, `post_uninstall`)
 - **State Export/Import**: Backup and restore ObtainHub state anywhere
 - **Plugin System**: Extensible plugin architecture (`obtainhub/plugins`)
 - **Desktop Notifications**: Optional notifications via `plyer`
-- **State Import/Export**: `ohub state export` and `ohub state import`
+- **Config Backup/Restore**: Backup and restore config/state to zip files
+- **Apps Backup/Restore**: Backup and restore application folders
+- **Cleanup Command**: Clean up orphaned tasks, incomplete downloads, and old cache
 - **Package Manager Fallback**: Winget, Scoop, Chocolatey via `ohub install --fallback`
 - **GitHub API Caching**: ETag/Last-Modified caching to reduce API calls
 - **Batch Operations**: `--all` flag for bulk operations
 - **Automatic Updates**: Scheduled background checks and updates
+- **Backup Rotation**: Configurable retention for all backup operations
 
 ## Quick Start
 
 ### Install via GitHub Releases (recommended)
 
 ```powershell
-# Download and run the installer
+# Download and run the installer from https://github.com/DavoudTeimouri/ObtainHub/releases
 # Or install via package manager:
 ohub install owner/repo
 ```
@@ -50,9 +55,35 @@ ohub uninstall Microsoft/vscode
 
 ```powershell
 ohub config show
+ohub config --json
+ohub config get download_dir
+ohub config set backup_retention_count 5
 ohub config path
 ohub config move "C:\new\config\dir"
 ohub config repair
+ohub config backup backup.zip
+ohub config backup backup.zip --include-downloads
+ohub config restore backup.zip
+ohub config restore backup.zip --target-config "C:\new\config" --no-token
+```
+
+### Apps Backup/Restore:
+
+```powershell
+ohub apps backup apps_backup.zip
+ohub apps backup apps_backup.zip --app owner/repo1,owner/repo2
+ohub apps restore apps_backup.zip
+ohub apps restore apps_backup.zip --target-dir "C:\new\apps" --dry-run
+ohub apps restore apps_backup.zip --app owner/repo
+```
+
+### Cleanup:
+
+```powershell
+ohub cleanup all
+ohub cleanup tasks      # Remove orphaned scheduled tasks
+ohub cleanup downloads  # Remove incomplete downloads (.part files)
+ohub cleanup cache      # Clean old manifest cache entries (30+ days)
 ```
 
 ### Groups:
@@ -117,6 +148,26 @@ ohub install owner/repo --arch x64
 ohub install owner/repo --fallback
 ```
 
+### Self-Update & Self-Protection:
+
+```powershell
+ohub self-update --prerelease --force
+ohub check
+ohub list
+ohub update
+# ohub uninstall DavoudTeimouri/ObtainHub  # BLOCKED - self-protection
+# ohub remove DavoudTeimouri/ObtainHub     # BLOCKED - self-protection
+```
+
+### Self-Uninstaller:
+
+```powershell
+ohub self-uninstall --backup backup.zip
+ohub self-uninstall --backup backup.zip --include-downloads --force
+ohub self-uninstall --restore backup.zip
+ohub self-uninstall --restore backup.zip --target-config "C:\config" --no-token
+```
+
 ### Caching:
 
 Reduce GitHub API calls with ETag and Last-Modified headers. Cache stored in `%USERPROFILE%\.cache\obhub\`. No auth required.
@@ -175,6 +226,34 @@ Config file: `%USERPROFILE%\.config\obtainhub\config.json`. Key settings:
 - `prefer_x64`: Prefer x64 assets when available
 - `allow_prerelease`: Allow prereleases in updates
 - `prefer_native`: Prefer native GitHub releases over package managers
+- `backup_retention_count`: Number of backups to keep (1-10, default: 2)
+- `schedule_enabled`: Enable scheduled checks
+- `schedule_interval_hours`: Schedule interval in hours
+- `schedule_notify_on_update`: Notify on update available
+- `schedule_run_on_startup`: Run scheduled check on startup
+
+## Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `ohub search <query>` | Search GitHub for apps |
+| `ohub install <owner/repo>` | Install an app |
+| `ohub update [app]` | Update installed apps |
+| `ohub check [app]` | Check for updates |
+| `ohub list` | List installed apps |
+| `ohub uninstall <app>` | Uninstall an app |
+| `ohub remove <app>` | Remove app from tracking |
+| `ohub config [show|get|set|edit|path|move|repair|backup|restore]` | Manage configuration |
+| `ohub apps [backup|restore]` | Backup/restore application folders |
+| `ohub cleanup [all|tasks|downloads|cache]` | Clean up leftover files and tasks |
+| `ohub self-update` | Update ohub itself |
+| `ohub self-uninstall` | Completely remove ohub with optional backup |
+| `ohub state [export|import]` | Export/import state |
+| `ohub schedule [enable|disable|status|run]` | Manage scheduled checks |
+| `ohub group [list|add|remove|delete|install|update|check]` | Manage app groups |
+| `ohub shim [list|add|remove|path]` | Manage portable shims |
+| `ohub reset` | Reset ohub state and configuration |
+| `ohub tui` | Launch terminal UI dashboard |
 
 ## Troubleshooting
 
@@ -185,6 +264,9 @@ Config file: `%USERPROFILE%\.config\obtainhub\config.json`. Key settings:
 | Architecture mismatch | Use `--arch x64|arm64|x86|auto` |
 | TUI not rendering | Ensure terminal supports ANSI and `textual` is installed |
 | Shim not in PATH | Add `%USERPROFILE%\bin\obtainhub` to PATH |
+| Config corrupted | Run `ohub config repair` |
+| Self-update fails | Run `ohub self-update --force` |
+| Cannot uninstall ohub | Use `ohub self-uninstall` instead |
 
 ## Development
 
@@ -206,7 +288,7 @@ Release process:
    git tag vX.Y.Z
    git push origin main --tags
    ```
-4. GitHub Actions builds and publishes release (MSI, EXE, ZIP)
+4. GitHub Actions builds and publishes release (MSI, EXE)
 
 ## Contributing
 
