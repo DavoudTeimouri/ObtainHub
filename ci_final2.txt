@@ -1,0 +1,4 @@
+release.yml: completed/failure  https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36740927668
+build.yml: completed/failure  https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36740929425
+  JOB build [failure]
+    STEP: Build MSI -> failure

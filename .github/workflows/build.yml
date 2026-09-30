@@ -36,8 +36,45 @@ jobs:
       - name: Build executable
         run: python build_dist.py --exe
 
-      - name: Build MSI
-        run: python build_dist.py --msi
+      - name: Build WiX MSI
+        shell: powershell
+        run: |
+          Write-Host "=== WiX MSI Build ==="
+          $wixBin = $null
+          $wixPaths = @(
+            "C:\Program Files (x86)\WiX Toolset v3.11\bin",
+            "C:\Program Files\WiX Toolset v3.11\bin",
+            "C:\Program Files (x86)\WiX Toolset v4.0\bin",
+            "C:\Program Files\WiX Toolset v4.0\bin"
+          )
+          foreach ($p in $wixPaths) {
+            $resolved = Get-Item -Path $p -ErrorAction SilentlyContinue
+            if ($resolved -and (Test-Path (Join-Path $resolved.FullName "candle.exe"))) {
+              $wixBin = $resolved.FullName
+              Write-Host "Found WiX at: $wixBin"
+              break
+            }
+          }
+          if (-not $wixBin) {
+            $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
+            if ($candlePath) { $wixBin = Split-Path $candlePath }
+          }
+          if (-not $wixBin) {
+            Write-Host "WiX NOT FOUND - skipping MSI"
+            exit 0
+          }
+          $candle = Join-Path $wixBin "candle.exe"
+          $light = Join-Path $wixBin "light.exe"
+          Write-Host "candle: $candle (exists: $(Test-Path $candle))"
+          Write-Host "light:  $light  (exists: $(Test-Path $light))"
+          python tools/gen_wix_payload.py
+          & $candle -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
+          Write-Host "candle exit: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj 2>&1
+          Write-Host "light exit: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "MSI: $(Get-Item dist/ObtainHub.msi)"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
