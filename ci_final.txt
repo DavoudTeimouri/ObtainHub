@@ -1,0 +1,11 @@
+release.yml: completed/failure  https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886944
+  JOB Build Artifacts [failure]
+    STEP: Build WiX MSI -> failure
+  JOB Type Check (mypy) [failure]
+    STEP: Run mypy -> failure
+  JOB Post-Build Smoke Test [skipped]
+  JOB SLSA Provenance [skipped]
+  JOB Create/Update Release [skipped]
+build.yml: completed/failure  https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886935
+  JOB build [failure]
+    STEP: Build MSI -> failure

@@ -94,6 +94,11 @@ jobs:
           python tools/gen_wix_payload.py
           Select-String -Path installer\setup.wxs -Pattern 'GENERATED PAYLOAD' -Context 0,3
 
+      - name: Debug: show generated setup.wxs
+        run: |
+          Write-Host "=== GENERATED SETUP.WXS ==="
+          Get-Content installer/setup.wxs
+
       - name: Build WiX MSI
         shell: powershell
         run: |

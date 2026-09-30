@@ -1,0 +1,17 @@
+=== Create/Update Release [skipped] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886944/job/109961149956
+=== SLSA Provenance [skipped] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886944/job/109961148631
+=== Post-Build Smoke Test [skipped] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886944/job/109961144668
+=== Type Check (mypy) [failure] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886944/job/109960820545
+=== build [failure] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886935/job/109960820501
+=== Security Audit (pip-audit) [success] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886944/job/109960820463
+=== sync [success] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886994/job/109960820236
+=== Build Artifacts [failure] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36736886944/job/109960820022
+JOB Build Artifacts [failure] id=109960820022
+   STEP Build WiX MSI -> failure
+JOB Type Check (mypy) [failure] id=109960820545
+   STEP Run mypy -> failure
+JOB Post-Build Smoke Test [skipped] id=109961144668
+JOB SLSA Provenance [skipped] id=109961148631
+JOB Create/Update Release [skipped] id=109961149956
+JOB build [failure] id=109960820501
+   STEP Build MSI -> failure
