@@ -83,11 +83,11 @@ jobs:
       - name: Sync version into installer/manifest files
         run: python tools/sync_versions.py
 
-      - name: Build with PyInstaller (onedir)
+      - name: Build with PyInstaller (onedir) and harden PE headers
         run: |
-          python -m PyInstaller --clean ObtainHub.spec
+          python build_dist.py --exe
           Write-Host "PyInstaller completed"
-          Get-ChildItem dist\
+          Get-ChildItem dist\ohub\
 
       - name: Build WiX MSI
         shell: powershell

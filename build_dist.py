@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Build Windows distribution artifacts."""
+"""Build Windows distribution artifacts.
+
+Usage:
+    python build_dist.py                 # PyInstaller -> MSI -> EXE (full chain)
+    python build_dist.py --exe           # PyInstaller only
+    python build_dist.py --installer     # WiX MSI + Inno Setup EXE only
+    python build_dist.py --msi           # WiX MSI only
+"""
 
 import os
 import shutil
 import subprocess
 import sys
+
+DIST_EXE = os.path.join("dist", "ohub", "ohub.exe")
 
 
 def run(cmd, cwd=None, shell=False):
@@ -18,29 +27,24 @@ def run(cmd, cwd=None, shell=False):
     return result
 
 
-def main():
-    # Build with PyInstaller using spec file (onedir mode)
-    run([
-        sys.executable, "-m", "PyInstaller",
-        "--clean",
-        "ObtainHub.spec"
-    ])
+def build_exe():
+    """Build the onedir PyInstaller distribution and apply PE hardening."""
+    run([sys.executable, "-m", "PyInstaller", "--clean", "ObtainHub.spec"])
 
-    # In onedir mode, the exe is at dist/ohub/ohub.exe
-    dist_exe = "dist/ohub/ohub.exe"
-    if os.path.exists(dist_exe):
-        print(f"Built: {dist_exe}")
-    else:
-        print(f"ERROR: ohub.exe not found at {dist_exe}")
+    if not os.path.exists(DIST_EXE):
+        print(f"ERROR: {DIST_EXE} not found")
         sys.exit(1)
 
-    # Copy the entire onedir folder to dist/ohub for distribution
-    # The folder is already at dist/ohub from PyInstaller
-    # We just need to ensure it's complete
-    print(f"Onedir build at: dist/ohub/")
+    # ASLR/DEP/CFG are PE header bits PyInstaller does not expose. Set them here,
+    # after the link, so the shipped binary actually has them.
+    from obtainhub.pe_hardening import harden_tree
 
-    # Build WiX MSI - locate tools via PATH
-    print("Building WiX MSI...")
+    modified = harden_tree(os.path.join("dist", "ohub"))
+    print(f"PE hardening: {modified} file(s) updated in dist/ohub")
+    print(f"Built: {DIST_EXE}")
+
+
+def build_msi():
     candle = shutil.which("candle")
     light = shutil.which("light")
     if not candle or not light:
@@ -48,25 +52,42 @@ def main():
         sys.exit(1)
     run([candle, "-out", "dist/ObtainHub.wixobj", "installer/setup.wxs"])
     run([light, "-out", "dist/ObtainHub.msi", "dist/ObtainHub.wixobj"])
+    print("Built: dist/ObtainHub.msi")
 
-    # Build Inno Setup EXE installer
-    print("Building Inno Setup EXE...")
+
+def build_setup_exe():
     iscc = shutil.which("iscc")
     if not iscc:
         print("ERROR: Inno Setup compiler (iscc) not found in PATH")
         sys.exit(1)
-    # Inno Setup expects ohub.exe at dist/ohub.exe, but we have it at dist/ohub/ohub.exe
-    # The setup.iss references ..\dist\ohub.exe - we need to adjust
-    # For now, copy to expected location
-    shutil.copy2(dist_exe, "dist/ohub.exe")
     run([iscc, "installer/setup.iss"])
-    # Clean up temp copy
-    os.remove("dist/ohub.exe")
+    # Inno writes to installer/Output/ObtainHub-Setup.exe; the workflow stages it.
+    print("Built: installer/Output/ObtainHub-Setup.exe")
 
-    print("\nBuild complete!")
-    print(f"  {dist_exe} (onedir)")
-    print(f"  dist/ObtainHub.msi")
-    print(f"  dist/ObtainHub-Setup.exe")
+
+def main():
+    args = set(sys.argv[1:])
+    unknown = args - {"--exe", "--installer", "--msi"}
+    if unknown:
+        print(f"ERROR: unknown argument(s): {' '.join(sorted(unknown))}")
+        print(__doc__)
+        sys.exit(2)
+
+    only_exe = "--exe" in args
+    only_installer = "--installer" in args
+    only_msi = "--msi" in args
+
+    if not args or only_exe:
+        build_exe()
+    if only_msi or only_installer:
+        build_msi()
+    if not only_msi and not only_exe:
+        build_setup_exe()
+
+    print("\nBuild complete:")
+    for path in (DIST_EXE, "dist/ObtainHub.msi", "installer/Output/ObtainHub-Setup.exe"):
+        if os.path.exists(path):
+            print(f"  {path}")
 
 
 if __name__ == "__main__":

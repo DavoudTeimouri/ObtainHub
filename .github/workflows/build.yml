@@ -1,19 +1,13 @@
-name: Build Windows x64
+# Deprecated: superseded by .github/workflows/release.yml, which builds the
+# onedir distribution, runs the smoke test and gates the release on it.
+# Kept only for manual `workflow_dispatch` re-runs of the old onefile build.
+name: Build Windows x64 (legacy onefile)
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      prerelease:
-        description: 'Create prerelease'
-        type: boolean
-        default: false
-      target_tag:
-        description: 'Target release tag (default: v0.1.0-beta.1)'
-        type: string
-        default: 'v0.1.0-beta.1'
 
 permissions:
   contents: write
@@ -39,51 +33,17 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build executable (onefile)
-        run: |
-          python build_dist.py --onefile
-        working-directory: ${{ github.workspace }}
+      - name: Build executable
+        run: python build_dist.py --exe
 
-      - name: Build executable (onedir)
-        run: |
-          python build_dist.py --onedir
-        working-directory: ${{ github.workspace }}
-
-      - name: Install build tools
-        run: |
-          choco install wixtool
-          choco install innosetup --version=6.2.2 --force
-
-      - name: Build installer
-        run: |
-          python build_dist.py --installer
-        working-directory: ${{ github.workspace }}
-
-      - name: Build MSI (msilib)
-        run: |
-          python build_dist.py --msi
-        working-directory: ${{ github.workspace }}
+      - name: Build MSI
+        run: python build_dist.py --msi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ObtainHub-Windows-x64
           path: |
-            dist/ohub.exe
             dist/ohub/
-            installer/ObtainHub-Setup.exe
-            installer/ObtainHub.msi
-
-      - name: Create/Update Release
-        uses: softprops/action-gh-release@v1
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        with:
-          tag_name: ${{ github.event.inputs.target_tag || github.ref_name }}
-          files: |
-            dist/ohub.exe
-            installer/ObtainHub-Setup.exe
-            installer/ObtainHub.msi
-          prerelease: ${{ github.event.inputs.prerelease || false }}
-          draft: false
-          generate_release_notes: true
-          overwrite: true
+            dist/ObtainHub.msi
+          if-no-files-found: error

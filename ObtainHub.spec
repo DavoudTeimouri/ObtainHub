@@ -24,7 +24,9 @@ a = Analysis(
         ('obtainhub/utils/helpers.py', 'obtainhub/utils'),
         ('obtainhub/utils/backup.py', 'obtainhub/utils'),
         ('obtainhub/ports/__init__.py', 'obtainhub/ports'),
-        ('obtainhub/adapters/__init__.py', 'obtainhub/adapters'),
+        ('obtainhub/adapters/github_adapter.py', 'obtainhub/adapters'),
+        ('obtainhub/adapters/json_state_store.py', 'obtainhub/adapters'),
+        ('obtainhub/core/event_bus.py', 'obtainhub/core'),
         ('obtainhub/plugins/__init__.py', 'obtainhub/plugins'),
         ('obtainhub/plugins/sandbox.py', 'obtainhub/plugins'),
         ('obtainhub/plugins/sandbox_runner.py', 'obtainhub/plugins'),
@@ -104,17 +106,14 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='ohub',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=not IS_SIGNED_BUILD,  # Disable UPX for signed builds
     upx_exclude=[],
-    runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -122,5 +121,17 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='',
-    onefile=False,  # onedir mode for security hardening
+)
+
+# onedir: binaries/data go into dist/ohub/ next to the exe. A onefile build
+# re-extracts on every launch and gives up on the ASLR/DEP/CFG hardening below.
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=not IS_SIGNED_BUILD,
+    upx_exclude=[],
+    name='ohub',
 )
