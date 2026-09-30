@@ -36,12 +36,6 @@ jobs:
       - name: Build executable
         run: python build_dist.py --exe
 
-      - name: Debug: show generated setup.wxs
-        run: |
-          python tools/gen_wix_payload.py
-          Write-Host "=== GENERATED SETUP.WXS ==="
-          Get-Content installer/setup.wxs
-
       - name: Build MSI
         run: python build_dist.py --msi
 

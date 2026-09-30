@@ -1,7 +1,6 @@
 name: Build and Release Windows Binaries
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - 'v*.*.*'
@@ -15,20 +14,14 @@ jobs:
     runs-on: windows-latest
     continue-on-error: true
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install Dependencies
-        run: |
+          architecture: 'x64'
+      - run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install mypy
-
       - name: Run mypy
         run: mypy obtainhub/ --ignore-missing-imports
 
@@ -37,26 +30,19 @@ jobs:
     runs-on: windows-latest
     continue-on-error: true
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install Dependencies
-        run: |
+          architecture: 'x64'
+      - run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pip-audit
-
-      - name: Run pip-audit
+      - name: pip-audit
         run: pip-audit -r requirements.txt --format json --output pip-audit-results.json
-
-      - name: Upload pip-audit results
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: pip-audit-results
           path: pip-audit-results.json
@@ -66,20 +52,16 @@ jobs:
     name: Build Artifacts
     runs-on: windows-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install Python Dependencies
-        run: |
+          architecture: 'x64'
+      - run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
-
       - name: Sync version into installer/manifest files
         run: python tools/sync_versions.py
 
@@ -94,12 +76,6 @@ jobs:
           python tools/gen_wix_payload.py
           Select-String -Path installer\setup.wxs -Pattern 'GENERATED PAYLOAD' -Context 0,3
 
-      - name: Debug: show generated setup.wxs
-        run: |
-          Write-Host "=== GENERATED SETUP.WXS ==="
-          Get-Content installer/setup.wxs
-
-      - name: Build WiX MSI
         shell: powershell
         run: |
           Write-Host "=== WiX MSI Build ==="
@@ -108,12 +84,10 @@ jobs:
             "C:\Program Files (x86)\WiX Toolset v3.11\bin",
             "C:\Program Files\WiX Toolset v3.11\bin",
             "C:\Program Files (x86)\WiX Toolset v4.0\bin",
-            "C:\Program Files\WiX Toolset v4.0\bin",
-            "C:\Program Files (x86)\WiX Toolset*\bin",
-            "C:\Program Files\WiX Toolset*\bin"
+            "C:\Program Files\WiX Toolset v4.0\bin"
           )
           foreach ($p in $wixPaths) {
-            $resolved = Get-ChildItem $p -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+            $resolved = Get-Item -Path $p -ErrorAction SilentlyContinue
             if ($resolved -and (Test-Path (Join-Path $resolved.FullName "candle.exe"))) {
               $wixBin = $resolved.FullName
               Write-Host "Found WiX at: $wixBin"
@@ -132,12 +106,13 @@ jobs:
           $light = Join-Path $wixBin "light.exe"
           Write-Host "candle: $candle (exists: $(Test-Path $candle))"
           Write-Host "light:  $light  (exists: $(Test-Path $light))"
-          Write-Host "ohub.exe: $(Test-Path dist\ohub\ohub.exe)"
           & $candle -out dist/ObtainHub.wixobj installer/setup.wxs 2>&1
           Write-Host "candle exit: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $light -out dist/ObtainHub.msi dist/ObtainHub.wixobj 2>&1
           Write-Host "light exit: $LASTEXITCODE"
-          Write-Host "MSI created: $(Test-Path dist/ObtainHub.msi)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "MSI: $(Get-Item dist/ObtainHub.msi)"
 
       - name: WiX ICE validation
         if: hashFiles('dist/ObtainHub.msi') != ''
@@ -149,12 +124,9 @@ jobs:
           & $light -sice:ICE60 -out NUL dist/ObtainHub.msi 2>&1 | Select-String -Pattern "ICE60|error|warning" | Select-Object -First 40
           Write-Host "ICE60 check done (exit $LASTEXITCODE)"
 
-      - name: Install Inno Setup and build EXE
+      - name: Install Inno Setup and build EXE installer
         shell: powershell
-        working-directory: installer
         run: |
-          choco install innosetup -y --verbose --limit-output --execution-timeout=300
-
           $isccPath = (Get-Command iscc -ErrorAction SilentlyContinue).Path
           if (-not $isccPath) {
             $isccFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\innosetup" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue
@@ -167,28 +139,37 @@ jobs:
           }
           if (-not $isccPath) { Write-Host "ISCC NOT FOUND"; exit 1 }
           Write-Host "ISCC: $isccPath"
-
-          if (-not (Test-Path "..\dist\ohub\ohub.exe")) { Write-Host "dist\ohub\ohub.exe NOT FOUND"; exit 1 }
-
-          & $isccPath setup.iss 2>&1
+          & $isccPath installer/setup.iss 2>&1
           if ($LASTEXITCODE -ne 0) { Write-Host "ISCC failed: $LASTEXITCODE"; exit $LASTEXITCODE }
-          if (-not (Test-Path "Output\ObtainHub-Setup.exe")) { Write-Host "Output\ObtainHub-Setup.exe NOT FOUND"; exit 1 }
-          Get-ChildItem Output\
+          if (-not (Test-Path "installer/Output/ObtainHub-Setup.exe")) {
+            Write-Host "Output/ObtainHub-Setup.exe NOT FOUND"
+            exit 1
+          }
+          Write-Host "EXE installer: $(Get-Item installer/Output/ObtainHub-Setup.exe)"
 
       - name: Stage artifacts
-        shell: powershell
-        run: |
-          Copy-Item "installer\Output\ObtainHub-Setup.exe" "dist\ObtainHub-Setup.exe" -Force
-          Get-ChildItem dist\
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers
+          path: |
+            dist/ObtainHub.msi
+            installer/Output/ObtainHub-Setup.exe
+          if-no-files-found: error
+          retention-days: 5
 
       - name: Generate SBOM (CycloneDX)
         run: |
-          python -m pip install cyclonedx-bom
-          cyclonedx-py environment --output-format JSON --outfile dist/ObtainHub-sbom.json
-          Get-Item dist/ObtainHub-sbom.json
+          python -m cyclonedx_bom -o dist/ObtainHub-sbom.json --format JSON
+        if: hashFiles('dist/ohub/ohub.exe') != ''
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: dist/ObtainHub-sbom.json
+          retention-days: 90
 
       - name: Code-sign release binaries
-        shell: powershell
         continue-on-error: true
         env:
           SIGNING_PFX_B64: ${{ secrets.SIGNING_PFX_B64 }}
@@ -198,149 +179,118 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_ACCOUNT_ENDPOINT: ${{ secrets.AZURE_ACCOUNT_ENDPOINT }}
           AZURE_CODE_SIGNING_PROFILE: ${{ secrets.AZURE_CODE_SIGNING_PROFILE }}
-        run: pwsh .github/scripts/sign.ps1
-
-      - name: Upload installers
-        uses: actions/upload-artifact@v4
-        with:
-          name: installers
-          path: |
-            dist/ObtainHub.msi
-            dist/ObtainHub-Setup.exe
-          if-no-files-found: ignore
-          retention-days: 5
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: dist/ObtainHub-sbom.json
-          retention-days: 90
+        shell: powershell
+        run: .github/scripts/sign.ps1
 
   smoke-test:
     name: Post-Build Smoke Test
-    runs-on: windows-latest
     needs: build
+    runs-on: windows-latest
     steps:
-      - name: Download installers
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: dist/
-
-      - name: MSI install / run / uninstall
-        shell: powershell
+          path: dist
+      - name: Install MSI silently
         run: |
-          if (-not (Test-Path dist/ObtainHub.msi)) { Write-Host "MSI absent, skip"; exit 0 }
+          if (-not (Test-Path dist/ObtainHub.msi)) { Write-Host "MSI not found"; exit 1 }
           $log = "$env:RUNNER_TEMP\msi.log"
-          Start-Process msiexec -ArgumentList "/i", "dist\ObtainHub.msi", "/qn", "/norestart", "/l*v", $log -Wait -NoNewWindow
+          Start-Process msiexec.exe -ArgumentList "/i", "dist\ObtainHub.msi", "/qn", "/norestart", "/l*v", $log -Wait -NoNewWindow
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 50; exit 1 }
-          $exe = "$env:ProgramFiles\ObtainHub\ohub.exe"
-          if (-not (Test-Path $exe)) { Write-Host "ohub.exe missing after MSI install"; exit 1 }
-          & $exe --version
+          if (-not (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe")) { Write-Host "ohub.exe not installed"; exit 1 }
+          & "$env:ProgramFiles\ObtainHub\ohub.exe" --version
           if ($LASTEXITCODE -ne 0) { Write-Host "ohub --version failed"; exit 1 }
-          Start-Process msiexec -ArgumentList "/x", "dist\ObtainHub.msi", "/qn", "/norestart" -Wait -NoNewWindow
-          if ($LASTEXITCODE -ne 0) { Write-Host "MSI uninstall exit $LASTEXITCODE"; exit 1 }
-          Write-Host "MSI smoke PASSED"
-
-      - name: Inno Setup install / run / uninstall
-        shell: powershell
+      - name: Uninstall MSI
         run: |
-          if (-not (Test-Path dist/ObtainHub-Setup.exe)) { Write-Host "Setup EXE absent, skip"; exit 0 }
+          Start-Process msiexec.exe -ArgumentList "/x", "dist\ObtainHub.msi", "/qn", "/norestart" -Wait -NoNewWindow
+          if ($LASTEXITCODE -ne 0) { Write-Host "MSI uninstall exit $LASTEXITCODE"; exit 1 }
+          if (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe") { Write-Host "MSI cleanup failed"; exit 1 }
+      - name: Install EXE silently
+        run: |
+          if (-not (Test-Path dist/ObtainHub-Setup.exe)) { Write-Host "EXE not found"; exit 1 }
           $log = "$env:RUNNER_TEMP\iss.log"
-          Start-Process "dist\ObtainHub-Setup.exe" -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/LOG=$log" -Wait -NoNewWindow
+          & dist/ObtainHub-Setup.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /LOG=$log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 50; exit 1 }
-          $exe = "$env:ProgramFiles\ObtainHub\ohub.exe"
-          if (-not (Test-Path $exe)) { Write-Host "ohub.exe missing after Setup install"; exit 1 }
-          & $exe --version
+          if (-not (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe")) { Write-Host "ohub.exe not installed"; exit 1 }
+          & "$env:ProgramFiles\ObtainHub\ohub.exe" --version
           if ($LASTEXITCODE -ne 0) { Write-Host "ohub --version failed"; exit 1 }
-          $unins = "$env:ProgramFiles\ObtainHub\unins000.exe"
-          if (Test-Path $unins) {
-            Start-Process $unins -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES" -Wait -NoNewWindow
+      - name: Uninstall EXE
+        run: |
+          if (Test-Path "$env:ProgramFiles\ObtainHub\unins000.exe") {
+            $log = "$env:RUNNER_TEMP\uninst.log"
+            & "$env:ProgramFiles\ObtainHub\unins000.exe" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /LOG=$log
+            if ($LASTEXITCODE -ne 0) { Write-Host "EXE uninstall exit $LASTEXITCODE"; exit 1 }
           }
-          Write-Host "Inno Setup smoke PASSED"
+          if (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe") { Write-Host "EXE cleanup failed"; exit 1 }
 
   provenance:
     name: SLSA Provenance
-    runs-on: windows-latest
     needs: [build, smoke-test]
+    runs-on: windows-latest
     permissions:
       id-token: write
-      attestations: write
       contents: read
+      attestations: write
     steps:
-      - name: Download installers
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: dist/
-
+          path: dist
       - name: Attest MSI
+        if: ${{ hashFiles('dist/ObtainHub.msi') != '' }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/ObtainHub.msi
-
-      - name: Attest Setup EXE
+      - name: Attest EXE
+        if: ${{ hashFiles('dist/ObtainHub-Setup.exe') != '' }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/ObtainHub-Setup.exe
+      - name: Attest SBOM
+        if: ${{ hashFiles('dist/ObtainHub-sbom.json') != '' }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/ObtainHub-sbom.json
 
   release:
     name: Create/Update Release
-    runs-on: windows-latest
     needs: [build, smoke-test, provenance]
+    runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Download installers
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: dist/
-
-      - name: Download SBOM
-        uses: actions/download-artifact@v4
+          path: dist
+      - uses: actions/download-artifact@v4
         with:
           name: sbom
-          path: dist/
-
-      - name: List dist
-        shell: powershell
-        run: Get-ChildItem dist\
-
-      - name: Create/Update Release and Upload Assets
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: powershell
+          path: dist
+      - name: Create or update release
         run: |
           $tag = "${{ github.ref_name }}"
-          $prerelease = $tag -match 'beta|alpha|rc'
-          Write-Host "Tag: $tag  Prerelease: $prerelease"
-
-          $existing = gh release view $tag --json id --jq .id 2>$null
-          if ($LASTEXITCODE -eq 0 -and $existing) {
-            Write-Host "Replacing existing release $existing"
-            gh release delete $tag --yes --cleanup-tag
+          $notes = Get-Content CHANGELOG.md -Raw
+          $notes = $notes -replace '(?s)^## \[.*?\n', ''
+          $notes = $notes -replace '(?s)^## \[.*', ''
+          gh release create $tag --title "Release $tag" --notes "$notes" --generate-notes $(
+            if ("$tag" -match -- "-") { "--prerelease" } else { "" }
+          ) --yes --cleanup-tag
+        shell: powershell
+      - name: Upload all assets
+        run: |
+          foreach ($f in @("dist/ObtainHub.msi","dist/ObtainHub-Setup.exe","dist/ObtainHub-sbom.json")) {
+            if (Test-Path $f) { gh release upload --clobber $tag $f }
+            else { Write-Host "MISSING $f" }
           }
-
-          $args = @("release","create",$tag,"--title","Release $tag","--generate-notes")
-          if ($prerelease) { $args += "--prerelease" }
-          gh @args 2>&1
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-          foreach ($asset in @("dist/ObtainHub.msi","dist/ObtainHub-Setup.exe","dist/ObtainHub-sbom.json")) {
-            if (Test-Path $asset) {
-              gh release upload $tag $asset --clobber
-            } else {
-              Write-Host "MISSING $asset"
-            }
-          }
-
-      - name: Sync CHANGELOG.md into release notes
+        shell: powershell
+      - name: Sync release notes to CHANGELOG.md
+        run: python .github/scripts/sync_release_notes.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: python .github/scripts/sync_release_notes.py
