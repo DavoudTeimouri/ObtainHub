@@ -1,11 +1,47 @@
 """Tests for config module."""
 
 import json
+import os
 import tempfile
 from pathlib import Path
 import pytest
 
 from obtainhub.core.config import Config, ConfigManager, ManifestSource
+
+
+@pytest.fixture
+def secure_keyring(monkeypatch):
+    """Run tests against an in-memory keyring that behaves like a real OS store.
+
+    Without this, keyring falls back to keyrings.alt PlaintextKeyring on machines
+    without a credential store, and ConfigManager.save() correctly refuses to write
+    the token there - which would make these tests fail for an environment reason
+    rather than a behaviour one.
+    """
+    import keyring
+    from keyring.backend import KeyringBackend
+
+    class MemoryBackend(KeyringBackend):
+        priority = 10
+        store = {}
+
+        def get_password(self, service, username):
+            return self.store.get((service, username))
+
+        def set_password(self, service, username, password):
+            self.store[(service, username)] = password
+
+        def delete_password(self, service, username):
+            self.store.pop((service, username), None)
+
+    backend = MemoryBackend()
+    MemoryBackend.store = {}
+    monkeypatch.setattr(keyring, "get_keyring", lambda: backend)
+    monkeypatch.setattr(keyring, "backend", backend, raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("OBTAINHUB_TOKEN", raising=False)
+    yield backend
+    MemoryBackend.store = {}
 
 
 class TestConfig:
@@ -104,18 +140,8 @@ class TestConfigManager:
             yield Path(tmpdir)
 
     @pytest.fixture
-    def config_manager(self, temp_dir):
+    def config_manager(self, temp_dir, secure_keyring):
         """Create a ConfigManager with temp directory."""
-        # Clear keyring to avoid interference from other tests
-        import keyring
-        try:
-            keyring.delete_password("obtainhub", "github_token")
-        except Exception:
-            pass
-        # Clear env vars that affect token loading
-        import os
-        os.environ.pop("GITHUB_TOKEN", None)
-        os.environ.pop("OBTAINHUB_TOKEN", None)
         return ConfigManager(config_dir=temp_dir / "config")
 
     def test_load_creates_default_when_no_file(self, config_manager):

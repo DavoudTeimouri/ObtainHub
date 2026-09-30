@@ -92,18 +92,18 @@ class SelfUninstaller:
             return to_backup
     
     def create_backup_zip(self, output_path: Path, include_downloads: bool = False) -> bool:
-            """
-            Create a zip backup of ObtainHub data.
+        """
+        Create a zip backup of ObtainHub data.
 
-            Args:
-                output_path: Path to the output zip file
-                include_downloads: Whether to include the download folder
+        Args:
+            output_path: Path to the output zip file
+            include_downloads: Whether to include the download folder
 
-            Returns:
-                True if successful
-            """
-            files = self.collect_files_to_backup(include_downloads=include_downloads)
-        
+        Returns:
+            True if successful
+        """
+        files = self.collect_files_to_backup(include_downloads=include_downloads)
+
         # Add metadata
         metadata = {
             "created_at": datetime.now().isoformat(),
@@ -111,7 +111,9 @@ class SelfUninstaller:
             "ohub_version": self._get_ohub_version(),
             "includes_downloads": include_downloads,
             "files": list(files.keys()),
-            "github_token": self.config.github_token or "",
+            # The token lives in the OS credential store; a backup zip is copied
+            # around and often lands in cloud storage, so never write it here.
+            "github_token": "",
         }
         
         try:

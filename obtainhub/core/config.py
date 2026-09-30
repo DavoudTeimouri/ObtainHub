@@ -10,6 +10,24 @@ try:
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
+    keyring = None
+
+
+def keyring_backend_is_secure() -> bool:
+    """True only when the active keyring backend protects secrets at rest.
+
+    On machines without an OS credential store (headless Linux, some CI runners)
+    keyring silently selects keyrings.alt.file.PlaintextKeyring, which writes the
+    token to a plain file. KEYRING_AVAILABLE is true in that case, so callers that
+    care about real protection must ask this instead.
+    """
+    if not KEYRING_AVAILABLE:
+        return False
+    try:
+        backend = keyring.get_keyring()
+    except Exception:
+        return False
+    return not type(backend).__name__.endswith("PlaintextKeyring")
 
 
 
@@ -303,13 +321,26 @@ class ConfigManager:
         config_to_save = Config.from_dict({k: v for k, v in config.to_dict().items() if k != "github_token"})
         config_to_save.github_token = ""  # Ensure it's empty
 
-        # Store token in keyring if available and non-empty; otherwise remove it
+        # Store token in keyring if available and non-empty; otherwise remove it.
+        # If the only backend available writes plaintext to disk, refuse to put the
+        # secret there and tell the caller why, instead of pretending it is stored.
         if KEYRING_AVAILABLE:
             if config.github_token:
-                try:
-                    keyring.set_password("obtainhub", "github_token", config.github_token)
-                except Exception:
-                    pass
+                if keyring_backend_is_secure():
+                    try:
+                        keyring.set_password("obtainhub", "github_token", config.github_token)
+                    except Exception:
+                        pass
+                else:
+                    # Plaintext fallback: keep the token in the environment only.
+                    if not os.environ.get("GITHUB_TOKEN") and not os.environ.get("OBTAINHUB_TOKEN"):
+                        raise ValueError(
+                            "Refusing to store the GitHub token: the active keyring backend "
+                            "is keyrings.alt PlaintextKeyring, which writes secrets to an "
+                            "unencrypted file. Install an OS credential store (Windows "
+                            "Credential Manager, macOS Keychain, libsecret/gnome-keyring on "
+                            "Linux) or export GITHUB_TOKEN."
+                        )
             else:
                 try:
                     keyring.delete_password("obtainhub", "github_token")

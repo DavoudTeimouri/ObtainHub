@@ -40,7 +40,11 @@ _ohub_add_type() {
 }
 
 _ohub_config_action() {
-    COMPREPLY=($(compgen -W "show edit set get path move repair backup restore" -- "${COMP_WORDS[COMP_CWORD]}"))
+    COMPREPLY=($(compgen -W "show edit auth set get path move repair backup restore" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_token_source() {
+    COMPREPLY=($(compgen -W "auto keyring env file plaintext-keyring" -- "${COMP_WORDS[COMP_CWORD]}"))
 }
 
 _ohub_source_action() {
@@ -137,6 +141,12 @@ _ohub() {
         config)
             local subcmd="${COMP_WORDS[2]}"
             case "$subcmd" in
+                auth)
+                    COMPREPLY=($(compgen -W "--token-source" -- "$cur"))
+                    if [[ "$cur" == --token-source* ]]; then
+                        _ohub_token_source
+                    fi
+                    ;;
                 set|get)
                     COMPREPLY=($(compgen -W "github_token install_dir download_dir update_interval_hours proxy auto_update log_level max_parallel_downloads check_timeout_seconds check_timeout_retries schedule_interval_hours backup_retention_count prefer_x64 allow_x86_fallback auto_attempt_uninstall" -- "$cur"))
                     ;;

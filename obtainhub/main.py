@@ -5,6 +5,23 @@ except ImportError:
     KEYRING_AVAILABLE = False
     keyring = None
 
+
+def _keyring_is_secure() -> bool:
+    """True only when the active backend actually protects secrets at rest.
+
+    keyring falls back to keyrings.alt.file.PlaintextKeyring on machines with no
+    OS credential store (headless CI, some Linux desktops). That backend writes the
+    token to a world-readable file, so KEYRING_AVAILABLE alone is not enough to
+    claim the secret is protected.
+    """
+    if not KEYRING_AVAILABLE:
+        return False
+    try:
+        backend = keyring.get_keyring()
+    except Exception:
+        return False
+    return not type(backend).__name__.endswith("PlaintextKeyring")
+
 """ObtainHub CLI entry point."""
 
 import sys
@@ -19,6 +36,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import logging
+from obtainhub import __version__
 from obtainhub.core.config import get_config_manager, ConfigManager, ManifestSource, Config
 from obtainhub.core.state import get_state_manager, StateManager, CheckHistoryEntry
 from obtainhub.core.logger import setup_logging, get_logger, LogLevel
@@ -366,6 +384,17 @@ def main(args: Optional[List[str]] = None) -> int:
     config_parser.add_argument("--json", action="store_true", help="Output as JSON")
     config_subparsers.add_parser("show", help="Show current config")
     config_subparsers.add_parser("edit", help="Open config in editor")
+    config_subparsers.add_parser(
+        "auth",
+        help="Show where the GitHub token is stored and whether it is protected",
+    )
+    auth_parser = config_subparsers.choices["auth"]
+    auth_parser.add_argument(
+        "--token-source",
+        choices=["auto", "keyring", "env", "file", "plaintext-keyring"],
+        default="auto",
+        help="Credential source to inspect or force (default: auto)",
+    )
     set_parser = config_subparsers.add_parser("set", help="Set config value")
     set_parser.add_argument("key", help="Config key")
     set_parser.add_argument("value", help="Config value")
@@ -2478,6 +2507,67 @@ def cmd_search(
     return 0
 
 
+def _print_token_source(requested: str = "auto") -> None:
+    """Report which credential store holds the GitHub token and whether it is protected.
+
+    Never prints the token itself.
+    """
+    backend_name = None
+    if KEYRING_AVAILABLE:
+        try:
+            backend = keyring.get_keyring()
+            backend_name = type(backend).__module__ + "." + type(backend).__name__
+        except Exception:
+            backend_name = None
+
+    secure = _keyring_is_secure()
+    env_var = None
+    for name in ("GITHUB_TOKEN", "OBTAINHUB_TOKEN"):
+        if os.environ.get(name):
+            env_var = name
+            break
+
+    if requested == "env":
+        source = f"environment ({env_var})" if env_var else "environment (unset)"
+        protected = bool(env_var)
+    elif requested in ("keyring", "plaintext-keyring"):
+        source = "keyring"
+        protected = secure
+    elif requested == "file":
+        source = "config file (plaintext)"
+        protected = False
+    else:
+        if secure:
+            source, protected = "keyring", True
+        elif env_var:
+            source, protected = f"environment ({env_var})", False
+        else:
+            source, protected = "keyring (PLAINTEXT FALLBACK)", False
+
+    report = {
+        "requested_source": requested,
+        "resolved_source": source,
+        "protected_at_rest": protected,
+        "keyring_available": KEYRING_AVAILABLE,
+        "keyring_backend": backend_name,
+        "keyring_secure": secure,
+        "env_var": env_var,
+    }
+
+    if sys.stdout.isatty():
+        print("GitHub token source")
+        for key, value in report.items():
+            print(f"  {key}: {value}")
+        if not protected:
+            print("")
+            print("  [!] This backend stores the token unencrypted.")
+            print("      On Windows use Credential Manager, on macOS the Keychain.")
+            print("      Export GITHUB_TOKEN to keep the secret out of any file at all.")
+    else:
+        import json as _json
+        print(_json.dumps(report, indent=2))
+
+
 def cmd_config(
     parsed: argparse.Namespace,
     config_manager: ConfigManager,
@@ -2492,14 +2582,24 @@ def cmd_config(
     # since they don't directly remove ohub.
 
     if parsed.config_action == "show":
-        import json
+        data = config.to_dict()
+        # Never print the secret. Presence/length is enough to debug, the value
+        # itself belongs in the OS credential store, not in a terminal or a log.
+        if data.get("github_token"):
+            data["github_token"] = f"<set, {len(data['github_token'])} chars, hidden>"
         if getattr(parsed, "json", False):
-            print(json.dumps(config.to_dict(), indent=2))
+            print(json.dumps(data, indent=2))
         else:
-            for key, value in config.to_dict().items():
+            for key, value in data.items():
                 print(f"{key}: {value}")
+    elif parsed.config_action == "auth":
+        _print_token_source(getattr(parsed, "token_source", "auto"))
     elif parsed.config_action == "get":
-        print(getattr(config, parsed.key, "Not found"))
+        if parsed.key == "github_token":
+            token = config.github_token
+            print(f"<set, {len(token)} chars, hidden>" if token else "")
+        else:
+            print(getattr(config, parsed.key, "Not found"))
     elif parsed.config_action == "set":
         # Type conversion for known config fields
         value = parsed.value
@@ -2520,14 +2620,17 @@ def cmd_config(
                 return 1
         setattr(config, parsed.key, value)
         config_manager.save(config)
-        print(f"Set {parsed.key} = {value}")
+        if parsed.key == "github_token":
+            # ConfigManager.save() moved the value into the OS credential store.
+            print("Set github_token (stored in credential store, value not echoed)")
+        else:
+            print(f"Set {parsed.key} = {value}")
     elif parsed.config_action == "edit":
         print("Editor not yet implemented. Use 'ohub config set' for now.")
     elif parsed.config_action == "path":
         print(f"Config file: {config_manager.config_file}")
         print(f"State file: {state_manager.state_file}")
     elif parsed.config_action == "move":
-        import shutil
         target_dir = Path(parsed.config_value)
         target_dir.mkdir(parents=True, exist_ok=True)
         
@@ -2603,7 +2706,11 @@ def cmd_config(
                 "created": datetime.now().isoformat(),
                 "files": list(files_to_backup.keys()),
                 "includes_downloads": parsed.include_downloads,
-                "github_token": config.github_token,
+                # Token is deliberately absent: it lives in the OS credential store.
+                # A backup zip is copied around and often lands in cloud storage, so
+                # writing the secret into metadata.json would leak it. `config restore`
+                # re-reads the token from keyring instead.
+                "github_token": "",
             }
             meta_path = tmpdir_path / "metadata.json"
             with open(meta_path, "w", encoding="utf-8") as f:
