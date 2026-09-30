@@ -72,10 +72,12 @@ jobs:
           Get-ChildItem dist\ohub\
 
       - name: Generate WiX payload from the onedir build
+        shell: powershell
         run: |
           python tools/gen_wix_payload.py
           Select-String -Path installer\setup.wxs -Pattern 'GENERATED PAYLOAD' -Context 0,3
 
+      - name: Build WiX MSI
         shell: powershell
         run: |
           Write-Host "=== WiX MSI Build ==="
