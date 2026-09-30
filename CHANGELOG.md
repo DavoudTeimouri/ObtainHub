@@ -5,6 +5,14 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.12] - 2026-09-30
+
+### Changed
+- `ohub update` now delegates self-updates to the SelfUpdater mechanism when detecting ObtainHub itself
+  - Uses detached silent installer (Inno EXE or MSI) with `/VERYSILENT` / `/quiet` flags
+  - Auto-exits ohub so the installer can replace the running executable
+  - Consistent behavior with `ohub self-update` command
+
 ## [1.0.11] - 2026-09-30
 
 ### Fixed
