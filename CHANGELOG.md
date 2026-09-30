@@ -5,6 +5,12 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2026-09-30
+
+### Fixed
+- `arch_preference` not defined error when updating folder/zip apps without explicit CLI `--arch` flag
+  - `_apply_match` now properly reads `arch_preference` from app state when CLI arch is "auto" (default)
+
 ## [1.0.10] - 2026-09-29
 
 ### Added
@@ -46,13 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ohub config` (no subcommand) now shows full configuration with `--json` option
 - Release assets: only ObtainHub-Setup.exe and ObtainHub.msi (standalone ohub.exe removed)
 
-## [1.0.8]
+## [1.0.8] - 2026-09-29
+
 ### Fixed
 - shutil import issue in `ohub config repair` command causing "cannot access local variable 'shutil'" error
 - `ohub config` (no subcommand) now shows configuration validity/status instead of empty output
 - Release assets now include only ObtainHub-Setup.exe and ObtainHub.msi (standalone ohub.exe removed)
 
-## [1.0.7]
+## [1.0.7] - 2026-09-20
+
 ### Fixed
 - Config import missing in reset function
 - Stray backslashes in main.py

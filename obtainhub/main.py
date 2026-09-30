@@ -92,7 +92,7 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--version", action="version",
-        version="ObtainHub v1.0.10 - GitHub-based Package Updater and Manager for Windows x64\n"
+        version="ObtainHub v1.0.11 GitHub-based package manager for Windows x64\n"
                 "Homepage: https://github.com/DavoudTeimouri/ObtainHub\n"
                 "License: MIT"
     )
@@ -770,6 +770,12 @@ def _apply_match(app_id, app, release, match, state_manager, installer, parsed, 
         reuse_callback=_reuse_prompt,
     )
     pattern = AssetMatcher.derive_asset_pattern(match)
+
+    # Determine the arch_preference to use for updating the app
+    app_arch_preference = getattr(app, "arch_preference", "")
+    arch_preference = getattr(parsed, "arch", "auto")
+    if arch_preference == "auto":
+        arch_preference = app_arch_preference
 
     itype = match.installer_type
     if itype in (InstallerType.EXE_SETUP, InstallerType.MSI, InstallerType.ZIP_INSTALLER):
