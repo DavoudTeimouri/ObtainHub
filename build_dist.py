@@ -45,6 +45,10 @@ def build_exe():
 
 
 def build_msi():
+    # The onedir payload has to be enumerated before candle runs: WiX rejects a
+    # directory as a <File Source=...>, and the file list is build-dependent.
+    run([sys.executable, "tools/gen_wix_payload.py"])
+
     candle = shutil.which("candle")
     light = shutil.which("light")
     if not candle or not light:

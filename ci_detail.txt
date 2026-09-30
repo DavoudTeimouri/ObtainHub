@@ -1,0 +1,47 @@
+RUN 36731496320
+JOB Security Audit (pip-audit)  conclusion=success  started=2026-09-30T14:45:19Z completed=2026-09-30T14:46:13Z
+  labels: ['windows-latest']  runner=GitHub Actions 1000001267
+  [success  ] #1  Set up job                                     start=2026-09-30T14:45:20Z end=2026-09-30T14:45:21Z
+  [success  ] #2  Checkout Code                                  start=2026-09-30T14:45:21Z end=2026-09-30T14:45:27Z
+  [success  ] #3  Set up Python                                  start=2026-09-30T14:45:27Z end=2026-09-30T14:45:27Z
+  [success  ] #4  Install Dependencies                           start=2026-09-30T14:45:27Z end=2026-09-30T14:45:46Z
+  [success  ] #5  Run pip-audit                                  start=2026-09-30T14:45:46Z end=2026-09-30T14:46:09Z
+  [success  ] #6  Upload pip-audit results                       start=2026-09-30T14:46:09Z end=2026-09-30T14:46:09Z
+  [success  ] #11 Post Set up Python                             start=2026-09-30T14:46:09Z end=2026-09-30T14:46:10Z
+  [success  ] #12 Post Checkout Code                             start=2026-09-30T14:46:10Z end=2026-09-30T14:46:12Z
+  [success  ] #13 Complete job                                   start=2026-09-30T14:46:12Z end=2026-09-30T14:46:12Z
+JOB Build Artifacts  conclusion=failure  started=2026-09-30T14:45:19Z completed=2026-09-30T14:46:05Z
+  labels: ['windows-latest']  runner=GitHub Actions 1000001268
+  [success  ] #1  Set up job                                     start=2026-09-30T14:45:20Z end=2026-09-30T14:45:21Z
+  [success  ] #2  Checkout Code                                  start=2026-09-30T14:45:21Z end=2026-09-30T14:45:27Z
+  [success  ] #3  Set up Python                                  start=2026-09-30T14:45:27Z end=2026-09-30T14:45:27Z
+  [success  ] #4  Install Python Dependencies                    start=2026-09-30T14:45:27Z end=2026-09-30T14:45:44Z
+  [None     ] #5  Sync version into installer/manifest files     start=2026-09-30T14:45:44Z end=-
+  [success  ] #6  Build with PyInstaller (onedir) and harden PE  start=2026-09-30T14:45:44Z end=2026-09-30T14:45:56Z
+  [failure  ] #7  Build WiX MSI                                  start=2026-09-30T14:45:56Z end=2026-09-30T14:46:02Z
+  [skipped  ] #8  WiX ICE validation                             start=2026-09-30T14:46:02Z end=2026-09-30T14:46:02Z
+  [skipped  ] #9  Install Inno Setup and build EXE               start=2026-09-30T14:46:02Z end=2026-09-30T14:46:02Z
+  [skipped  ] #10 Stage artifacts                                start=2026-09-30T14:46:02Z end=2026-09-30T14:46:02Z
+  [skipped  ] #11 Generate SBOM (CycloneDX)                      start=2026-09-30T14:46:02Z end=2026-09-30T14:46:02Z
+  [skipped  ] #12 Code-sign release binaries                     start=2026-09-30T14:46:02Z end=2026-09-30T14:46:02Z
+  [skipped  ] #13 Upload installers                              start=2026-09-30T14:46:02Z end=2026-09-30T14:46:02Z
+  [skipped  ] #14 Upload SBOM                                    start=2026-09-30T14:46:02Z end=2026-09-30T14:46:02Z
+  [skipped  ] #27 Post Set up Python                             start=2026-09-30T14:46:02Z end=2026-09-30T14:46:02Z
+  [success  ] #28 Post Checkout Code                             start=2026-09-30T14:46:02Z end=2026-09-30T14:46:04Z
+  [success  ] #29 Complete job                                   start=2026-09-30T14:46:04Z end=2026-09-30T14:46:04Z
+JOB Type Check (mypy)  conclusion=failure  started=2026-09-30T14:45:20Z completed=2026-09-30T14:45:59Z
+  labels: ['windows-latest']  runner=GitHub Actions 1000001269
+  [success  ] #1  Set up job                                     start=2026-09-30T14:45:20Z end=2026-09-30T14:45:21Z
+  [success  ] #2  Checkout Code                                  start=2026-09-30T14:45:21Z end=2026-09-30T14:45:27Z
+  [success  ] #3  Set up Python                                  start=2026-09-30T14:45:27Z end=2026-09-30T14:45:27Z
+  [success  ] #4  Install Dependencies                           start=2026-09-30T14:45:27Z end=2026-09-30T14:45:53Z
+  [failure  ] #5  Run mypy                                       start=2026-09-30T14:45:53Z end=2026-09-30T14:45:56Z
+  [skipped  ] #9  Post Set up Python                             start=2026-09-30T14:45:56Z end=2026-09-30T14:45:56Z
+  [success  ] #10 Post Checkout Code                             start=2026-09-30T14:45:56Z end=2026-09-30T14:45:58Z
+  [success  ] #11 Complete job                                   start=2026-09-30T14:45:58Z end=2026-09-30T14:45:58Z
+JOB Post-Build Smoke Test  conclusion=skipped  started=2026-09-30T14:46:06Z completed=2026-09-30T14:46:06Z
+  labels: ['windows-latest']  runner=None
+JOB SLSA Provenance  conclusion=skipped  started=2026-09-30T14:46:06Z completed=2026-09-30T14:46:06Z
+  labels: ['windows-latest']  runner=None
+JOB Create/Update Release  conclusion=skipped  started=2026-09-30T14:46:06Z completed=2026-09-30T14:46:06Z
+  labels: ['windows-latest']  runner=None
