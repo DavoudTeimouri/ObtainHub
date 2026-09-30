@@ -77,6 +77,12 @@ jobs:
           python tools/gen_wix_payload.py
           Select-String -Path installer\setup.wxs -Pattern 'GENERATED PAYLOAD' -Context 0,3
 
+      - name: Install WiX Toolset
+        shell: powershell
+        run: |
+          choco install wixtoolset -y --no-progress
+          Write-Host "WiX installed"
+
       - name: Build WiX MSI
         shell: powershell
         run: |
@@ -125,6 +131,12 @@ jobs:
           if (-not $light) { Write-Host "light.exe not found, skipping ICE"; exit 0 }
           & $light -sice:ICE60 -out NUL dist/ObtainHub.msi 2>&1 | Select-String -Pattern "ICE60|error|warning" | Select-Object -First 40
           Write-Host "ICE60 check done (exit $LASTEXITCODE)"
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup -y --no-progress
+          Write-Host "Inno Setup installed"
 
       - name: Install Inno Setup and build EXE installer
         shell: powershell
