@@ -1414,6 +1414,20 @@ def cmd_update(
             if _detect_manual_removal(state_manager, app):
                 continue
 
+            # Self-update handling: if the app is ObtainHub itself, delegate to self-update mechanism
+            if _is_self_app(app_id, app):
+                print(f"  {app.name} ({app_id}): detected self-update, using self-update mechanism...")
+                from obtainhub import __version__
+                updater = SelfUpdater(config_manager, state_manager, current_version=__version__)
+                result = updater.check_and_update(parsed.prerelease, parsed.force)
+                if result:
+                    print(f"Self-update to {result} started. ohub will now exit so the installer can replace it.")
+                    print("Restart ohub after the update finishes.")
+                    return 0
+                else:
+                    print(f"  {app.name} ({app_id}): Already at latest version")
+                    continue
+
             owner, repo = _resolve_repo_for_app(client, app, state_manager, parsed)
             if not owner:
                 # Try custom (non-GitHub) sources for apps that came from one
