@@ -5,6 +5,59 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-09-30
+
+### Added
+- **Plugin sandbox with capability grants.** `obtainhub/plugins/sandbox.py` enforces declared
+  filesystem, network, subprocess, config and state capabilities and fails closed outside them.
+  `sandbox_runner.py` executes plugin commands in an isolated child process, `manifest.py` verifies
+  SHA256-signed manifests against a local trusted-key store, and `registry.py` adds
+  `PluginRegistry` / `LocalPluginManager`. Third-party discovery hook is
+  `[project.entry-points."obtainhub.plugins"]` in `pyproject.toml`. A worked manifest ships at
+  `obtainhub/plugins/example.yaml`.
+- **`ohub config auth [--token-source auto|keyring|env|file|plaintext-keyring]`.** Reports which
+  credential store holds the GitHub token and whether it is protected at rest. Emits JSON when piped
+  and a readable table on a TTY, with an explicit warning when the backend stores secrets in
+  plaintext.
+- **Hexagonal ports and adapters.** `obtainhub/ports/` declares the ABC contracts
+  (`RepositorySource`, `StateStore`, `Downloader`, `Installer`, `SystemScanner`,
+  `AssetMatcherPort`, `EventBus`) and DTOs; `obtainhub/adapters/` holds `GitHubAdapter`,
+  `JsonStateStore` and an in-memory `core/event_bus.py`. Dependencies point inward only.
+- **Scriptable CLI.** Global `--json` and `--quiet` plus per-command `--dry-run` and `--force`
+  across the argparse tree, so every subcommand can run unattended without parsing human output.
+- **Shell completion** for `scripts/ohub.bash-completion`, including `config auth` completion
+  and the full config key list for `config set`/`get`.
+- **Build and supply-chain hardening.** `ObtainHub.spec` builds an `--onedir` distribution with
+  high-entropy ASLR, DEP, NXCOMPAT and CFG; UPX is gated behind `OBTAINHUB_SIGNED_BUILD=1`
+  because it rewrites sections that code-signing rejects. Both installers now package
+  `dist/ohub/` recursively.
+- **CI/CD maturity.** The release pipeline is split into `typecheck` (mypy), `security-audit`
+  (pip-audit, JSON report retained 30 days), `build` (PyInstaller to WiX MSI with an ICE60 check to
+  Inno Setup EXE to CycloneDX SBOM), `smoke-test`, `provenance` and `release`. Gates run with
+  `continue-on-error` so a new warning never blocks a tagged release.
+
+### Changed
+- **Building on a plaintext credential backend is now an error, not a silent write.** `keyring`
+  falls back to `keyrings.alt.file.PlaintextKeyring` on any machine without an OS credential store
+  and the old code reported success while writing the token unencrypted to disk. `ConfigManager.save()`
+  now refuses and names the remedy; export `GITHUB_TOKEN` to keep the secret out of any file.
+- **`ohub config show` and `ohub config get github_token` redact the token** to
+  `<set, N chars, hidden>` instead of printing it, and `ohub config set github_token` no longer
+  echoes the value. This removes the secret from terminals, CI logs and shell history.
+- **Backups no longer carry the token.** `ohub config backup` and the self-uninstaller previously
+  wrote the live token into `metadata.json` inside the zip; backup archives are copied around and
+  often land in cloud storage. `ohub config restore` re-reads the token from the credential store.
+
+### Fixed
+- **`ohub config backup`, `ohub config restore` and `ohub self-uninstall` failed outright** with an
+  `IndentationError` in `core/self_uninstall.py`, which made the module unimportable.
+- **`ohub config backup` raised `UnboundLocalError` on `shutil`**, shadowed by a local import in the
+  same function.
+- **`ohub config backup` raised `NameError: __version__`**, which was never imported in `main.py`.
+- `self_uninstall.create_backup_zip` had the same unindentation and the same plaintext token leak in
+  its `metadata.json`, so a self-uninstall backup carried the secret even after the config-backup path
+  was fixed.
+
 ## [1.0.12] - 2026-09-30
 
 ### Changed

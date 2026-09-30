@@ -61,11 +61,32 @@ ohub config set backup_retention_count 5
 ohub config path
 ohub config move "C:\new\config\dir"
 ohub config repair
+ohub config auth
+ohub config auth --token-source env
 ohub config backup backup.zip
 ohub config backup backup.zip --include-downloads
 ohub config restore backup.zip
 ohub config restore backup.zip --target-config "C:\new\config" --no-token
 ```
+
+### GitHub Token Storage:
+
+```powershell
+ohub config auth
+```
+
+Reports which credential store holds the GitHub token and whether it is protected at rest. Use
+`--token-source` to inspect a specific store: `auto` (default), `keyring`, `env`, `file`, or
+`plaintext-keyring`.
+
+```powershell
+ohub config set github_token ghp_yourtoken
+```
+
+The token is written to the OS credential store (Windows Credential Manager, macOS Keychain), not to
+`config.json`. On a machine with no credential store, ohub refuses to store the token in plaintext
+and tells you to export `GITHUB_TOKEN` instead. `ohub config show`, `ohub config get github_token`
+and `ohub config set github_token` never print the secret, and backup archives omit it.
 
 ### Apps Backup/Restore:
 
@@ -214,7 +235,7 @@ ohub install owner/repo --notes
 
 Config file: `%USERPROFILE%\.config\obtainhub\config.json`. Key settings:
 
-- `github_token`: GitHub API token (optional, stored in system keyring)
+- `github_token`: GitHub API token (optional; stored in the OS credential store, never in this file)
 - `install_dir`: Default install directory (`%USERPROFILE%\Applications\ObtainHub`)
 - `download_dir`: Download location (`%USERPROFILE%\Downloads\ObtainHub`)
 - `bin_dir`: Shim directory (`%USERPROFILE%\bin\obtainhub`)
@@ -243,7 +264,7 @@ Config file: `%USERPROFILE%\.config\obtainhub\config.json`. Key settings:
 | `ohub list` | List installed apps |
 | `ohub uninstall <app>` | Uninstall an app |
 | `ohub remove <app>` | Remove app from tracking |
-| `ohub config [show|get|set|edit|path|move|repair|backup|restore]` | Manage configuration |
+| `ohub config [show|get|set|edit|auth|path|move|repair|backup|restore]` | Manage configuration |
 | `ohub apps [backup|restore]` | Backup/restore application folders |
 | `ohub cleanup [all|tasks|downloads|cache]` | Clean up leftover files and tasks |
 | `ohub self-update` | Update ohub itself |
