@@ -1,0 +1,182 @@
+#!/bin/bash
+# ohub bash completion
+
+_ohub_commands() {
+    local commands=(
+        "install"
+        "update"
+        "check"
+        "list"
+        "uninstall"
+        "remove"
+        "source"
+        "add"
+        "search"
+        "config"
+        "self-update"
+        "self-uninstall"
+        "schedule"
+        "group"
+        "shim"
+        "state"
+        "apps"
+        "cleanup"
+        "tui"
+        "reset"
+    )
+    COMPREPLY=($(compgen -W "${commands[*]}" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_arch() {
+    COMPREPLY=($(compgen -W "x64 arm64 x86 auto" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_source_type() {
+    COMPREPLY=($(compgen -W "github manifest winget scoop chocolatey" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_add_type() {
+    COMPREPLY=($(compgen -W "github zip folder" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_config_action() {
+    COMPREPLY=($(compgen -W "show edit set get path move repair backup restore" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_source_action() {
+    COMPREPLY=($(compgen -W "list add remove verify" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_schedule_action() {
+    COMPREPLY=($(compgen -W "enable disable status run" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_group_action() {
+    COMPREPLY=($(compgen -W "list add remove delete install update check" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_shim_action() {
+    COMPREPLY=($(compgen -W "list add remove path" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_state_action() {
+    COMPREPLY=($(compgen -W "export import" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_apps_action() {
+    COMPREPLY=($(compgen -W "backup restore" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub_cleanup_action() {
+    COMPREPLY=($(compgen -W "all tasks downloads cache" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+
+_ohub() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+    local cmd="${COMP_WORDS[1]}"
+
+    # Global flags
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--help --version -v --verbose --json --quiet --dry-run --force" -- "$cur"))
+        return
+    fi
+
+    case "$cmd" in
+        install)
+            case "$prev" in
+                --arch) _ohub_arch ;;
+                *) COMPREPLY=($(compgen -W "--tag --version --prerelease --force --interactive --download-only --yes --reset --arch --json --quiet --dry-run" -- "$cur")) ;;
+            esac
+            ;;
+        update)
+            case "$prev" in
+                --arch) _ohub_arch ;;
+                *) COMPREPLY=($(compgen -W "--prerelease --dry-run --yes --reset --arch --interactive --notes --json --quiet --force" -- "$cur")) ;;
+            esac
+            ;;
+        check)
+            case "$prev" in
+                --arch) _ohub_arch ;;
+                *) COMPREPLY=($(compgen -W "--prerelease --json --yes --all --candidates --reset --arch --timeout --notes --quiet --dry-run --force" -- "$cur")) ;;
+            esac
+            ;;
+        list)
+            COMPREPLY=($(compgen -W "--json --all --quiet" -- "$cur"))
+            ;;
+        uninstall)
+            COMPREPLY=($(compgen -W "--yes --keep-data --interactive --json --quiet --dry-run --force" -- "$cur"))
+            ;;
+        remove)
+            COMPREPLY=($(compgen -W "--yes --json --quiet --dry-run --force" -- "$cur"))
+            ;;
+        source)
+            local subcmd="${COMP_WORDS[2]}"
+            case "$subcmd" in
+                add)
+                    case "$prev" in
+                        --type) _ohub_source_type ;;
+                        *) COMPREPLY=($(compgen -W "--type --pre-install --post-install --pre-uninstall --post-uninstall" -- "$cur")) ;;
+                    esac
+                    ;;
+                remove|verify)
+                    # Source names would need dynamic completion
+                    ;;
+                *) _ohub_source_action ;;
+            esac
+            ;;
+        add)
+            case "$prev" in
+                --type) _ohub_add_type ;;
+                *) COMPREPLY=($(compgen -W "--name --type --location --as-source --recursive --repo" -- "$cur")) ;;
+            esac
+            ;;
+        search)
+            COMPREPLY=($(compgen -W "--limit --min-stars --active-only --include-inactive --json --quiet --dry-run" -- "$cur"))
+            ;;
+        config)
+            local subcmd="${COMP_WORDS[2]}"
+            case "$subcmd" in
+                set|get)
+                    COMPREPLY=($(compgen -W "github_token install_dir download_dir update_interval_hours proxy auto_update log_level max_parallel_downloads check_timeout_seconds check_timeout_retries schedule_interval_hours backup_retention_count prefer_x64 allow_x86_fallback auto_attempt_uninstall" -- "$cur"))
+                    ;;
+                *) _ohub_config_action ;;
+            esac
+            ;;
+        self-update)
+            COMPREPLY=($(compgen -W "--prerelease --force --check-only --json --quiet" -- "$cur"))
+            ;;
+        self-uninstall)
+            COMPREPLY=($(compgen -W "--backup --include-downloads --force --restore --target-config --target-state --target-downloads --no-token" -- "$cur"))
+            ;;
+        schedule)
+            _ohub_schedule_action
+            ;;
+        group)
+            _ohub_group_action
+            ;;
+        shim)
+            _ohub_shim_action
+            ;;
+        state)
+            _ohub_state_action
+            ;;
+        apps)
+            _ohub_apps_action
+            ;;
+        cleanup)
+            _ohub_cleanup_action
+            ;;
+        tui)
+            COMPREPLY=($(compgen -W "--check-deps" -- "$cur"))
+            ;;
+        reset)
+            COMPREPLY=($(compgen -W "--backup --keep-token --move-token" -- "$cur"))
+            ;;
+        *)
+            _ohub_commands
+            ;;
+    esac
+}
+
+complete -F _ohub ohub

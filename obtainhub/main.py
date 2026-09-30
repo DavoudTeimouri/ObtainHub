@@ -87,8 +87,21 @@ def main(args: Optional[List[str]] = None) -> int:
         prog="ohub",
         description="ObtainHub - Manage Windows x64 apps via GitHub Releases",
     )
+    # Global flags
     parser.add_argument(
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Output as JSON (all commands)"
+    )
+    parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output (all commands)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be done (all commands)"
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Force operation (all commands)"
     )
     parser.add_argument(
         "--version", action="version",
@@ -130,6 +143,15 @@ def main(args: Optional[List[str]] = None) -> int:
         "--arch", choices=["x64", "arm64", "x86", "auto"], default="auto",
         help="Architecture to select: x64, arm64, x86, or auto (default: auto)",
     )
+    install_parser.add_argument(
+        "--json", action="store_true", help="Output as JSON"
+    )
+    install_parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
+    install_parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be done without making changes"
+    )
 
     # update
     update_parser = subparsers.add_parser("update", help="Update installed apps")
@@ -157,6 +179,15 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     update_parser.add_argument(
         "--notes", action="store_true", help="Show release notes for available updates"
+    )
+    update_parser.add_argument(
+        "--json", action="store_true", help="Output as JSON"
+    )
+    update_parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
+    update_parser.add_argument(
+        "--force", action="store_true", help="Force update even if already latest"
     )
 
     # check
@@ -193,6 +224,15 @@ def main(args: Optional[List[str]] = None) -> int:
     check_parser.add_argument(
         "--notes", action="store_true", help="Show release notes for available updates"
     )
+    check_parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
+    check_parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be done without making changes"
+    )
+    check_parser.add_argument(
+        "--force", action="store_true", help="Force check even if recent"
+    )
 
     # list
     list_parser = subparsers.add_parser("list", help="List installed apps")
@@ -201,6 +241,9 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     list_parser.add_argument(
         "--all", action="store_true", help="Include system-installed apps from Windows Registry"
+    )
+    list_parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
     )
 
     # uninstall
@@ -216,12 +259,36 @@ def main(args: Optional[List[str]] = None) -> int:
         "--interactive", action="store_true",
         help="Launch the uninstaller visibly and let you drive it; ohub verifies the result",
     )
+    uninstall_parser.add_argument(
+        "--json", action="store_true", help="Output as JSON"
+    )
+    uninstall_parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
+    uninstall_parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be uninstalled"
+    )
+    uninstall_parser.add_argument(
+        "--force", action="store_true", help="Force uninstall even if not managed"
+    )
 
     # remove
     remove_parser = subparsers.add_parser("remove", help="Remove an app/folder from ohub management")
     remove_parser.add_argument("app", help="App identifier or name (owner/repo, folder:..., or display name)")
     remove_parser.add_argument(
         "--yes", "-y", action="store_true", help="Auto-confirm"
+    )
+    remove_parser.add_argument(
+        "--json", action="store_true", help="Output as JSON"
+    )
+    remove_parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
+    remove_parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be removed"
+    )
+    remove_parser.add_argument(
+        "--force", action="store_true", help="Force remove even if not managed"
     )
 
     # source
@@ -285,6 +352,12 @@ def main(args: Optional[List[str]] = None) -> int:
     search_parser.add_argument(
         "--json", action="store_true", help="Output as JSON"
     )
+    search_parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
+    search_parser.add_argument(
+        "--dry-run", action="store_true", help="Show query without executing"
+    )
 
     # config
     config_parser = subparsers.add_parser("config", help="Manage configuration")
@@ -319,6 +392,15 @@ def main(args: Optional[List[str]] = None) -> int:
     )
     self_update_parser.add_argument(
         "--force", action="store_true", help="Force update even if same version"
+    )
+    self_update_parser.add_argument(
+        "--check-only", action="store_true", help="Only check for updates, don't install"
+    )
+    self_update_parser.add_argument(
+        "--json", action="store_true", help="Output as JSON"
+    )
+    self_update_parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
     )
 
     # self-uninstall
@@ -477,6 +559,11 @@ def main(args: Optional[List[str]] = None) -> int:
                     "tag": "",
                     "app_type": "github",
                 })
+
+        # Auto-detect non-TTY (CI/piped) -> enable --yes and --quiet automatically
+        if not sys.stdin.isatty():
+            parsed.yes = True
+            parsed.quiet = True
 
         # Interactive install/uninstall: when run on a TTY without --yes, launch
         # the installer/uninstaller visibly and let the user drive it (ohub then

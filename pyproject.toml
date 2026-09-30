@@ -36,6 +36,9 @@ dev = [
 [project.scripts]
 ohub = "obtainhub.main:main"
 
+[project.entry-points."obtainhub.plugins"]
+# Example: my_plugin = "my_package.my_module:MyPluginClass"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["obtainhub*"]
