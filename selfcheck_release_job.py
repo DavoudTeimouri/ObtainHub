@@ -1,3 +1,4 @@
+import re
 import yaml
 
 d = yaml.safe_load(open('.github/workflows/release.yml', encoding='utf-8'))
@@ -27,6 +28,14 @@ for s in rel['steps']:
             BAD.append("%s: gh release create fails when the release exists" % name)
         if '$LASTEXITCODE -ne 0' not in run:
             BAD.append("%s: gh release create/edit result is unchecked" % name)
+        # A bare 'gh release view $tag *> $null' turns gh's "release not found"
+        # on stderr into a terminating PowerShell NativeCommandError, so the
+        # first-ever release run dies instead of falling through to create.
+        if re.search(r"gh release view .*\*>\s*\$null", run):
+            BAD.append(
+                "%s: probes gh release view via redirection; stderr must be "
+                "suppressed by cmd so a missing release is not an error" % name
+            )
 
 if BAD:
     print("FAIL")

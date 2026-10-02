@@ -354,7 +354,9 @@ jobs:
           $prerelease = if ($tag -match '-') { "--prerelease" } else { "" }
           # gh release create fails when the release already exists, which is
           # what happens on every re-pushed tag. Fall back to editing it.
-          gh release view $tag *> $null
+          # Probe with cmd so a "release not found" exit code is data, not a
+          # PowerShell NativeCommandError from stderr.
+          cmd /c "gh release view $tag >nul 2>&1"
           if ($LASTEXITCODE -eq 0) {
             Write-Host "release $tag exists - updating instead of creating"
             gh release edit $tag --title "Release $tag" --notes-file $notesFile
