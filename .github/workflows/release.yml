@@ -217,7 +217,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: dist
+          path: .
       - name: Install MSI silently
         run: |
           if (-not (Test-Path dist/ObtainHub.msi)) { Write-Host "MSI not found"; exit 1 }
@@ -263,7 +263,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: dist
+          path: .
       - name: Attest MSI
         if: ${{ hashFiles('dist/ObtainHub.msi') != '' }}
         uses: actions/attest-build-provenance@v2
@@ -295,11 +295,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: dist
+          path: .
       - uses: actions/download-artifact@v4
         with:
           name: sbom
-          path: dist
+          path: .
       - name: Create or update release
         run: |
           $tag = "${{ github.ref_name }}"
