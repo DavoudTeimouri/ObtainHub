@@ -1,6 +1,6 @@
-; Inno Setup Script for ObtainHub
-; Compatible with Inno Setup 6.7+
-; Windows x64 installer with PATH management
+; ObtainHub Inno Setup script
+; Requires Inno Setup 6.7+
+; PATH management
 
 #define AppName "ObtainHub"
 #define AppVersion "2.0.0"
@@ -30,7 +30,7 @@ DisableDirPage=no
 CreateAppDir=yes
 UninstallDisplayIcon={app}\{#AppExeName}
 MinVersion=6.7
-; CloseApplications tells Inno Setup to detect running instances and prompt to close them
+; CloseApplications and them
 CloseApplications=yes
 CloseApplicationsFilter={#AppExeName}
 RestartApplications=yes
@@ -39,36 +39,24 @@ RestartApplications=yes
 Source: "..\dist\ohub\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Code]
-function AppendToPath(const APath: String): Boolean;
+function AppendToPath(const APath: string): Boolean;
 var
-  CurrentPath: String;
-  NewPath: String;
+  CurrentPath: string;
+  NewPath: string;
 begin
   Result := False;
-
-  // Read current PATH from user registry
-  if not RegQueryStringValue(HKCU, 'Environment', 'PATH', CurrentPath) then
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', CurrentPath) then
     CurrentPath := '';
-
-  // Check if already present
-  if Pos(';' + APath + ';', ';' + CurrentPath + ';') > 0 then
-  begin
-    Result := True;
+  if Pos(APath, CurrentPath) > 0 then
     Exit;
-  end;
-
-  // Build new PATH
-  if Length(CurrentPath) = 0 then
-    NewPath := APath
+  if Length(CurrentPath) > 0 then
+    NewPath := CurrentPath + ';' + APath
   else
-    NewPath := CurrentPath + ';' + APath;
-
-  // Write back
-  if RegWriteStringValue(HKCU, 'Environment', 'PATH', NewPath) then
+    NewPath := APath;
+  if RegWriteStringValue(HKCU, 'Environment', 'Path', NewPath) then
   begin
-    Result := True;
-    // Broadcast environment change
     SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0, PChar('Environment'), SMTO_ABORTIFHUNG, 5000, @Result);
+    Result := True;
   end;
 end;
 
@@ -76,7 +64,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    // Only add to PATH if the user didn't disable it (no checkbox, always add for CLI tools)
+    // Only add to PATH if the CLI wasn't already in it
     AppendToPath(ExpandConstant('{app}'));
   end;
 end;
