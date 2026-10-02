@@ -349,8 +349,13 @@ jobs:
           $notes = Get-Content CHANGELOG.md -Raw
           $notes = $notes -replace '(?s)^## \[.*?\n', ''
           $notes = $notes -replace '(?s)^## \[.*', ''
+          # Pass via --notes-file: CHANGELOG.md contains literal double quotes,
+          # which Windows PowerShell mangles when marshalling to a native exe,
+          # splitting the notes into positional args.
+          $notesFile = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          Set-Content -Path $notesFile -Value $notes -Encoding UTF8
           $prerelease = if ($tag -match '-') { "--prerelease" } else { "" }
-          gh release create $tag --title "Release $tag" --notes "$notes" $prerelease --verify-tag
+          gh release create $tag --title "Release $tag" --notes-file $notesFile $prerelease --verify-tag
         shell: powershell
       - name: Upload all assets
         run: |
