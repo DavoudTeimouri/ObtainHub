@@ -232,27 +232,40 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: .
+          path: artifacts
+      - name: Stage installers for the smoke test
+        shell: powershell
+        run: |
+          # download-artifact rebuilds paths from the upload-time common ancestor,
+          # so accept either layout rather than assuming one.
+          $msi = Get-ChildItem artifacts -Recurse -Filter ObtainHub.msi | Select-Object -First 1
+          $exe = Get-ChildItem artifacts -Recurse -Filter ObtainHub-Setup.exe | Select-Object -First 1
+          if (-not $msi) { Write-Host "ObtainHub.msi not found under artifacts/"; exit 1 }
+          if (-not $exe) { Write-Host "ObtainHub-Setup.exe not found under artifacts/"; exit 1 }
+          New-Item -ItemType Directory -Force -Path install | Out-Null
+          Copy-Item $msi.FullName install/ObtainHub.msi -Force
+          Copy-Item $exe.FullName install/ObtainHub-Setup.exe -Force
+          Get-ChildItem install | ForEach-Object { Write-Host "  staged $($_.Name)" }
       - name: Install MSI silently
         run: |
-          if (-not (Test-Path dist/ObtainHub.msi)) { Write-Host "MSI not found"; exit 1 }
+          if (-not (Test-Path install/ObtainHub.msi)) { Write-Host "MSI not found"; exit 1 }
           $log = "$env:RUNNER_TEMP\msi.log"
           # Start-Process -Wait does not populate $LASTEXITCODE; -PassThru is required.
-          $p = Start-Process msiexec.exe -ArgumentList "/i", "dist\ObtainHub.msi", "/qn", "/norestart", "/l*v", $log -Wait -PassThru -NoNewWindow
+          $p = Start-Process msiexec.exe -ArgumentList "/i", "install\ObtainHub.msi", "/qn", "/norestart", "/l*v", $log -Wait -PassThru -NoNewWindow
           if ($p.ExitCode -ne 0) { Get-Content $log -Tail 50; exit 1 }
           if (-not (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe")) { Write-Host "ohub.exe not installed"; exit 1 }
           & "$env:ProgramFiles\ObtainHub\ohub.exe" --version
           if ($LASTEXITCODE -ne 0) { Write-Host "ohub --version failed"; exit 1 }
       - name: Uninstall MSI
         run: |
-          $p = Start-Process msiexec.exe -ArgumentList "/x", "dist\ObtainHub.msi", "/qn", "/norestart" -Wait -PassThru -NoNewWindow
+          $p = Start-Process msiexec.exe -ArgumentList "/x", "install\ObtainHub.msi", "/qn", "/norestart" -Wait -PassThru -NoNewWindow
           if ($p.ExitCode -ne 0) { Write-Host "MSI uninstall exit $($p.ExitCode)"; exit 1 }
           if (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe") { Write-Host "MSI cleanup failed"; exit 1 }
       - name: Install EXE silently
         run: |
-          if (-not (Test-Path dist/ObtainHub-Setup.exe)) { Write-Host "EXE not found"; exit 1 }
+          if (-not (Test-Path install/ObtainHub-Setup.exe)) { Write-Host "EXE not found"; exit 1 }
           $log = "$env:RUNNER_TEMP\iss.log"
-          & dist/ObtainHub-Setup.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /LOG=$log
+          & install/ObtainHub-Setup.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /LOG=$log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 50; exit 1 }
           if (-not (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe")) { Write-Host "ohub.exe not installed"; exit 1 }
           & "$env:ProgramFiles\ObtainHub\ohub.exe" --version
@@ -311,11 +324,23 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: .
+          path: artifacts
       - uses: actions/download-artifact@v4
         with:
           name: sbom
-          path: .
+          path: artifacts
+      - name: Stage release assets
+        shell: powershell
+        run: |
+          # download-artifact rebuilds paths from the upload-time common ancestor,
+          # which is not stable as the uploaded layout changes. Collect by name.
+          New-Item -ItemType Directory -Force -Path assets | Out-Null
+          foreach ($n in @("ObtainHub.msi","ObtainHub-Setup.exe","ObtainHub-sbom.json")) {
+            $f = Get-ChildItem artifacts -Recurse -Filter $n | Select-Object -First 1
+            if (-not $f) { Write-Host "missing release asset: $n"; exit 1 }
+            Copy-Item $f.FullName "assets/$n" -Force
+            Write-Host "  staged assets/$n"
+          }
       - name: Create or update release
         run: |
           $tag = "${{ github.ref_name }}"
@@ -328,7 +353,7 @@ jobs:
         shell: powershell
       - name: Upload all assets
         run: |
-          foreach ($f in @("dist/ObtainHub.msi","dist/ObtainHub-Setup.exe","dist/ObtainHub-sbom.json")) {
+          foreach ($f in @("assets/ObtainHub.msi","assets/ObtainHub-Setup.exe","assets/ObtainHub-sbom.json")) {
             if (Test-Path $f) { gh release upload --clobber $tag $f }
             else { Write-Host "MISSING $f" }
           }
