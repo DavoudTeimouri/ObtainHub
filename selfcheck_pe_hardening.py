@@ -47,6 +47,16 @@ if not harden_file(p):
 got = read_characteristics(p)
 if got & HARDENING_MASK != HARDENING_MASK:
     FAILS.append("missing bits after harden: 0x%04X, want mask 0x%04X" % (got, HARDENING_MASK))
+# FORCE_INTEGRITY (0x0080) is not a hardening flag: it makes Windows require a
+# valid Authenticode signature before loading the image. CI builds are unsigned
+# (sign.ps1 exits early with no secrets), so setting it makes ohub.exe refuse to
+# start with "Windows cannot verify the digital signature for this file" - which
+# is how the v2.0.0 smoke test failed.
+FORCE_INTEGRITY = 0x0080
+if HARDENING_MASK & FORCE_INTEGRITY:
+    FAILS.append("FORCE_INTEGRITY (0x0080) is in HARDENING_MASK; unsigned builds cannot start")
+if got & FORCE_INTEGRITY:
+    FAILS.append("harden_file set FORCE_INTEGRITY on the output; Windows will refuse to load it")
 print("after harden:      0x%04X" % got)
 
 # 2. Idempotence: a second pass is a no-op, not a double-set.

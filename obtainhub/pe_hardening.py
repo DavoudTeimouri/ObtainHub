@@ -9,9 +9,19 @@ Applied to the bootloader stub and every bundled .dll/.pyd:
 
   DYNAMIC_BASE     (0x0040)  ASLR
   HIGH_ENTROPY_VA  (0x0020)  64-bit ASLR entropy
-  FORCE_INTEGRITY  (0x0080)  signature required to load
   NX_COMPAT        (0x0100)  DEP
   GUARD_CF         (0x4000)  Control Flow Guard
+
+IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY (0x0080) is deliberately NOT set here.
+It is not a hardening flag: it tells Windows to verify a valid Authenticode
+signature before loading the image. Unsigned binaries then fail to start with
+"Windows cannot verify the digital signature for this file", which is exactly
+what happened to the v2.0.0 smoke test. Hardening runs during the build and
+code signing runs after it, so a signed release would be fine - but the flag
+must not be forced on binaries that nobody signs.
+
+ponytail: if signing secrets are ever added, set FORCE_INTEGRITY in sign.ps1
+after signing rather than in the build, so unsigned local builds keep working.
 """
 
 import os
@@ -22,11 +32,13 @@ IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE = 0x0040
 IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY = 0x0080
 IMAGE_DLLCHARACTERISTICS_NX_COMPAT = 0x0100
 IMAGE_DLLCHARACTERISTICS_GUARD_CF = 0x4000
+# Not in the mask: 0x0080 FORCE_INTEGRITY. See the module docstring - setting it
+# on an unsigned binary makes Windows refuse to load the image.
+IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY = 0x0080
 
 HARDENING_MASK = (
     IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA
     | IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE
-    | IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY
     | IMAGE_DLLCHARACTERISTICS_NX_COMPAT
     | IMAGE_DLLCHARACTERISTICS_GUARD_CF
 )
