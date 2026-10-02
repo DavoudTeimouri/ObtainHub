@@ -352,14 +352,31 @@ jobs:
           # literal double quotes, which Windows PowerShell splits when passing
           # arguments to gh.exe.
           $prerelease = if ($tag -match '-') { "--prerelease" } else { "" }
-          gh release create $tag --title "Release $tag" --notes-file $notesFile $prerelease --verify-tag
+          # gh release create fails when the release already exists, which is
+          # what happens on every re-pushed tag. Fall back to editing it.
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "release $tag exists - updating instead of creating"
+            gh release edit $tag --title "Release $tag" --notes-file $notesFile
+          } else {
+            gh release create $tag --title "Release $tag" --notes-file $notesFile $prerelease --verify-tag
+          }
+          if ($LASTEXITCODE -ne 0) { Write-Host "release create/edit failed: $LASTEXITCODE"; exit 1 }
         shell: powershell
       - name: Upload all assets
         run: |
-          foreach ($f in @("assets/ObtainHub.msi","assets/ObtainHub-Setup.exe","assets/ObtainHub-sbom.json")) {
-            if (Test-Path $f) { gh release upload --clobber $tag $f }
-            else { Write-Host "MISSING $f" }
+          # Each `run:` block is a separate PowerShell process, so $tag must be
+          # set here. Without it gh gets 1 argument instead of <tag> <files>
+          # and fails with "requires at least 2 arg(s), only received 1".
+          $tag = "${{ github.ref_name }}"
+          $expected = @("assets/ObtainHub.msi","assets/ObtainHub-Setup.exe","assets/ObtainHub-sbom.json")
+          $missing = @($expected | Where-Object { -not (Test-Path $_) })
+          if ($missing.Count -gt 0) {
+            Write-Host "MISSING release assets: $($missing -join ', ')"
+            exit 1
           }
+          gh release upload --clobber $tag @expected
+          if ($LASTEXITCODE -ne 0) { Write-Host "upload failed: $LASTEXITCODE"; exit 1 }
         shell: powershell
       - name: Sync release notes to CHANGELOG.md
         run: python .github/scripts/sync_release_notes.py
