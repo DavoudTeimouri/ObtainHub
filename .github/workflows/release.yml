@@ -346,14 +346,11 @@ jobs:
       - name: Create or update release
         run: |
           $tag = "${{ github.ref_name }}"
-          $notes = Get-Content CHANGELOG.md -Raw
-          $notes = $notes -replace '(?s)^## \[.*?\n', ''
-          $notes = $notes -replace '(?s)^## \[.*', ''
-          # Pass via --notes-file: CHANGELOG.md contains literal double quotes,
-          # which Windows PowerShell mangles when marshalling to a native exe,
-          # splitting the notes into positional args.
           $notesFile = Join-Path $env:RUNNER_TEMP "release-notes.md"
-          Set-Content -Path $notesFile -Value $notes -Encoding UTF8
+          python tools/extract_release_notes.py CHANGELOG.md $notesFile $env:GITHUB_REF_NAME
+          # --notes-file avoids native-arg quote mangling: CHANGELOG.md contains
+          # literal double quotes, which Windows PowerShell splits when passing
+          # arguments to gh.exe.
           $prerelease = if ($tag -match '-') { "--prerelease" } else { "" }
           gh release create $tag --title "Release $tag" --notes-file $notesFile $prerelease --verify-tag
         shell: powershell
