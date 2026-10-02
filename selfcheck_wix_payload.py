@@ -276,6 +276,16 @@ lic_dirs = [d.get("Id") for d in dirs if d.get("Name") == "licenses"]
 if lic_dirs:
     FAILS.append("ICE30: licenses dir(s) survive and will collide: %s" % lic_dirs)
 
+# 19. ICE80 (package): components say Win64="yes" but the package Template
+#     Summary must also declare x64, or LGHT0204/ICE80 still fails.
+pkg = root.find(WIX_NS + "Product/" + WIX_NS + "Package")
+if pkg is None:
+    FAILS.append("ICE80: <Package> element missing")
+elif pkg.get("Platform") != "x64":
+    FAILS.append(
+        'ICE80: <Package Platform=%r> but components are Win64="yes"' % pkg.get("Platform")
+    )
+
 # 14. Missing dist/ is a clean error.
 gen.DIST = tmp / "nope"
 if gen.main() != 1:
