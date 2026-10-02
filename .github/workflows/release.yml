@@ -80,25 +80,28 @@ jobs:
       - name: Install WiX Toolset
         shell: powershell
         run: |
-          choco install wixtoolset -y --no-progress
-          $candleFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\wixtoolset" -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue
-          if ($candleFiles) {
-            $wixBin = Split-Path $candleFiles[0].FullName
-            Write-Host "Found WiX in chocolatey: $wixBin"
-          } else {
-            Write-Host "NOT found in chocolatey lib, checking common paths..."
-            $wixPaths = @(
-              "C:\Program Files (x86)\WiX Toolset v3.11\bin"
-              "C:\Program Files\WiX Toolset v3.11\bin"
-              "C:\Program Files (x86)\WiX Toolset v4.0\bin"
-              "C:\Program Files\WiX Toolset v4.0\bin"
-            )
-            foreach ($p in $wixPaths) {
-              if (Test-Path (Join-Path $p "candle.exe")) {
-                $wixBin = $p
-                Write-Host "Found WiX at: $wixBin"
-                break
-              }
+          # Check common paths first (WiX may be pre-installed on runner)
+          $wixPaths = @(
+            "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+            "C:\Program Files\WiX Toolset v3.11\bin"
+            "C:\Program Files (x86)\WiX Toolset v4.0\bin"
+            "C:\Program Files\WiX Toolset v4.0\bin"
+          )
+          $wixBin = $null
+          foreach ($p in $wixPaths) {
+            if (Test-Path (Join-Path $p "candle.exe")) {
+              $wixBin = $p
+              Write-Host "Found WiX at: $wixBin"
+              break
+            }
+          }
+          # Fallback to chocolatey lib if not found
+          if (-not $wixBin) {
+            choco install wixtoolset -y --no-progress
+            $candleFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\wixtoolset" -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue
+            if ($candleFiles) {
+              $wixBin = Split-Path $candleFiles[0].FullName
+              Write-Host "Found WiX in chocolatey: $wixBin"
             }
           }
           if ($wixBin) {
