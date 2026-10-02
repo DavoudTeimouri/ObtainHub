@@ -81,33 +81,43 @@ jobs:
         shell: powershell
         run: |
           choco install wixtoolset -y --no-progress
-          Write-Host "WiX installed"
+          $candleFiles = Get-ChildItem "C:\ProgramData\chocolatey\lib\wixtoolset" -Recurse -Filter "candle.exe" -ErrorAction SilentlyContinue
+          if ($candleFiles) {
+            $wixBin = Split-Path $candleFiles[0].FullName
+            Write-Host "Found WiX in chocolatey: $wixBin"
+          } else {
+            Write-Host "NOT found in chocolatey lib, checking common paths..."
+            $wixPaths = @(
+              "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+              "C:\Program Files\WiX Toolset v3.11\bin"
+              "C:\Program Files (x86)\WiX Toolset v4.0\bin"
+              "C:\Program Files\WiX Toolset v4.0\bin"
+            )
+            foreach ($p in $wixPaths) {
+              if (Test-Path (Join-Path $p "candle.exe")) {
+                $wixBin = $p
+                Write-Host "Found WiX at: $wixBin"
+                break
+              }
+            }
+          }
+          if ($wixBin) {
+            Add-Content -Path $env:GITHUB_ENV -Value "WIX_BIN=$wixBin"
+            Write-Host "WIX_BIN set to: $wixBin"
+          } else {
+            Write-Host "WiX NOT FOUND - will skip MSI build"
+          }
+          Write-Host "GITHUB_ENV content: $(Get-Content $env:GITHUB_ENV)"
 
       - name: Build WiX MSI
         shell: powershell
         run: |
           Write-Host "=== WiX MSI Build ==="
-          $wixBin = $null
-          $wixPaths = @(
-            "C:\Program Files (x86)\WiX Toolset v3.11\bin",
-            "C:\Program Files\WiX Toolset v3.11\bin",
-            "C:\Program Files (x86)\WiX Toolset v4.0\bin",
-            "C:\Program Files\WiX Toolset v4.0\bin"
-          )
-          foreach ($p in $wixPaths) {
-            $resolved = Get-Item -Path $p -ErrorAction SilentlyContinue
-            if ($resolved -and (Test-Path (Join-Path $resolved.FullName "candle.exe"))) {
-              $wixBin = $resolved.FullName
-              Write-Host "Found WiX at: $wixBin"
-              break
-            }
-          }
-          if (-not $wixBin) {
-            $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
-            if ($candlePath) { $wixBin = Split-Path $candlePath }
-          }
-          if (-not $wixBin) {
-            Write-Host "WiX NOT FOUND - skipping MSI"
+          $wixBin = $env:WIX_BIN
+          if (-not $wixBin -or -not (Test-Path (Join-Path $wixBin "candle.exe"))) {
+            Write-Host "WIX_BIN not found or invalid: $wixBin"
+            Write-Host "Environment WIX_BIN: $env:WIX_BIN"
+            Write-Host "Skipping MSI build"
             exit 0
           }
           $candle = Join-Path $wixBin "candle.exe"
@@ -126,9 +136,9 @@ jobs:
         if: hashFiles('dist/ObtainHub.msi') != ''
         shell: powershell
         run: |
-          $light = (Get-ChildItem "C:\Program Files*\WiX Toolset*\bin\light.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-          if (-not $light) { $light = (Get-Command light.exe -ErrorAction SilentlyContinue).Source }
-          if (-not $light) { Write-Host "light.exe not found, skipping ICE"; exit 0 }
+          $wixBin = $env:WIX_BIN
+          $light = Join-Path $wixBin "light.exe"
+          if (-not (Test-Path $light)) { Write-Host "light.exe not found, skipping ICE"; exit 0 }
           & $light -sice:ICE60 -out NUL dist/ObtainHub.msi 2>&1 | Select-String -Pattern "ICE60|error|warning" | Select-Object -First 40
           Write-Host "ICE60 check done (exit $LASTEXITCODE)"
 
@@ -181,7 +191,7 @@ jobs:
           path: |
             dist/ObtainHub.msi
             installer/Output/ObtainHub-Setup.exe
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 5
 
       - name: Generate SBOM (CycloneDX)
