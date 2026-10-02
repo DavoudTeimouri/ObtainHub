@@ -66,6 +66,19 @@ def component_guid(directory: Path) -> str:
     ).upper()
 
 
+# ICE30 (SFN): two directories with the same Name under the same parent
+# mangle to the same 8.3 alias, and ICE30 then reports every file inside
+# them as a duplicate target owned by two Components. Several .dist-info
+# dirs ship a licenses\LICENSE, so this fires on the real payload.
+# The license text is never read at runtime, so skip those copies rather
+# than rename real directories.
+DEAD_METADATA = {"licenses"}
+
+
+def is_dead(relative: Path) -> bool:
+    return bool(DEAD_METADATA.intersection(relative.parts))
+
+
 def group_by_dir(payload):
     """{relative parent dir: [files]}, plus every directory in the tree.
 
@@ -90,26 +103,36 @@ def file_id(relative: Path, taken: set) -> str:
     return sanitise("_".join(relative.with_suffix("").parts), taken)
 
 
-def component_lines(parent, files, ids_taken, indent="      "):
-    """One Component holding `files`, nested under its own Directory."""
+def component_lines(parent, files, ids_taken, indent="      ", seen_targets=None):
+    """One Component holding `files`, nested under its own Directory.
+
+    ICE30: two files may resolve to the same target path (e.g. two dist-info
+    dirs each carrying a LICENSE). First one wins; later duplicates skipped.
+    """
     if parent == Path("."):
         cid = "c_root"
     else:
         cid = "c_" + sanitise("_".join(parent.parts), ids_taken)
 
     out = [
-        '%s<Component Id="%s" Guid="%s">'
+        '%s<Component Id="%s" Guid="%s" Win64="yes">'
         % (indent, cid, component_guid(parent))
     ]
     taken = {"ohub.exe"}
-    for index, relative in enumerate(sorted(files, key=lambda p: p.name)):
+    first = True
+    for relative in sorted(files, key=lambda p: p.name):
+        target = str(Path("dist") / "ohub" / relative).replace("/", "\\")
+        if seen_targets is not None:
+            if target in seen_targets:
+                continue
+            seen_targets.add(target)
         fid = file_id(relative, taken)
-        source = str(Path("dist") / "ohub" / relative).replace("/", "\\")
-        keypath = ' KeyPath="yes"' if index == 0 else ""
+        keypath = ' KeyPath="yes"' if first else ""
         out.append(
             '%s  <File Id="%s" Name="%s" Source="%s"%s />'
-            % (indent, fid, escape(relative.name), escape(source), keypath)
+            % (indent, fid, escape(relative.name), escape(target), keypath)
         )
+        first = False
     out.append("%s</Component>" % indent)
     return cid, out
 
@@ -131,6 +154,7 @@ def render(payload):
     body = []
     refs = []
     open_stack: list = []
+    seen_targets: set = set()
 
     for directory in nested:
         while open_stack and open_stack[-1] not in directory.parents:
@@ -146,7 +170,7 @@ def render(payload):
 
         if directory in tree:
             cid, lines = component_lines(
-                directory, tree[directory], ids_taken, indent + "  "
+                directory, tree[directory], ids_taken, indent + "  ", seen_targets
             )
             body.extend(lines)
             refs.append(cid)
@@ -159,7 +183,9 @@ def render(payload):
     # generated ones. A ComponentGroup here would be the CNDL0062 shape and
     # cannot live under a DirectoryRef anyway.
     if Path(".") in tree:
-        cid, lines = component_lines(Path("."), tree[Path(".")], ids_taken, "      ")
+        cid, lines = component_lines(
+            Path("."), tree[Path(".")], ids_taken, "      ", seen_targets
+        )
         body.append("")
         body.extend(lines)
         refs.append(cid)
@@ -205,10 +231,15 @@ def main() -> int:
         print("ERROR: %s not found - run the PyInstaller build first" % DIST, file=sys.stderr)
         return 1
 
-    payload = sorted(p for p in DIST.rglob("*") if p.is_file() and p.name != "ohub.exe")
-    if not payload:
+    on_disk = sorted(
+        p for p in DIST.rglob("*") if p.is_file() and p.name != "ohub.exe"
+    )
+    if not on_disk:
         print("ERROR: onedir payload is empty (only ohub.exe found)", file=sys.stderr)
         return 1
+
+    dropped = [p for p in on_disk if is_dead(p.relative_to(DIST))]
+    payload = [p for p in on_disk if not is_dead(p.relative_to(DIST))]
 
     refs_block, payload_block = render(payload)
     text = WXS.read_text(encoding="utf-8")
@@ -221,6 +252,11 @@ def main() -> int:
         "installer/setup.wxs: %d payload file(s) in %d component(s)"
         % (len(payload), len(tree))
     )
+    if dropped:
+        print(
+            "  skipped %d duplicate license file(s) (ICE30/SFN collision)"
+            % len(dropped)
+        )
     return 0
 
 

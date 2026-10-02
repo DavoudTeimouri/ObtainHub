@@ -168,22 +168,26 @@ if root is not None:
         if not (dist / rel).exists():
             FAILS.append("Source not on disk: %s" % s)
 
-    # 8. The onedir tree shape is preserved.
+    # 8. The onedir tree shape is preserved. licenses\LICENSE is intentionally
+    #    dropped (ICE30), so it is not required here.
     for needed in (
         "_internal\\keyrings\\alt\\__init__.py",
         "_internal\\importlib_metadata-9_0_1.dist-info\\METADATA",
-        "_internal\\importlib_metadata-9_0_1.dist-info\\licenses\\LICENSE",
     ):
         if not any(needed in s for s in sources):
             FAILS.append("nested path not preserved: %s" % needed)
-    for name in ("_internal", "keyrings", "alt", "licenses"):
+    for name in ("_internal", "keyrings", "alt"):
         if not any(d.get("Name") == name for d in dirs):
             FAILS.append("Directory %r missing from the generated tree" % name)
 
-    # 9. Full coverage, no extras.
+    # 9. Full coverage, no extras. Files under a "licenses" dir are deliberately
+    #    dropped (ICE30/SFN collision), so they are excluded from the expectation.
     expected = {
         str(p.relative_to(dist)).replace("/", "\\")
-        for p in dist.rglob("*") if p.is_file() and p.name != "ohub.exe"
+        for p in dist.rglob("*")
+        if p.is_file()
+        and p.name != "ohub.exe"
+        and not gen.is_dead(p.relative_to(dist))
     }
     covered = {s.replace("\\", "/")[len("dist/ohub/"):].replace("/", "\\") for s in sources}
     if expected - covered:
@@ -236,6 +240,41 @@ for m in re.finditer(r">([^<]*)<", no_comments):
             "CNDL0107: non-whitespace text inside <Wix>: %r" % m.group(1)[:60]
         )
         break
+
+# 15. ICE80: every Component must declare Win64="yes" because every parent
+#     Directory is 64-bit (ProgramFiles64Folder / INSTALLFOLDER).
+for c in comps:
+    if c.get("Win64") != "yes":
+        FAILS.append("ICE80: Component %s lacks Win64=\"yes\"" % c.get("Id"))
+
+# 16. ICE30: no two Files may resolve to the same target path. Two
+#     dist-info dirs each carrying a LICENSE is the real-world trigger.
+targets = [f.get("Source") for f in files]
+dupes = sorted({t for t in targets if targets.count(t) > 1})
+if dupes:
+    FAILS.append("ICE30: duplicate target paths: %s" % dupes[:3])
+
+# 17. ICE38/ICE43/ICE57: a Component under ProgramMenuFolder is per-user,
+#     so its KeyPath registry value must be HKCU.
+for c in comps:
+    if has_ancestor(c, WIX_NS + "DirectoryRef") and any(
+        d.get("Id") == "ApplicationProgramsFolder"
+        for d in [parent_of.get(c)]
+        if d is not None and d.tag == WIX_NS + "DirectoryRef"
+    ):
+        for kv in c.findall(WIX_NS + "RegistryValue"):
+            if kv.get("KeyPath") == "yes" and kv.get("Root") != "HKCU":
+                FAILS.append(
+                    "ICE38/43/57: per-user Component %s has a %s KeyPath"
+                    % (c.get("Id"), kv.get("Root"))
+                )
+
+# 18. ICE30 (SFN): two directories sharing a Name under the same parent mangle
+#     to one 8.3 alias. Several .dist-info dirs ship licenses\LICENSE, so the
+#     generator drops those copies; nothing named "licenses" may survive.
+lic_dirs = [d.get("Id") for d in dirs if d.get("Name") == "licenses"]
+if lic_dirs:
+    FAILS.append("ICE30: licenses dir(s) survive and will collide: %s" % lic_dirs)
 
 # 14. Missing dist/ is a clean error.
 gen.DIST = tmp / "nope"
