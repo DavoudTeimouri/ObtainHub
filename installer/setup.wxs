@@ -53,8 +53,7 @@
       <Component Id="ApplicationShortcut" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567892" Directory="ApplicationProgramsFolder">
         <Shortcut Id="ApplicationStartMenuShortcut"
                   Name="ObtainHub"
-                  Target="[INSTALLFOLDER]ohub.exe"
-                  WorkingDirectory="INSTALLFOLDER" />
+                  Target="[INSTALLFOLDER]ohub.exe" />
         <RemoveFolder Id="CleanupApplicationProgramsFolder" On="uninstall" />
       </Component>
     </ComponentGroup>
