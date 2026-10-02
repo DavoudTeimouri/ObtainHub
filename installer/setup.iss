@@ -1,7 +1,5 @@
-; ObtainHub Inno Setup script
-; Requires Inno Setup 6.7+
-; PATH management
-
+; ObtainHub Inno Setup Script 6.7+
+; Inno Setup 6.7+ required (Unicode, modern wizard)
 #define AppName "ObtainHub"
 #define AppVersion "2.0.0"
 #define AppPublisher "DavoudTeimouri"
@@ -30,13 +28,22 @@ DisableDirPage=no
 CreateAppDir=yes
 UninstallDisplayIcon={app}\{#AppExeName}
 MinVersion=6.7
-; CloseApplications and them
 CloseApplications=yes
 CloseApplicationsFilter={#AppExeName}
 RestartApplications=yes
 
 [Files]
-Source: "..\dist\ohub\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\ohub\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+
+[Registry]
+Root: HKCU; Subkey: "Environment"; ValueType: string; ValueName: "Path"; ValueData: "{olddata};{app}"; Flags: preservestringtype; Check: AppendToPath('{app}')
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
 
 [Code]
 function AppendToPath(const APath: string): Boolean;
@@ -57,14 +64,5 @@ begin
   begin
     SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'Environment', SMTO_ABORTIFHUNG, 5000, 0);
     Result := True;
-  end;
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssPostInstall then
-  begin
-    // Only add to PATH if the CLI wasn't already in it
-    AppendToPath(ExpandConstant('{app}'));
   end;
 end;
