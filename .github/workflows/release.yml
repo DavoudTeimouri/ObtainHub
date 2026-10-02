@@ -186,7 +186,7 @@ jobs:
 
       - name: Generate SBOM (CycloneDX)
         run: |
-          pip install cyclonedx-python-lib && cyclonedx-py -o dist/ObtainHub-sbom.json --format JSON
+          pip install cyclonedx-python-lib && cyclonedx-py requirements -o dist/ObtainHub-sbom.json --format JSON
         if: hashFiles('dist/ohub/ohub.exe') != ''
 
       - name: Upload SBOM
