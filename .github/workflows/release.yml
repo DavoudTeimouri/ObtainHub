@@ -236,15 +236,16 @@ jobs:
         run: |
           if (-not (Test-Path dist/ObtainHub.msi)) { Write-Host "MSI not found"; exit 1 }
           $log = "$env:RUNNER_TEMP\msi.log"
-          Start-Process msiexec.exe -ArgumentList "/i", "dist\ObtainHub.msi", "/qn", "/norestart", "/l*v", $log -Wait -NoNewWindow
-          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 50; exit 1 }
+          # Start-Process -Wait does not populate $LASTEXITCODE; -PassThru is required.
+          $p = Start-Process msiexec.exe -ArgumentList "/i", "dist\ObtainHub.msi", "/qn", "/norestart", "/l*v", $log -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { Get-Content $log -Tail 50; exit 1 }
           if (-not (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe")) { Write-Host "ohub.exe not installed"; exit 1 }
           & "$env:ProgramFiles\ObtainHub\ohub.exe" --version
           if ($LASTEXITCODE -ne 0) { Write-Host "ohub --version failed"; exit 1 }
       - name: Uninstall MSI
         run: |
-          Start-Process msiexec.exe -ArgumentList "/x", "dist\ObtainHub.msi", "/qn", "/norestart" -Wait -NoNewWindow
-          if ($LASTEXITCODE -ne 0) { Write-Host "MSI uninstall exit $LASTEXITCODE"; exit 1 }
+          $p = Start-Process msiexec.exe -ArgumentList "/x", "dist\ObtainHub.msi", "/qn", "/norestart" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { Write-Host "MSI uninstall exit $($p.ExitCode)"; exit 1 }
           if (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe") { Write-Host "MSI cleanup failed"; exit 1 }
       - name: Install EXE silently
         run: |
