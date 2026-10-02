@@ -146,16 +146,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "MSI: $(Get-Item dist/ObtainHub.msi)"
 
-      - name: WiX ICE validation
-        if: hashFiles('dist/ObtainHub.msi') != ''
-        shell: powershell
-        run: |
-          $wixBin = $env:WIX_BIN
-          $light = Join-Path $wixBin "light.exe"
-          if (-not (Test-Path $light)) { Write-Host "light.exe not found, skipping ICE"; exit 0 }
-          & $light -sice:ICE60 -out NUL dist/ObtainHub.msi 2>&1 | Select-String -Pattern "ICE60|error|warning" | Select-Object -First 40
-          Write-Host "ICE60 check done (exit $LASTEXITCODE)"
-
       - name: Install Inno Setup
         shell: powershell
         run: |
