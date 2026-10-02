@@ -155,22 +155,14 @@ def render(payload):
         body.append("      " + "  " * (len(open_stack) - 1) + "</Directory>")
         open_stack.pop()
 
-    # Files sitting at the top of dist\\ohub cannot be nested under a generated
-    # Directory, so they go in a ComponentGroup that sets @Directory instead.
-    root_group = []
+    # Files sitting at the top of dist\ohub get a plain Component next to the
+    # generated ones. A ComponentGroup here would be the CNDL0062 shape and
+    # cannot live under a DirectoryRef anyway.
     if Path(".") in tree:
-        cid, lines = component_lines(
-            Path("."), tree[Path(".")], ids_taken, "        "
-        )
-        root_group = [
-            '    <ComponentGroup Id="OnedirRoot" Directory="INSTALLFOLDER">'
-        ] + lines + [
-            "    </ComponentGroup>"
-        ]
+        cid, lines = component_lines(Path("."), tree[Path(".")], ids_taken, "      ")
+        body.append("")
+        body.extend(lines)
         refs.append(cid)
-
-    if root_group:
-        body.extend([""] + root_group)
 
     refs_block = "\n".join(
         ['      <ComponentRef Id="%s" />' % c for c in sorted(refs)]

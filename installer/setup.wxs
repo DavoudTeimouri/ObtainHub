@@ -14,7 +14,7 @@
     <MediaTemplate EmbedCab="yes" />
 
     <Feature Id="ProductFeature" Title="ObtainHub" Level="1">
-      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentRef Id="MainExecutable" />
       <ComponentRef Id="PathEnvironment" />
       <ComponentRef Id="ApplicationShortcut" />
       <!-- GENERATED COMPONENT REFS -->
@@ -32,31 +32,42 @@
     </Directory>
   </Fragment>
 
-  <!-- CNDL0005: Environment is only legal inside a Fragment, not under Product. -->
+  <!-- CNDL0005: Environment is only legal inside a Fragment, not under Product.
+       The registry value is the KeyPath; ICE05 rejects a component with none. -->
   <Fragment>
-    <Component Id="PathEnvironment" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567893">
-      <Environment Id="AddToPath"
-                   Name="PATH"
-                   Value="[INSTALLFOLDER]"
-                   Action="set"
-                   Part="last"
-                   Permanent="no"
-                   System="no" />
-    </Component>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="PathEnvironment" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567893">
+        <Environment Id="AddToPath"
+                     Name="PATH"
+                     Value="[INSTALLFOLDER]\"
+                     Action="set"
+                     Part="last"
+                     Permanent="no"
+                     System="no" />
+        <RegistryValue Root="HKLM" Key="Software\ObtainHub" Name="PathInstalled" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
   </Fragment>
 
+  <!-- CNDL0062 and CNDL0010 disagree: inside a ComponentGroup a Component must
+       not carry @Directory, and outside one it must. Neither rule applies under
+       a DirectoryRef, so both Components live here. Same shape the generated
+       payload uses. -->
   <Fragment>
-    <ComponentGroup Id="ProductComponents">
-      <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567891" Directory="INSTALLFOLDER">
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567891">
         <File Id="ohub.exe" Source="dist\ohub\ohub.exe" KeyPath="yes" />
       </Component>
-      <Component Id="ApplicationShortcut" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567892" Directory="ApplicationProgramsFolder">
+    </DirectoryRef>
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcut" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567892">
         <Shortcut Id="ApplicationStartMenuShortcut"
                   Name="ObtainHub"
                   Target="[INSTALLFOLDER]ohub.exe" />
         <RemoveFolder Id="CleanupApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKLM" Key="Software\ObtainHub" Name="ShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
       </Component>
-    </ComponentGroup>
+    </DirectoryRef>
   </Fragment>
 
   <!-- GENERATED PAYLOAD -->

@@ -113,6 +113,41 @@ if root is not None:
                     % c.get("Id")
                 )
 
+    # 4b. A ComponentGroup is not legal under a DirectoryRef either. WiX rejects
+    #     it the same way it rejects @Directory on a nested Component.
+    for dref in root.iter(WIX_NS + "DirectoryRef"):
+        for group in dref.iter(WIX_NS + "ComponentGroup"):
+            FAILS.append(
+                "CNDL0062: ComponentGroup %s nested under DirectoryRef"
+                % group.get("Id")
+            )
+
+    # 4c. CNDL0010: a Component that is not inside a Directory and not inside a
+    #     ComponentGroup must carry @Directory itself. ElementTree has no parent
+    #     pointers, so walk the tree once and index them.
+    parent_of = {}
+    for p in root.iter():
+        for child in p:
+            parent_of[child] = p
+
+    def has_ancestor(elem, tag):
+        node = parent_of.get(elem)
+        while node is not None:
+            if node.tag == tag:
+                return True
+            node = parent_of.get(node)
+        return False
+
+    for c in comps:
+        in_dir = has_ancestor(c, WIX_NS + "Directory")
+        in_dref = has_ancestor(c, WIX_NS + "DirectoryRef")
+        in_group = has_ancestor(c, WIX_NS + "ComponentGroup")
+        if not (in_dir or in_dref or in_group) and c.get("Directory") is None:
+            FAILS.append(
+                "CNDL0010: Component %s has no @Directory, no parent Directory "
+                "and no parent DirectoryRef" % c.get("Id")
+            )
+
     # 5. CNDL0005: Environment is only legal under a Fragment.
     product = root.find(WIX_NS + "Product")
     if product is not None:
