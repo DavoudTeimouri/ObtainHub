@@ -265,8 +265,10 @@ jobs:
         run: |
           if (-not (Test-Path install/ObtainHub-Setup.exe)) { Write-Host "EXE not found"; exit 1 }
           $log = "$env:RUNNER_TEMP\iss.log"
-          & install/ObtainHub-Setup.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /LOG=$log
-          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 50; exit 1 }
+          # setup.exe is a GUI-subsystem app: the call operator does not wait
+          # for it, so $LASTEXITCODE is stale and $log may not exist yet.
+          $p = Start-Process install/ObtainHub-Setup.exe -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/LOG=$log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { if (Test-Path $log) { Get-Content $log -Tail 50 }; exit 1 }
           if (-not (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe")) { Write-Host "ohub.exe not installed"; exit 1 }
           & "$env:ProgramFiles\ObtainHub\ohub.exe" --version
           if ($LASTEXITCODE -ne 0) { Write-Host "ohub --version failed"; exit 1 }
@@ -274,8 +276,8 @@ jobs:
         run: |
           if (Test-Path "$env:ProgramFiles\ObtainHub\unins000.exe") {
             $log = "$env:RUNNER_TEMP\uninst.log"
-            & "$env:ProgramFiles\ObtainHub\unins000.exe" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /LOG=$log
-            if ($LASTEXITCODE -ne 0) { Write-Host "EXE uninstall exit $LASTEXITCODE"; exit 1 }
+            $p = Start-Process "$env:ProgramFiles\ObtainHub\unins000.exe" -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/LOG=$log" -Wait -PassThru
+            if ($p.ExitCode -ne 0) { Write-Host "EXE uninstall exit $($p.ExitCode)"; exit 1 }
           }
           if (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe") { Write-Host "EXE cleanup failed"; exit 1 }
 
