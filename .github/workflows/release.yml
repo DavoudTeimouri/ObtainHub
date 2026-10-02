@@ -350,7 +350,7 @@ jobs:
           $notes = $notes -replace '(?s)^## \[.*?\n', ''
           $notes = $notes -replace '(?s)^## \[.*', ''
           $prerelease = if ($tag -match '-') { "--prerelease" } else { "" }
-          gh release create $tag --title "Release $tag" --notes "$notes" --generate-notes $prerelease --yes --cleanup-tag
+          gh release create $tag --title "Release $tag" --notes "$notes" $prerelease --verify-tag
         shell: powershell
       - name: Upload all assets
         run: |
