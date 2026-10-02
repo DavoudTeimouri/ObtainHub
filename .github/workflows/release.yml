@@ -349,9 +349,8 @@ jobs:
           $notes = Get-Content CHANGELOG.md -Raw
           $notes = $notes -replace '(?s)^## \[.*?\n', ''
           $notes = $notes -replace '(?s)^## \[.*', ''
-          gh release create $tag --title "Release $tag" --notes "$notes" --generate-notes $(
-            if ("$tag" -match -- "-") { "--prerelease" } else { "" }
-          ) --yes --cleanup-tag
+          $prerelease = if ($tag -match '-') { "--prerelease" } else { "" }
+          gh release create $tag --title "Release $tag" --notes "$notes" --generate-notes $prerelease --yes --cleanup-tag
         shell: powershell
       - name: Upload all assets
         run: |
