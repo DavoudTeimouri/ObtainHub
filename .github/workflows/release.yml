@@ -186,7 +186,7 @@ jobs:
 
       - name: Generate SBOM (CycloneDX)
         run: |
-          python -m cyclonedx_bom -o dist/ObtainHub-sbom.json --format JSON
+          python -m cyclonedx_python_lib -o dist/ObtainHub-sbom.json --format JSON
         if: hashFiles('dist/ohub/ohub.exe') != ''
 
       - name: Upload SBOM
