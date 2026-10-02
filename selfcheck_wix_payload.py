@@ -224,7 +224,20 @@ if text.count("<Fragment>") != text.count("</Fragment>"):
 if text.count("<DirectoryRef") != text.count("</DirectoryRef>"):
     FAILS.append("unbalanced <DirectoryRef> elements")
 
-# 13. Missing dist/ is a clean error.
+# 13. CNDL0107: <Wix> may contain only elements, never text. The generator
+#     used to emit "<!-- GENERATED PAYLOAD --> 131 file(s) ...", which closed
+#     the comment early and left the rest as text under <Wix>. ElementTree
+#     drops whitespace-only .text, so check the raw source: strip comments,
+#     then look for text that is not pure whitespace between any two tags.
+no_comments = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+for m in re.finditer(r">([^<]*)<", no_comments):
+    if m.group(1).strip():
+        FAILS.append(
+            "CNDL0107: non-whitespace text inside <Wix>: %r" % m.group(1)[:60]
+        )
+        break
+
+# 14. Missing dist/ is a clean error.
 gen.DIST = tmp / "nope"
 if gen.main() != 1:
     FAILS.append("generator did not fail cleanly on a missing dist dir")

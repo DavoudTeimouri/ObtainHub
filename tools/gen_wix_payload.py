@@ -169,9 +169,8 @@ def render(payload):
     )
     payload_block = "\n".join(
         [
-            PAYLOAD_MARKER + " %d file(s) by tools/gen_wix_payload.py - do not hand-edit."
+            "  <!-- %d file(s) by tools/gen_wix_payload.py - do not hand-edit. -->"
             % len(payload),
-            "  -->",
             "",
             "  <Fragment>",
             '    <DirectoryRef Id="INSTALLFOLDER">',
