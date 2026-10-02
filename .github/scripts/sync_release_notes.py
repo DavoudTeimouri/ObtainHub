@@ -16,6 +16,10 @@ REPO = os.environ.get("GITHUB_REPOSITORY", "DavoudTeimouri/ObtainHub")
 TOKEN = os.environ.get("GITHUB_TOKEN")
 API = "https://api.github.com"
 
+# Releases carrying this notice are retired. Their body is kept as-is:
+# rewriting it here would drop the notice that tells readers to move on.
+SUPERSEDED_MARKER = "Superseded - do not use this release"
+
 
 def api_request(url, method="GET", data=None):
     req = urllib.request.Request(url, data=data, method=method)
@@ -36,9 +40,12 @@ def parse_changelog(path="CHANGELOG.md"):
         version = m.group(1)
         start = m.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
-        # Strip the leading heading line already consumed; keep sub-content
+        # Strip the leading heading line already consumed; keep sub-content.
+        # Keep the "## [version]" form: "# Changelog for X" is a file heading,
+        # not release-page formatting, and dropped the version anchor readers
+        # use to scan the page.
         body = content[start:end].strip()
-        sections[version] = f"# Changelog for {version}\n\n{body}"
+        sections[version] = f"## [{version}]\n\n{body}"
     return sections
 
 
@@ -55,6 +62,9 @@ def main():
     for rel in releases:
         tag = rel["tag_name"]
         version = tag.lstrip("v")
+        if SUPERSEDED_MARKER in (rel.get("body") or ""):
+            print(f"Skipping retired release {tag} (superseded notice present)")
+            continue
         if version in sections:
             try:
                 api_request(
