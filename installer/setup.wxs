@@ -16,6 +16,7 @@
     <Feature Id="ProductFeature" Title="ObtainHub" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
       <ComponentRef Id="PathEnvironment" />
+      <ComponentRef Id="ApplicationShortcut" />
       <!-- GENERATED COMPONENT REFS -->
     </Feature>
   </Product>
@@ -48,12 +49,14 @@
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567891">
         <File Id="ohub.exe" Source="dist\ohub\ohub.exe" KeyPath="yes" Checksum="yes" />
+      </Component>
+      <Component Id="ApplicationShortcut" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567892" Directory="ApplicationProgramsFolder">
         <Shortcut Id="ApplicationStartMenuShortcut"
-                  Directory="ApplicationProgramsFolder"
                   Name="ObtainHub"
                   Target="[INSTALLFOLDER]ohub.exe"
                   WorkingDirectory="INSTALLFOLDER"
                   Advertise="yes" />
+        <RemoveFolder Id="CleanupApplicationProgramsFolder" On="uninstall" />
       </Component>
     </ComponentGroup>
   </Fragment>
