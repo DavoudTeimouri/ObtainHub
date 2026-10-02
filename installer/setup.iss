@@ -62,7 +62,6 @@ begin
     NewPath := APath;
   if RegWriteStringValue(HKCU, 'Environment', 'Path', NewPath) then
   begin
-    SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'Environment', SMTO_ABORTIFHUNG, 5000, 0);
     Result := True;
   end;
 end;
