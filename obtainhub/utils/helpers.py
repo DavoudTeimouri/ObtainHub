@@ -357,6 +357,19 @@ def get_installed_programs() -> list[dict]:
     return programs
 
 
+def parse_content_length(headers, default: int = 0) -> int:
+    """Parse a Content-Length header defensively.
+
+    ``int()`` on an unvalidated header raises ValueError on anything a
+    hostile or broken server can send, which would abort the download and
+    misreport it as an unexpected error.
+    """
+    try:
+        return int(headers.get("content-length") or headers.get("Content-Length") or default)
+    except (TypeError, ValueError):
+        return default
+
+
 def extract_zip(zip_path: Path, dest_dir: Path) -> Path:
     """Extract ZIP archive."""
     import zipfile

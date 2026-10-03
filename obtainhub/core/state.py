@@ -102,8 +102,22 @@ class StateManager:
             return {"installed": {}, "manifest_cache": {}, "check_history": {}}
 
     def save(self):
-        with open(self.state_file, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        # Write atomically: opening with "w" truncates the live state file
+        # first, so a crash mid-write left a truncated file that _load_state
+        # silently reads as "no apps installed". Temp file + replace, matching
+        # ConfigManager.save.
+        temp_file = self.state_file.with_suffix(".tmp")
+        try:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+            temp_file.replace(self.state_file)
+        except Exception:
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except OSError:
+                    pass
+            raise
 
     def get_all_apps(self):
         """Get all installed apps as InstalledApp objects."""

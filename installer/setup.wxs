@@ -66,7 +66,7 @@
       <Component Id="ApplicationShortcut" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567892" Win64="yes">
         <Shortcut Id="ApplicationStartMenuShortcut"
                   Name="ObtainHub"
-                  Target="[INSTALLFOLDER]ohub.exe" />
+                  Target="[INSTALLFOLDER]\ohub.exe" />
         <RemoveFolder Id="CleanupApplicationProgramsFolder" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\ObtainHub" Name="ShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
       </Component>

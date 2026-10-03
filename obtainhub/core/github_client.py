@@ -119,7 +119,7 @@ class GitHubClient:
                 if cached_data is not None:
                     data = cached_data
                 else:
-                    resp = self.session.get(url, headers=self.headers, params=params)
+                    resp = self.session.get(url, headers=self.headers, params=params, timeout=10)
                     if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
                         return {"error": "rate_limit", "items": []}
                     resp.raise_for_status()
@@ -173,7 +173,7 @@ class GitHubClient:
                 cached_data, status = self._get_cached_response(url)
                 if cached_data is not None:
                     return cached_data
-                resp = self.session.get(url, headers=self.headers)
+                resp = self.session.get(url, headers=self.headers, timeout=10)
                 if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
                     return None
                 resp.raise_for_status()
@@ -229,7 +229,7 @@ class GitHubClient:
                 cached_data, status = self._get_cached_response(url, params)
                 if cached_data is not None:
                     return cached_data
-                resp = self.session.get(url, headers=self.headers, params=params)
+                resp = self.session.get(url, headers=self.headers, params=params, timeout=10)
                 if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
                     return []
                 resp.raise_for_status()
@@ -268,7 +268,7 @@ class GitHubClient:
                 cached_data, status = self._get_cached_response(url)
                 if cached_data is not None:
                     return cached_data
-                resp = self.session.get(url, headers=self.headers)
+                resp = self.session.get(url, headers=self.headers, timeout=10)
                 if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
                     return None
                 if resp.status_code == 404:

@@ -29,6 +29,20 @@ _IGNORED_DIRS = {
 }
 
 
+def _require_inside(dest_dir: Path, target: Path, member: str) -> None:
+    """Raise unless ``target`` resolves inside ``dest_dir``.
+
+    Guards against Zip Slip: an archive member like ``app/../../evil.dll``
+    survives ``Path.__truediv__`` and lands outside the destination.
+    """
+    base = dest_dir.resolve()
+    resolved = target.resolve()
+    if resolved != base and base not in resolved.parents:
+        raise ValueError(
+            f"Refusing unsafe archive entry {member!r}: resolves outside {dest_dir}"
+        )
+
+
 def extract_archive(archive_path: Path, dest_dir: Path) -> Path:
     """Extract an archive into ``dest_dir``.
 
@@ -56,6 +70,7 @@ def extract_archive(archive_path: Path, dest_dir: Path) -> Path:
                     if not rel:
                         continue
                     target = dest_dir / rel
+                    _require_inside(dest_dir, target, member)
                     if member.endswith("/"):
                         target.mkdir(parents=True, exist_ok=True)
                     else:
@@ -63,6 +78,11 @@ def extract_archive(archive_path: Path, dest_dir: Path) -> Path:
                         with zf.open(member) as src, open(target, "wb") as out:
                             out.write(src.read())
             else:
+                # Validate every member rather than relying on extractall's own
+                # sanitising, so a hostile archive is rejected loudly instead of
+                # silently landing files somewhere unexpected.
+                for member in names:
+                    _require_inside(dest_dir, dest_dir / member, member)
                 zf.extractall(dest_dir)
     else:
         raise ValueError(f"Unsupported archive type: {archive_path.name}")

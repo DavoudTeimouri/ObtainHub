@@ -19,6 +19,7 @@ from obtainhub.core.asset_matcher import (
     AssetMatcher,
 )
 from obtainhub.utils.helpers import is_windows_x64, get_architecture as get_system_architecture
+from obtainhub.utils.helpers import parse_content_length
 from obtainhub.core.config import get_config
 from obtainhub.core.logger import get_logger
 from obtainhub.core.exceptions import (
@@ -250,7 +251,7 @@ class SelfUpdater:
                 req.add_header('Authorization', f'token {self.config.github_token}')
 
             with self.session.open(req, timeout=300) as response:
-                total_size = int(response.headers.get('Content-Length', 0))
+                total_size = parse_content_length(response.headers)
                 downloaded = 0
 
                 with open(dest_path, 'wb') as f:

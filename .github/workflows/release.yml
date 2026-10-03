@@ -294,22 +294,30 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: installers
-          path: .
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: artifacts
+      # download-artifact strips the upload-time directory structure, so the
+      # installers land at artifacts/ObtainHub.msi, not dist/ObtainHub.msi.
+      # Every hashFiles() guard below was false before this, silently skipping
+      # all attestations while the job still reported success.
       - name: Attest MSI
-        if: ${{ hashFiles('dist/ObtainHub.msi') != '' }}
+        if: ${{ hashFiles('artifacts/ObtainHub.msi') != '' }}
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: dist/ObtainHub.msi
+          subject-path: artifacts/ObtainHub.msi
       - name: Attest EXE
-        if: ${{ hashFiles('dist/ObtainHub-Setup.exe') != '' }}
+        if: ${{ hashFiles('artifacts/ObtainHub-Setup.exe') != '' }}
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: dist/ObtainHub-Setup.exe
+          subject-path: artifacts/ObtainHub-Setup.exe
       - name: Attest SBOM
-        if: ${{ hashFiles('dist/ObtainHub-sbom.json') != '' }}
+        if: ${{ hashFiles('artifacts/ObtainHub-sbom.json') != '' }}
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: dist/ObtainHub-sbom.json
+          subject-path: artifacts/ObtainHub-sbom.json
 
   release:
     name: Create/Update Release

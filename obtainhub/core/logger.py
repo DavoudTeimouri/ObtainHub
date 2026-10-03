@@ -3,6 +3,7 @@
 import json
 import logging
 import logging.handlers
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +29,39 @@ class LogRecord:
     logger: str
     message: str
     extra: Optional[dict] = None
+
+
+class SecretRedactionFilter(logging.Filter):
+    """Scrub GitHub tokens from anything that reaches a log record.
+
+    Credentials travel in the Authorization header, so any future call site
+    that logs headers or a config object would persist a live token to disk.
+    No call site does that today; this is the backstop.
+    """
+
+    PATTERNS = (
+        # Bare GitHub token -> replaced whole, so no capture group (a group
+        # here would put the secret straight back into the output).
+        (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}"), "<redacted>"),
+        (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), "<redacted>"),
+        # Header form: keep the scheme, drop the credential.
+        (re.compile(r"((?:token|Bearer)\s+)[A-Za-z0-9_\-]{20,}", re.I), r"\1<redacted>"),
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = self._scrub(record.msg)
+        if isinstance(record.args, dict):
+            record.args = {k: self._scrub(v) for k, v in record.args.items()}
+        elif isinstance(record.args, tuple):
+            record.args = tuple(self._scrub(a) for a in record.args)
+        return True
+
+    def _scrub(self, value):
+        if isinstance(value, str):
+            for pat, repl in self.PATTERNS:
+                value = pat.sub(repl, value)
+        return value
 
 
 class JSONFormatter(logging.Formatter):
@@ -105,6 +139,7 @@ def setup_logging(
     
     # Clear existing handlers
     root_logger.handlers.clear()
+    root_logger.addFilter(SecretRedactionFilter())
     
     # Console handler
     if console:

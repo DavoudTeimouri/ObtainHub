@@ -14,6 +14,7 @@ from urllib3.util.retry import Retry
 from obtainhub.core.config import get_config_manager
 from obtainhub.core.exceptions import DownloadError, DownloadChecksumError, DownloadInterruptedError
 from obtainhub.core.logger import get_logger
+from obtainhub.utils.helpers import parse_content_length
 
 
 logger = get_logger(__name__)
@@ -148,7 +149,7 @@ class Downloader:
             )
             response.raise_for_status()
 
-            total_size = int(response.headers.get("content-length", 0))
+            total_size = parse_content_length(response.headers)
             downloaded = 0
 
             with open(temp_path, "wb") as f:
@@ -258,7 +259,7 @@ class Downloader:
                     )
             response.raise_for_status()
 
-            total_size = int(response.headers.get("content-length", 0)) + resume_from
+            total_size = parse_content_length(response.headers) + resume_from
             downloaded = resume_from
 
             mode = "ab" if resume_from > 0 else "wb"

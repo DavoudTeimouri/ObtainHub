@@ -617,7 +617,7 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_list(parsed, state_manager)
         elif parsed.command == "uninstall":
             # Self-protection: block uninstall on ohub itself
-            if parsed.app and _is_self_app(parsed.app, state_manager):
+            if parsed.app and _is_self_app(parsed.app, state_manager.get_app(parsed.app)):
                 print("Error: Cannot uninstall ohub itself. Use 'ohub self-uninstall' to remove ohub.", file=sys.stderr)
                 return 1
             return cmd_uninstall(
@@ -625,7 +625,7 @@ def main(args: Optional[List[str]] = None) -> int:
             )
         elif parsed.command == "remove":
             # Self-protection: block remove on ohub itself
-            if parsed.app and _is_self_app(parsed.app, state_manager):
+            if parsed.app and _is_self_app(parsed.app, state_manager.get_app(parsed.app)):
                 print("Error: Cannot remove ohub itself from management. Use 'ohub self-uninstall' to remove ohub.", file=sys.stderr)
                 return 1
             return cmd_remove(
@@ -2743,9 +2743,9 @@ def cmd_config(
 
         success = uninstaller.restore_from_zip(
             input_path,
-            target_config=target_config,
-            target_state=target_state,
-            target_downloads=target_downloads,
+            target_config_dir=target_config,
+            target_state_dir=target_state,
+            target_download_dir=target_downloads,
             restore_token=not parsed.no_token,
         )
         if success:
@@ -3656,11 +3656,19 @@ def cmd_tui(
                 
                 for app in apps:
                     try:
-                        release = client.get_latest_release(app.github_repo, config.include_prerelease)
+                        release = None
+                        # github_repo is "owner/repo"; get_latest_release takes
+                        # them separately. Release payloads are dicts, not objects.
+                        repo_id = (app.github_repo or "").strip()
+                        if "/" in repo_id:
+                            owner, repo = repo_id.split("/", 1)
+                            release = client.get_latest_release(
+                                owner, repo, include_prerelease=False
+                            )
                         if release:
-                            match = matcher.find_best_asset(release.assets, config.architecture)
-                            latest_version = release.tag_name.lstrip('v')
+                            latest_version = (release.get("tag_name") or "").lstrip("v")
                             current_version = app.version or "-"
+                            match = matcher.get_best_match(release.get("assets", []))
                             
                             if current_version == latest_version:
                                 status = "✓ Current"

@@ -230,8 +230,10 @@ def _fetch_manifest(src: ManifestSource) -> List[SourceAppEntry]:
         itype = (e.get("installer_type") or _classify(e.get("url", ""))).lower()
         if itype == "unknown":
             continue
-        # Include hooks from the manifest source
-        hooks = e.get("hooks", {}) or {}
+        # Hooks come from the user's own source config, never from the fetched
+        # manifest: a remote manifest could otherwise run arbitrary commands
+        # via the pre_install hook. Same trusted path as _fetch_releases.
+        hooks = src.hooks or {}
         out.append(SourceAppEntry(
             name=e.get("name", ""), version=str(e.get("version", "")),
             url=e.get("url", ""), installer_type=itype,
