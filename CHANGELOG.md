@@ -5,6 +5,61 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-10-03
+
+### Fixed
+- **Zip Slip in archive extraction (security).** A release ZIP with a member like
+  `wrapper/../../evil.exe` escaped the extraction folder and wrote wherever the path pointed.
+  This ran on every downloaded release archive, so the archive was attacker-controlled. Every
+  member is now validated to resolve inside the destination before anything is written, and a
+  hostile archive is rejected with a clear error instead of landing files somewhere unexpected.
+- **Remote manifests could run commands on your machine (security).** A manifest source's
+  `hooks` field was copied straight into the app entry, so any JSON manifest you added could set
+  a `pre_install` hook and have it execute with your privileges. Hooks are now read only from your
+  own source configuration, never from fetched content.
+- **Log files now scrub GitHub tokens.** A `SecretRedactionFilter` sits on the root logger and
+  redacts token-shaped values (`ghp_`, `github_pat_`, `token ...`, `Bearer ...`) from log messages
+  and their arguments, so a credential cannot be persisted to disk even if a future call site
+  logs a request header.
+- **`ohub config restore` no longer crashes.** It passed the wrong keyword argument names to
+  `SelfUninstaller.restore_from_zip()`, which raised `TypeError` on every invocation — disaster
+  recovery was completely unusable. The correct `target_config_dir` / `target_state_dir` /
+  `target_download_dir` arguments are now passed and a restore completes.
+- **`ohub tui` no longer crashes on startup.** The dashboard refresh called three APIs that do
+  not exist (`AssetMatcher.find_best_asset`, `Config.include_prerelease`, `Config.architecture`),
+  passed a single combined string to a three-argument `get_latest_release()`, and read
+  attributes off plain dictionaries. It now splits `owner/repo`, uses the real
+  `get_best_match` entry point, and reads the release payload as a dict. The dashboard renders.
+- **Installed-app inventory is no longer at risk of being erased.** `state.json` was written by
+  truncating the live file first, so an interrupt during the write left a truncated file that the
+  loader silently read as "nothing is installed". Saves are now atomic (temp file + rename, with
+  temp cleanup on failure), matching how `config.json` has always been written.
+- **`ohub uninstall` self-protection actually works.** The guard that stops `ohub` from
+  uninstalling itself was handed the state manager instead of the app, so every attribute lookup
+  returned empty and the check silently passed everything through. It now receives the resolved app.
+- **GitHub API calls no longer hang indefinitely.** Four requests were missing a timeout while
+  their siblings had one. All six session calls now use a finite timeout, so a stalled connection
+  surfaces an error instead of blocking the command forever.
+- **A malformed `Content-Length` header no longer kills a download.** The header was converted
+  with a bare `int()`; a proxy or hostile server returning anything non-numeric raised `ValueError`
+  and failed the transfer permanently. Sizes are now parsed defensively and an unusable value is
+  treated as unknown rather than fatal.
+- **Start-menu shortcut pointed at the wrong path.** The WiX shortcut target was
+  `[INSTALLFOLDER]ohub.exe` with no directory separator, so the Start-menu entry could not launch
+  the app.
+- **Installer PATH handling.** The Inno Setup installer compared the `PATH` value by substring, so
+  an unrelated folder such as `C:\Tools\ObtainHubBackup` suppressed the real entry; matching is
+  now on exact entries. Uninstall also removes the entry it added instead of leaving it behind.
+- **Build provenance was skipped while reporting success.** The provenance job downloaded its
+  artifacts to the repository root and then guarded on `dist/` paths, which never exist after a
+  download, so all three attestation steps were skipped and the job still went green. It now
+  downloads the installer and SBOM artifacts to `artifacts/` and guards on those real paths.
+
+### Changed
+- Release assets are exactly `ObtainHub.msi` and `ObtainHub-Setup.exe`. The generated
+  `ObtainHub-sbom.json` is still produced and attested internally as a CI artifact and provenance
+  subject, but is no longer published as a user download, matching every prior release.
+
 ## [2.0.0] - 2026-09-30
 
 ### Added

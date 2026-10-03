@@ -1,0 +1,2 @@
+release.yml: completed/failure  https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36743807314
+build.yml: completed/success  https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36743810153

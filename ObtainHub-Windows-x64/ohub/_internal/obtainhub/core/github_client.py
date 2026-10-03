@@ -1,0 +1,352 @@
+"""GitHub API client for ObtainHub."""
+
+import os
+import re
+import time
+from datetime import datetime, timezone
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
+# Repos with no push in this many days are considered inactive
+INACTIVE_DAYS = 365
+
+# Checksum patterns to extract from release body
+CHECKSUM_PATTERNS = [
+    # checksums.txt style: sha256 filename
+    re.compile(r'^([a-fA-F0-9]{64})\s+(\S+)$', re.MULTILINE),
+    # inline markdown table: | file | sha256 |
+    re.compile(r'\|\s*(\S+)\s*\|\s*([a-fA-F0-9]{64})\s*\|'),
+    # .sha256 file style: sha256 *filename
+    re.compile(r'^([a-fA-F0-9]{64})\s*\*(\S+)$', re.MULTILINE),
+    # key: value style
+    re.compile(r'(\S+)\s*:\s*([a-fA-F0-9]{64})'),
+]
+
+
+@dataclass
+class ReleaseInfo:
+    """Information about a GitHub release."""
+    tag_name: str
+    name: str
+    body: str
+    published_at: str
+    prerelease: bool
+    draft: bool
+    assets: List[Dict[str, Any]]
+    html_url: str
+    checksums: Optional[Dict[str, str]] = None  # filename -> sha256
+
+
+class GitHubClient:
+    def __init__(self, token: str = None, max_retries: int = 3, retry_delay: int = 10):
+        self.token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("OBTAINHUB_TOKEN")
+        self.headers = {"Accept": "application/vnd.github.v3+json"}
+        if self.token:
+            self.headers["Authorization"] = f"Bearer {self.token}"
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        # Cache for API responses: {url: (etag, last_modified, data, timestamp)}
+        self._cache = {}
+        # Session for connection pooling
+        self.session = self._create_session()
+
+    def _create_session(self) -> requests.Session:
+        """Create requests session with retry strategy."""
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        return session
+
+    def _get_cached_response(self, url: str, params: dict = None) -> Tuple[Optional[Dict], int]:
+        """Return (data, status_code) from cache if valid, else None."""
+        cache_key = (url, tuple(sorted(params.items())) if params else None)
+        if cache_key in self._cache:
+            etag, last_modified, data, timestamp = self._cache[cache_key]
+            # GitHub caches are valid for a while; we'll trust ETag/Last-Modified
+            headers = {}
+            if etag:
+                headers["If-None-Match"] = etag
+            if last_modified:
+                headers["If-Modified-Since"] = last_modified
+            try:
+                resp = self.session.get(url, headers=self.headers, params=params, timeout=10)
+                if resp.status_code == 304:
+                    return data, 200  # Use cached data
+                if resp.status_code == 200:
+                    # Update cache
+                    etag = resp.headers.get("ETag")
+                    last_modified = resp.headers.get("Last-Modified")
+                    self._cache[cache_key] = (etag, last_modified, resp.json(), time.time())
+                    return resp.json(), 200
+                # On other errors, fall through to return None
+            except requests.RequestException:
+                pass
+        return None, None
+
+    def _store_in_cache(self, url: str, params: dict, data: dict):
+        """Store response in cache."""
+        cache_key = (url, tuple(sorted(params.items())) if params else None)
+        etag = None
+        last_modified = None
+        # We don't have the response object here; caller should store with headers
+        # This method is kept for compatibility but not used directly.
+        self._cache[cache_key] = (etag, last_modified, data, time.time())
+
+    def search_repositories(self, query: str, min_stars: int = 0, ignore_case: bool = True, active_only: bool = True):
+        url = "https://api.github.com/search/repositories"
+        search_q = f"{query} stars:>={min_stars}" if min_stars > 0 else query
+        if active_only:
+            search_q += " archived:false"
+
+        params = {"q": search_q, "sort": "stars", "order": "desc"}
+
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                # Try cache first
+                cached_data, status = self._get_cached_response(url, params)
+                if cached_data is not None:
+                    data = cached_data
+                else:
+                    resp = self.session.get(url, headers=self.headers, params=params)
+                    if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
+                        return {"error": "rate_limit", "items": []}
+                    resp.raise_for_status()
+                    data = resp.json()
+                    # Cache the response
+                    etag = resp.headers.get("ETag")
+                    last_modified = resp.headers.get("Last-Modified")
+                    cache_key = (url, tuple(sorted(params.items())))
+                    self._cache[cache_key] = (etag, last_modified, data, time.time())
+                items = data.get("items", [])
+
+                if ignore_case:
+                    query_lower = query.lower()
+                    filtered = [
+                        item for item in items
+                        if query_lower in item["full_name"].lower()
+                        or (item.get("description") and query_lower in item["description"].lower())
+                    ]
+                    if filtered:
+                        items = filtered
+                # Add latest release info to each repo
+                for item in items:
+                    owner = item.get("owner", {}).get("login", "")
+                    repo = item.get("name", "")
+                    if owner and repo:
+                        releases = self.get_releases(owner, repo, per_page=1)
+                        if releases and len(releases) > 0:
+                            latest = releases[0]
+                            item["latest_release"] = latest.get("tag_name", "")
+                            item["latest_release_prerelease"] = latest.get("prerelease", False)
+                            item["latest_release_url"] = latest.get("html_url", "")
+                        else:
+                            item["latest_release"] = ""
+                            item["latest_release_prerelease"] = False
+                            item["latest_release_url"] = ""
+                return {"error": None, "items": items}
+            except requests.RequestException as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                continue
+        return {"error": str(last_error), "items": []}
+
+    def get_repo(self, owner: str, repo: str) -> Optional[Dict]:
+        """Get repository information with retry."""
+        url = f"https://api.github.com/repos/{owner}/{repo}"
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                # Try cache
+                cached_data, status = self._get_cached_response(url)
+                if cached_data is not None:
+                    return cached_data
+                resp = self.session.get(url, headers=self.headers)
+                if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
+                    return None
+                resp.raise_for_status()
+                data = resp.json()
+                # Cache
+                etag = resp.headers.get("ETag")
+                last_modified = resp.headers.get("Last-Modified")
+                cache_key = (url, None)
+                self._cache[cache_key] = (etag, last_modified, data, time.time())
+                return data
+            except requests.RequestException as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                continue
+        return None
+
+    def get_repo_status(self, owner: str, repo: str) -> Optional[Dict[str, Any]]:
+        """Return repo status flags: archived, disabled, inactive, pushed_at, last_push_days.
+
+        Returns None if the repo cannot be fetched (rate limit / not found).
+        """
+        data = self.get_repo(owner, repo)
+        if not data:
+            return None
+        pushed_at = data.get("pushed_at") or data.get("updated_at") or ""
+        last_push_days = None
+        if pushed_at:
+            try:
+                dt = datetime.strptime(pushed_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                last_push_days = (datetime.now(timezone.utc) - dt).days
+            except ValueError:
+                last_push_days = None
+        archived = bool(data.get("archived"))
+        disabled = bool(data.get("disabled"))
+        inactive = (last_push_days is not None and last_push_days > INACTIVE_DAYS) or disabled
+        return {
+            "archived": archived,
+            "disabled": disabled,
+            "inactive": inactive,
+            "pushed_at": pushed_at,
+            "last_push_days": last_push_days,
+        }
+
+    def get_releases(self, owner: str, repo: str, per_page: int = 10) -> List[Dict]:
+        """Get all releases for a repository with retry."""
+        url = f"https://api.github.com/repos/{owner}/{repo}/releases"
+        params = {"per_page": per_page}
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                # Try cache
+                cached_data, status = self._get_cached_response(url, params)
+                if cached_data is not None:
+                    return cached_data
+                resp = self.session.get(url, headers=self.headers, params=params)
+                if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
+                    return []
+                resp.raise_for_status()
+                data = resp.json() if isinstance(resp.json(), list) else []
+                # Cache
+                etag = resp.headers.get("ETag")
+                last_modified = resp.headers.get("Last-Modified")
+                cache_key = (url, tuple(sorted(params.items())))
+                self._cache[cache_key] = (etag, last_modified, data, time.time())
+                return data
+            except requests.RequestException as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                continue
+        return []
+
+    def get_latest_release(self, owner: str, repo: str, include_prerelease: bool = False) -> Optional[Dict]:
+        """Get the latest release for a repository."""
+        releases = self.get_releases(owner, repo, per_page=10)
+        for release in releases:
+            if release.get('draft'):
+                continue
+            if not include_prerelease and release.get('prerelease'):
+                continue
+            return release
+        return None
+
+    def get_release_by_tag(self, owner: str, repo: str, tag: str) -> Optional[Dict]:
+        """Get a specific release by tag name with retry."""
+        url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                # Try cache
+                cached_data, status = self._get_cached_response(url)
+                if cached_data is not None:
+                    return cached_data
+                resp = self.session.get(url, headers=self.headers)
+                if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
+                    return None
+                if resp.status_code == 404:
+                    return None
+                resp.raise_for_status()
+                data = resp.json()
+                # Cache
+                etag = resp.headers.get("ETag")
+                last_modified = resp.headers.get("Last-Modified")
+                cache_key = (url, None)
+                self._cache[cache_key] = (etag, last_modified, data, time.time())
+                return data
+            except requests.RequestException as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                continue
+        return None
+
+    def _extract_checksums(self, body: str) -> Dict[str, str]:
+        """Extract SHA256 checksums from release body text."""
+        checksums = {}
+        for pattern in CHECKSUM_PATTERNS:
+            matches = pattern.findall(body)
+            for match in matches:
+                if isinstance(match, tuple) and len(match) == 2:
+                    # Some patterns return (filename, hash) or (hash, filename)
+                    # Determine which is which by length
+                    if len(match[0]) == 64 and re.match(r'^[a-fA-F0-9]+$', match[0]):
+                        hash_val, filename = match[0], match[1]
+                    elif len(match[1]) == 64 and re.match(r'^[a-fA-F0-9]+$', match[1]):
+                        filename, hash_val = match[0], match[1]
+                    else:
+                        # Default: first is filename, second is hash
+                        filename, hash_val = match
+                    checksums[filename] = hash_val.lower()
+        return checksums
+    def _parse_release(self, release_data: Dict) -> ReleaseInfo:
+        """Parse release data into a ReleaseInfo object."""
+        return ReleaseInfo(
+            tag_name=release_data.get("tag_name", ""),
+            name=release_data.get("name", ""),
+            body=release_data.get("body", ""),
+            published_at=release_data.get("published_at", ""),
+            prerelease=release_data.get("prerelease", False),
+            draft=release_data.get("draft", False),
+            assets=release_data.get("assets", []),
+            html_url=release_data.get("html_url", ""),
+            checksums=self._extract_checksums(release_data.get("body", "")) if release_data.get("body") else None,
+        )
+
+    def get_release_by_tag_parsed(self, owner: str, repo: str, tag: str) -> Optional[ReleaseInfo]:
+        """Get a specific release by tag name and parse it into ReleaseInfo."""
+        data = self.get_release_by_tag(owner, repo, tag)
+        if data is None:
+            return None
+        return self._parse_release(data)
+
+    def get_all_releases_parsed(self, owner: str, repo: str) -> List[ReleaseInfo]:
+        """Get all releases for a repository and parse them into ReleaseInfo objects."""
+        releases = self.get_releases(owner, repo)
+        return [self._parse_release(r) for r in releases]
+
+    def get_rate_limit_info(self) -> Dict:
+        """Get rate limit information from GitHub API."""
+        url = "https://api.github.com/rate_limit"
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                # Try cache? Rate limit changes frequently, so we skip cache for simplicity.
+                resp = self.session.get(url, headers=self.headers, timeout=10)
+                if resp.status_code == 403 or "rate limit exceeded" in resp.text.lower():
+                    return {"error": "rate_limit", "resources": {}}
+                resp.raise_for_status()
+                return resp.json()
+            except requests.RequestException as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                continue
+        return {"error": str(last_error), "resources": {}}

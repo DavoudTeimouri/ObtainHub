@@ -1,0 +1,4 @@
+=== build [success] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36743810153/job/109984763138
+=== sync [success] https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36743809996/job/109984762645
+release.yml: completed/failure  https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36743807314
+build.yml: completed/success  https://github.com/DavoudTeimouri/ObtainHub/actions/runs/36743810153

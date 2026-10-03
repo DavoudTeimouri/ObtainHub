@@ -1,0 +1,422 @@
+"""Configuration management for ObtainHub."""
+
+import json
+import os
+from dataclasses import dataclass, asdict, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+try:
+    import keyring
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
+    keyring = None
+
+
+def keyring_backend_is_secure() -> bool:
+    """True only when the active keyring backend protects secrets at rest.
+
+    On machines without an OS credential store (headless Linux, some CI runners)
+    keyring silently selects keyrings.alt.file.PlaintextKeyring, which writes the
+    token to a plain file. KEYRING_AVAILABLE is true in that case, so callers that
+    care about real protection must ask this instead.
+    """
+    if not KEYRING_AVAILABLE:
+        return False
+    try:
+        backend = keyring.get_keyring()
+    except Exception:
+        return False
+    return not type(backend).__name__.endswith("PlaintextKeyring")
+
+
+
+@dataclass
+class ManifestSource:
+    """A source for application manifests."""
+    name: str
+    url: str
+    enabled: bool = True
+    headers: Dict[str, str] = field(default_factory=dict)
+    type: str = "github"         # "github" | "manifest" | "winget" | "scoop" | "chocolatey"
+    hooks: Dict[str, str] = field(default_factory=dict)  # pre_install, post_install, pre_uninstall, post_uninstall
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ManifestSource":
+        return cls(**data)
+
+
+@dataclass
+class Config:
+    """Main configuration for ObtainHub."""
+    # GitHub API
+    github_token: str = ""
+    self_update_enabled: bool = True
+
+    # Directories
+    install_dir: str = str(Path.home() / "Applications" / "ObtainHub")
+    download_dir: str = str(Path.home() / "Downloads" / "ObtainHub")
+    config_dir: str = str(Path.home() / ".config" / "obtainhub")
+    state_dir: str = str(Path.home() / ".local" / "share" / "obtainhub")
+    shim_dir: str = str(Path.home() / "bin" / "obtainhub")  # Portable shim directory
+
+    # Update behavior
+    update_interval_hours: int = 24
+    auto_update: bool = True
+    allow_prerelease: bool = False
+
+    # Scheduled checks
+    schedule_enabled: bool = False
+    schedule_interval_hours: int = 24
+    schedule_notify_on_update: bool = True
+    schedule_run_on_startup: bool = False
+
+    # Architecture preferences
+    prefer_x64: bool = True
+    allow_x86_fallback: bool = False
+
+    # App groups/profiles
+    groups: Dict[str, List[str]] = field(default_factory=dict)  # group_name -> list of app_ids
+
+    # Manual uninstall handling
+    auto_attempt_uninstall: bool = False
+
+    # Custom sources (legacy top-level key, migrated to manifest_sources)
+    sources: List[ManifestSource] = field(default_factory=list)
+
+    # Network
+    proxy: str = ""
+    timeout_seconds: int = 30
+    check_timeout_seconds: int = 90
+    check_timeout_retries: int = 3
+    max_parallel_downloads: int = 3
+
+    # Logging
+    log_level: str = "INFO"
+    log_file: str = ""
+
+    # Backup
+    backup_retention_count: int = 2
+
+    # Manifest sources (custom GitHub repos or JSON manifests)
+    manifest_sources: List[ManifestSource] = field(default_factory=list)
+
+    # Version
+    schema_version: int = 2
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary for serialization."""
+        data = asdict(self)
+        # Convert ManifestSource objects to dicts
+        data["manifest_sources"] = [ms.to_dict() for ms in self.manifest_sources]
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Config":
+        """Create config from dictionary."""
+        # Filter known fields to ignore unknown keys
+        known_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered_data = {k: v for k, v in data.items() if k in known_fields}
+
+        # Convert manifest_sources
+        if "manifest_sources" in filtered_data:
+            filtered_data["manifest_sources"] = [
+                ManifestSource.from_dict(ms) for ms in filtered_data["manifest_sources"]
+            ]
+        return cls(**filtered_data)
+
+    def validate(self) -> List[str]:
+        """Validate configuration, return list of errors."""
+        errors = []
+
+        if self.update_interval_hours < 1:
+            errors.append("update_interval_hours must be >= 1")
+
+        if self.timeout_seconds < 5:
+            errors.append("timeout_seconds must be >= 5")
+
+        if not (10 <= self.check_timeout_seconds <= 300):
+            errors.append("check_timeout_seconds must be between 10 and 300")
+        if not (1 <= self.check_timeout_retries <= 5):
+            errors.append("check_timeout_retries must be between 1 and 5")
+
+        if self.max_parallel_downloads < 1:
+            errors.append("max_parallel_downloads must be >= 1")
+
+        if not (1 <= self.schedule_interval_hours <= 8760):
+            errors.append("schedule_interval_hours must be between 1 and 8760")
+
+        valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        if self.log_level.upper() not in valid_log_levels:
+            errors.append(f"log_level must be one of: {valid_log_levels}")
+
+        if not (1 <= self.backup_retention_count <= 10):
+            errors.append("backup_retention_count must be between 1 and 10")
+
+        return errors
+
+
+class ConfigManager:
+    """Manages configuration loading, saving, and migration."""
+
+    DEFAULT_CONFIG_FILENAME = "config.json"
+
+    def __init__(self, config_dir: Optional[str] = None):
+        if config_dir:
+            self.config_dir = Path(config_dir)
+        else:
+            self.config_dir = Path.home() / ".config" / "obtainhub"
+
+        self.config_file = self.config_dir / self.DEFAULT_CONFIG_FILENAME
+        self._config: Optional[Config] = None
+
+    @property
+    def config(self) -> Config:
+        """Get current config, loading if necessary."""
+        if self._config is None:
+            self._config = self.load()
+        return self._config
+
+    def load(self) -> Config:
+        """Load configuration from file and keyring/environment.
+        Returns the configuration object.
+        """
+        # Start from global (machine-wide) config if present
+        global_file = self._global_config_file()
+        base = Config()
+        if global_file and global_file.exists():
+            try:
+                with open(global_file, "r", encoding="utf-8") as f:
+                    gdata = json.load(f)
+                base = self._migrate(gdata)
+                # Global config should NOT provide the token (per comment in _global_config_file)
+                base.github_token = ""
+            except Exception:
+                base = Config()
+        else:
+            # Ensure the machine-wide config directory exists so admins can drop
+            # a shared config there (issue: %ProgramData%\ObtainHub was missing).
+            try:
+                if global_file:
+                    global_file.parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
+        if not self.config_file.exists():
+            self.save(base)
+            return base
+
+        try:
+            with open(self.config_file, "r", encoding="utf-8") as f:
+                user_data = json.load(f)
+
+            # Treat any user-set value as an override; token is handled separately.
+            config = self._migrate(user_data)
+            # Overlay user values onto the global base (None fields keep global)
+            merged = base.to_dict()
+            for k, v in config.to_dict().items():
+                if v is not None:
+                    merged[k] = v
+            config = Config.from_dict(merged)
+
+            # Now handle the GitHub token: try to get it from keyring.
+            token_from_keyring = None
+            if KEYRING_AVAILABLE:
+                try:
+                    token_from_keyring = keyring.get_password("obtainhub", "github_token")
+                except Exception:
+                    token_from_keyring = None
+
+            # If we have a token in keyring (non-empty), use it.
+            if token_from_keyring:
+                config.github_token = token_from_keyring
+            else:
+                # Fallback to environment variables
+                env_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("OBTAINHUB_TOKEN")
+                if env_token:
+                    config.github_token = env_token
+                    # Optionally, store it in keyring for future use
+                    if KEYRING_AVAILABLE:
+                        try:
+                            keyring.set_password("obtainhub", "github_token", env_token)
+                        except Exception:
+                            pass
+                else:
+                    # No token in keyring or environment; check if the config file had a plain text token (from migration)
+                    # The migrated token would be in config.github_token (from the data).
+                    # If it's non-empty, we migrate it to keyring (store it) but we leave it in the config as well.
+                    if config.github_token:
+                        if KEYRING_AVAILABLE:
+                            try:
+                                keyring.set_password("obtainhub", "github_token", config.github_token)
+                            except Exception:
+                                pass
+
+            errors = config.validate()
+            if errors:
+                raise ValueError(f"Config validation failed: {errors}")
+
+            self._config = config
+            return config
+
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in config file: {e}")
+        except Exception as e:
+            raise ValueError(f"Failed to load config: {e}")
+    def _global_config_file(self) -> Optional[Path]:
+        """Machine-wide config shared by all users (token is NOT read from here)."""
+        env = os.environ.get("OBTAINHUB_GLOBAL_CONFIG")
+        if env:
+            return Path(env)
+        if os.name == "nt":
+            base = os.environ.get("ProgramData")
+            if base := (base or r"C:\ProgramData"):
+                return Path(base) / "ObtainHub" / self.DEFAULT_CONFIG_FILENAME
+        return Path("/etc/obtainhub") / self.DEFAULT_CONFIG_FILENAME
+
+    def _migrate(self, data: Dict[str, Any]) -> Config:
+        """Migrate config from older schema versions."""
+        schema_version = data.get("schema_version", 1)
+
+        # Add defaults for new fields if missing
+        if schema_version < 2:
+            data.setdefault("prefer_x64", True)
+            data.setdefault("allow_x86_fallback", False)
+            data.setdefault("auto_attempt_uninstall", False)
+            data["schema_version"] = 2
+
+        # Legacy top-level "sources" -> "manifest_sources" (issue: user config used `sources`)
+        legacy = data.get("sources")
+        if legacy and isinstance(legacy, list) and not data.get("manifest_sources"):
+            data["manifest_sources"] = legacy
+            data.pop("sources", None)
+
+        config = Config.from_dict(data)
+
+        # Ensure every manifest source carries a type; default "github"
+        for ms in config.manifest_sources:
+            if not getattr(ms, "type", ""):
+                ms.type = "github"
+
+        return config
+
+    def save(self, config: Optional[Config] = None) -> None:
+        """Save configuration to file.
+        The GitHub token is not saved to the config file; it is kept in keyring.
+        """
+        if config is None:
+            config = self.config
+
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Validate before saving
+        errors = config.validate()
+        if errors:
+            raise ValueError(f"Config validation failed: {errors}")
+
+        # Create a copy of the config with the token cleared (so it's not saved)
+        config_to_save = Config.from_dict({k: v for k, v in config.to_dict().items() if k != "github_token"})
+        config_to_save.github_token = ""  # Ensure it's empty
+
+        # Store token in keyring if available and non-empty; otherwise remove it.
+        # If the only backend available writes plaintext to disk, refuse to put the
+        # secret there and tell the caller why, instead of pretending it is stored.
+        if KEYRING_AVAILABLE:
+            if config.github_token:
+                if keyring_backend_is_secure():
+                    try:
+                        keyring.set_password("obtainhub", "github_token", config.github_token)
+                    except Exception:
+                        pass
+                else:
+                    # Plaintext fallback: keep the token in the environment only.
+                    if not os.environ.get("GITHUB_TOKEN") and not os.environ.get("OBTAINHUB_TOKEN"):
+                        raise ValueError(
+                            "Refusing to store the GitHub token: the active keyring backend "
+                            "is keyrings.alt PlaintextKeyring, which writes secrets to an "
+                            "unencrypted file. Install an OS credential store (Windows "
+                            "Credential Manager, macOS Keychain, libsecret/gnome-keyring on "
+                            "Linux) or export GITHUB_TOKEN."
+                        )
+            else:
+                try:
+                    keyring.delete_password("obtainhub", "github_token")
+                except Exception:
+                    pass
+
+        # Write atomically
+        temp_file = self.config_file.with_suffix(".tmp")
+        try:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(config_to_save.to_dict(), f, indent=2)
+            temp_file.replace(self.config_file)
+            self._config = config
+        except Exception as e:
+            if temp_file.exists():
+                temp_file.unlink()
+            raise ValueError(f"Failed to save config: {e}")
+    def reset(self) -> Config:
+        """Reset to default configuration."""
+        config = Config()
+        self.save(config)
+        return config
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a config value by key."""
+        return getattr(self.config, key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        """Set a config value."""
+        if not hasattr(self.config, key):
+            raise KeyError(f"Unknown config key: {key}")
+        setattr(self.config, key, value)
+        self.save()
+
+    def add_manifest_source(self, name: str, url: str, enabled: bool = True, headers: Optional[Dict[str, str]] = None, src_type: str = "github", hooks: Optional[Dict[str, str]] = None) -> None:
+        """Add a manifest source (type: github | manifest | winget | scoop | chocolatey)."""
+        # Remove existing with same name
+        self.config.manifest_sources = [ms for ms in self.config.manifest_sources if ms.name != name]
+        # Add new
+        self.config.manifest_sources.append(ManifestSource(
+            name=name, url=url, enabled=enabled, headers=headers or {}, type=src_type, hooks=hooks or {},
+        ))
+        self.save()
+
+    def remove_manifest_source(self, name: str) -> bool:
+        """Remove a manifest source by name."""
+        original_len = len(self.config.manifest_sources)
+        self.config.manifest_sources = [ms for ms in self.config.manifest_sources if ms.name != name]
+        if len(self.config.manifest_sources) < original_len:
+            self.save()
+            return True
+        return False
+
+    def get_enabled_manifest_sources(self) -> List[ManifestSource]:
+        """Get all enabled manifest sources."""
+        return [ms for ms in self.config.manifest_sources if ms.enabled]
+
+    def get_download_dir(self) -> Path:
+        """Get download directory, creating it if it doesn't exist."""
+        download_dir = Path(self.config.download_dir).expanduser()
+        download_dir.mkdir(parents=True, exist_ok=True)
+        return download_dir
+
+
+# Global config manager instance
+_config_manager: Optional[ConfigManager] = None
+
+
+def get_config_manager(config_dir: Optional[str] = None) -> ConfigManager:
+    """Get or create global config manager."""
+    global _config_manager
+    if _config_manager is None:
+        _config_manager = ConfigManager(config_dir)
+    return _config_manager
+
+
+def get_config(config_dir: Optional[str] = None) -> Config:
+    """Get current configuration."""
+    return get_config_manager(config_dir).config
