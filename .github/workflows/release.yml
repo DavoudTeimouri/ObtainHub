@@ -337,7 +337,7 @@ jobs:
           # download-artifact rebuilds paths from the upload-time common ancestor,
           # which is not stable as the uploaded layout changes. Collect by name.
           New-Item -ItemType Directory -Force -Path assets | Out-Null
-          foreach ($n in @("ObtainHub.msi","ObtainHub-Setup.exe","ObtainHub-sbom.json")) {
+          foreach ($n in @("ObtainHub.msi","ObtainHub-Setup.exe")) {
             $f = Get-ChildItem artifacts -Recurse -Filter $n | Select-Object -First 1
             if (-not $f) { Write-Host "missing release asset: $n"; exit 1 }
             Copy-Item $f.FullName "assets/$n" -Force
@@ -371,7 +371,7 @@ jobs:
           # set here. Without it gh gets 1 argument instead of <tag> <files>
           # and fails with "requires at least 2 arg(s), only received 1".
           $tag = "${{ github.ref_name }}"
-          $expected = @("assets/ObtainHub.msi","assets/ObtainHub-Setup.exe","assets/ObtainHub-sbom.json")
+          $expected = @("assets/ObtainHub.msi","assets/ObtainHub-Setup.exe")
           $missing = @($expected | Where-Object { -not (Test-Path $_) })
           if ($missing.Count -gt 0) {
             Write-Host "MISSING release assets: $($missing -join ', ')"
