@@ -1,7 +1,7 @@
 ; ObtainHub Inno Setup Script 6.7+
 ; Inno Setup 6.7+ required (Unicode, modern wizard)
 #define AppName "ObtainHub"
-#define AppVersion "2.1.0"
+#define AppVersion "2.1.1"
 #define AppPublisher "DavoudTeimouri"
 #define AppURL "https://github.com/DavoudTeimouri/ObtainHub"
 #define AppExeName "ohub.exe"

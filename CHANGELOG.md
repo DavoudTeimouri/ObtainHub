@@ -5,6 +5,17 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-10-03
+
+### Changed
+- **No Start-menu or desktop shortcut.** `ohub` is a console tool: launched with no arguments it
+  prints its help and exits, so a shortcut only flashed a console window and closed it. Both
+  installers now create no shortcuts at all. The install folder is still added to `PATH`; the
+  README documents running `ohub` from a terminal and by full path.
+- README gained an Install section (both release assets, install location, the `PATH` caveat) and a
+  Run and use section covering search/install, global flags, self-update, backup and restore,
+  sources, cleanup and reset.
+
 ## [2.1.0] - 2026-10-03
 
 ### Fixed
