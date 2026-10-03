@@ -289,6 +289,105 @@ Config file: `%USERPROFILE%\.config\obtainhub\config.json`. Key settings:
 | Self-update fails | Run `ohub self-update --force` |
 | Cannot uninstall ohub | Use `ohub self-uninstall` instead |
 
+## Install
+
+Download one of the two assets from the
+[releases page](https://github.com/DavoudTeimouri/ObtainHub/releases):
+
+| Asset | Notes |
+| --- | --- |
+| `ObtainHub-Setup.exe` | Inno Setup installer, per-user, no admin rights needed. |
+| `ObtainHub.msi` | Windows Installer package, useful for scripted/GPO deployment. |
+
+Both install `ohub.exe` to the per-user application folder and add that folder to your user `PATH`
+(`%LOCALAPPDATA%\Programs\ObtainHub` on Windows). No Start-menu or desktop shortcut is created —
+`ohub` is a console tool, so launch it from a terminal. Open a new terminal afterwards so the updated
+`PATH` is picked up.
+
+If your environment blocks `PATH` edits, or you would rather not rely on it, invoke the binary by
+full path:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\ObtainHub\ohub.exe" --version
+```
+
+## Run and use
+
+`ohub` with no arguments prints its help and exits, so always pass a command:
+
+```powershell
+ohub --version          # installed version
+ohub --help             # full command list
+ohub tui                # terminal UI
+```
+
+### Find and install apps
+
+```powershell
+ohub search vscode --limit 10              # search GitHub, newest/upvoted first
+ohub search vscode --min-stars 500         # raise the quality floor
+ohub search vscode --active-only           # skip archived repositories
+ohub install DavoudTeimouri/ObtainHub      # install owner/repo
+```
+
+`install` accepts a `owner/repo` reference or a local folder or `.zip` archive:
+
+```powershell
+ohub install .\downloads\myapp.zip         # extract and install from a zip
+ohub check                                # report installed apps and their state
+ohub list                                 # installed inventory
+ohub uninstall owner/repo                 # remove, keeping data
+ohub uninstall owner/repo --keep-data=false
+```
+
+### Global flags
+
+| Flag | Effect |
+| --- | --- |
+| `--json` | Machine-readable output, for scripting. |
+| `--quiet` | Suppress non-error output. |
+| `--dry-run` | Show what would happen; change nothing. |
+| `--force` | Skip confirmation prompts. Never use unattended. |
+| `-v, --verbose` | Verbose logging. |
+
+Put `--dry-run` first in front of any command you have not run before.
+
+### Keep it updated
+
+```powershell
+ohub self-update                           # replace the installed binary
+ohub self-uninstall                        # remove ObtainHub itself
+```
+
+`self-update` verifies the downloaded asset before replacing anything; a failed or partial
+verification leaves your current binary untouched.
+
+### Backup and restore
+
+```powershell
+ohub config backup backup.zip                       # config + state
+ohub config backup backup.zip --include-downloads   # add the download folder
+ohub config restore backup.zip                      # restore settings
+ohub config restore backup.zip --no-token           # do not restore the token to keyring
+```
+
+A backup never copies the keyring, so your GitHub token is not in the archive. `--no-token` controls
+the *restore* direction: by default a restore puts the backup's token back into the keyring. Tokens
+are redacted from logs.
+
+### Manage sources and scheduled tasks
+
+```powershell
+ohub source add https://example.com/apps.json      # a local manifest
+ohub source list
+ohub schedule list
+ohub cleanup                                        # remove stale downloads and caches
+ohub reset                                          # clear local state, keep config
+```
+
+Remote manifests are treated as untrusted data: only hooks defined in your own local source
+configuration run. Manifests cannot execute commands on your behalf.
+
 ## Development
 
 ```powershell

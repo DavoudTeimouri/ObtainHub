@@ -17,7 +17,6 @@
     <Feature Id="ProductFeature" Title="ObtainHub" Level="1">
       <ComponentRef Id="MainExecutable" />
       <ComponentRef Id="PathEnvironment" />
-      <ComponentRef Id="ApplicationShortcut" />
       <!-- GENERATED COMPONENT REFS -->
     </Feature>
   </Product>
@@ -26,9 +25,6 @@
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
         <Directory Id="INSTALLFOLDER" Name="ObtainHub" />
-      </Directory>
-      <Directory Id="ProgramMenuFolder">
-        <Directory Id="ApplicationProgramsFolder" Name="ObtainHub" />
       </Directory>
     </Directory>
   </Fragment>
@@ -60,17 +56,9 @@
         <File Id="ohub.exe" Source="dist\ohub\ohub.exe" KeyPath="yes" />
       </Component>
     </DirectoryRef>
-    <!-- ICE38/ICE43/ICE57: a component under ProgramMenuFolder is per-user, so
-         its KeyPath registry value must be HKCU, not HKLM. -->
-    <DirectoryRef Id="ApplicationProgramsFolder">
-      <Component Id="ApplicationShortcut" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567892" Win64="yes">
-        <Shortcut Id="ApplicationStartMenuShortcut"
-                  Name="ObtainHub"
-                  Target="[INSTALLFOLDER]\ohub.exe" />
-        <RemoveFolder Id="CleanupApplicationProgramsFolder" On="uninstall" />
-        <RegistryValue Root="HKCU" Key="Software\ObtainHub" Name="ShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
-      </Component>
-    </DirectoryRef>
+    <!-- No shortcut component: ohub is a console tool launched from a terminal.
+         Leaving an empty ProgramMenuFolder DirectoryRef keeps the Start-menu
+         folder out of the Feature; the directory is simply never populated. -->
   </Fragment>
 
   <!-- GENERATED PAYLOAD -->
