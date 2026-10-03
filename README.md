@@ -296,19 +296,21 @@ Download one of the two assets from the
 
 | Asset | Notes |
 | --- | --- |
-| `ObtainHub-Setup.exe` | Inno Setup installer, per-user, no admin rights needed. |
+| `ObtainHub-Setup.exe` | Inno Setup installer. |
 | `ObtainHub.msi` | Windows Installer package, useful for scripted/GPO deployment. |
 
-Both install `ohub.exe` to the per-user application folder and add that folder to your user `PATH`
-(`%LOCALAPPDATA%\Programs\ObtainHub` on Windows). No Start-menu or desktop shortcut is created —
-`ohub` is a console tool, so launch it from a terminal. Open a new terminal afterwards so the updated
-`PATH` is picked up.
+Both are machine-wide (`perMachine`) and install `ohub.exe` to `C:\Program Files\ObtainHub`, adding
+that folder to the user `PATH`. **Install one, not both** — they write to the same folder, and each
+now detects the other and refuses to run if it is already installed. Uninstall whichever one you used
+before switching.
 
-If your environment blocks `PATH` edits, or you would rather not rely on it, invoke the binary by
-full path:
+No Start-menu or desktop shortcut is created — `ohub` is a console tool, so launch it from a
+terminal. Open a new terminal after installing so the updated `PATH` is picked up.
+
+If you cannot run an elevated installer, invoke the binary by full path instead:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\ObtainHub\ohub.exe" --version
+& "C:\Program Files\ObtainHub\ohub.exe" --version
 ```
 
 ## Run and use

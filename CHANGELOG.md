@@ -5,6 +5,24 @@ All notable changes to ObtainHub will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-10-03
+
+### Fixed
+
+- The EXE and MSI installers could be installed over each other, leaving two
+  entries in Apps & Features and two half-working uninstallers for the same
+  folder. Each installer now detects the other and refuses to run when it is
+  already installed, so install one or the other, never both.
+- `PATH` entries are now compared as whole entries. A folder merely ending in
+  `ObtainHub` (for example `C:\Tools\ObtainHubBackup`) no longer suppresses the
+  real entry, and uninstalling removes the entry it added.
+
+### Changed
+
+- `README.md` install section now states the installers are machine-wide and
+  install to `C:\Program Files\ObtainHub`. Earlier wording wrongly described a
+  per-user install under `%LOCALAPPDATA%`.
+
 ## [2.1.1] - 2026-10-03
 
 ### Changed

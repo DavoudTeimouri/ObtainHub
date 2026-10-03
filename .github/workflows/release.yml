@@ -281,6 +281,51 @@ jobs:
           }
           if (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe") { Write-Host "EXE cleanup failed"; exit 1 }
 
+      # Regression: the two installers used to have no shared identity, so
+      # installing one after the other silently double-installed. Each side now
+      # detects the other and refuses. Verify both directions.
+      - name: Install EXE then attempt MSI (expect refusal)
+        run: |
+          $log = "$env:RUNNER_TEMP\iss.log"
+          $p = Start-Process install/ObtainHub-Setup.exe -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/LOG=$log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content $log -Tail 50; exit 1 }
+          if (-not (Test-Path "$env:ProgramFiles\ObtainHub\unins000.exe")) { Write-Host "EXE did not install"; exit 1 }
+
+          $p = Start-Process msiexec.exe -ArgumentList "/i", "install\ObtainHub.msi", "/qn", "/norestart" -Wait -PassThru -NoNewWindow
+          # Assert on state, not exit code: the MSI product key must be absent.
+          # Exit codes for a blocked launch condition are not stable enough.
+          $msiKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+          if (Test-Path $msiKey) { Write-Host "MSI registered itself over the EXE: guard missing"; exit 1 }
+          Write-Host "MSI correctly refused (exit $($p.ExitCode))"
+
+          # The EXE must still be intact and still the only registered copy.
+          if (-not (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe")) { Write-Host "ohub.exe missing after refused MSI"; exit 1 }
+          $entries = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -EA SilentlyContinue |
+            Where-Object { $_.DisplayName -like "ObtainHub*" }
+          Write-Host "Apps & features entries: $($entries.Count)"
+          if ($entries.Count -ne 1) { Write-Host "expected exactly 1 registered install, got $($entries.Count)"; exit 1 }
+
+          $p = Start-Process "$env:ProgramFiles\ObtainHub\unins000.exe" -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Host "EXE uninstall exit $($p.ExitCode)"; exit 1 }
+      - name: Install MSI then attempt EXE (expect refusal)
+        run: |
+          $p = Start-Process msiexec.exe -ArgumentList "/i", "install\ObtainHub.msi", "/qn", "/norestart" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { Write-Host "MSI install failed"; exit 1 }
+
+          $log = "$env:RUNNER_TEMP\iss2.log"
+          $p = Start-Process install/ObtainHub-Setup.exe -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/LOG=$log" -Wait -PassThru
+          # Do not assert on the exit code: InitializeSetup returning False
+          # aborts, but /SUPPRESSMSGBOXES can still yield exit 0. Assert on
+          # the observable state instead -- no Inno uninstall entry may exist.
+          $innoKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
+          if (Test-Path $innoKey) { Get-Content $log -Tail 50; Write-Host "EXE registered itself over the MSI: guard missing"; exit 1 }
+          Write-Host "EXE correctly refused (exit $($p.ExitCode))"
+
+          if (-not (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe")) { Write-Host "MSI copy was removed by the refused EXE"; exit 1 }
+          $p = Start-Process msiexec.exe -ArgumentList "/x", "install\ObtainHub.msi", "/qn", "/norestart" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { Write-Host "MSI uninstall exit $($p.ExitCode)"; exit 1 }
+          if (Test-Path "$env:ProgramFiles\ObtainHub\ohub.exe") { Write-Host "MSI cleanup failed"; exit 1 }
+
   provenance:
     name: SLSA Provenance
     needs: [build, smoke-test]

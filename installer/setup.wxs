@@ -3,7 +3,7 @@
   <Product Id="*"
            Name="ObtainHub"
            Language="1033"
-           Version="2.1.1"
+           Version="2.1.2"
            Manufacturer="DavoudTeimouri"
            UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
     <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"
@@ -13,6 +13,16 @@
                   Schedule="afterInstallInitialize" />
 
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- The EXE installer writes its uninstall entry to
+         HKLM\...\Uninstall\{UpgradeCode}_is1 (Inno appends _is1 to its AppId,
+         which is the same GUID). A launch condition on that key stops the two
+         installers double-installing into the same folder. -->
+    <RegistrySearch Id="InnoUninstallEntrySearch" Root="HKLM"
+                    Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
+                    Format="exists" />
+    <Launch Condition="Installed OR NOT InnoUninstallEntrySearch"
+            Message="ObtainHub is already installed by ObtainHub-Setup.exe. Uninstall it first, then run this installer. Both installers write to the same folder." />
 
     <Feature Id="ProductFeature" Title="ObtainHub" Level="1">
       <ComponentRef Id="MainExecutable" />
