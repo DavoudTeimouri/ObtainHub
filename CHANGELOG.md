@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entries in Apps & Features and two half-working uninstallers for the same
   folder. Each installer now detects the other and refuses to run when it is
   already installed, so install one or the other, never both.
+- The MSI used `Product Id="*"`, which made Windows Installer generate a new
+  ProductCode on every build. Upgrades and repair could not match the installed
+  product, so `MajorUpgrade` was unreliable. The ProductCode is now pinned to
+  the UpgradeCode GUID.
 - `PATH` entries are now compared as whole entries. A folder merely ending in
   `ObtainHub` (for example `C:\Tools\ObtainHubBackup`) no longer suppresses the
   real entry, and uninstalling removes the entry it added.

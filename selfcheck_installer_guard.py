@@ -99,6 +99,38 @@ def main() -> int:
             for s in searches),
     ))
 
+    # WiX validates child order and rejects RegistrySearch/Launch placed
+    # before Feature (CNDL0005). Assert the schema order explicitly.
+    product = next(iter(wxs.iter(WIX_NS + "Product")))
+    order = [e.tag.replace(WIX_NS, "") for e in product]
+    checks.append(_check(
+        "wxs: RegistrySearch and Launch follow Feature (CNDL0005)",
+        order.index("Feature") < order.index("RegistrySearch") < order.index("Launch"),
+        f"Product child order is {order}",
+    ))
+
+    checks.append(_check(
+        "wxs: exactly one RegistrySearch and one Launch",
+        order.count("RegistrySearch") == 1 and order.count("Launch") == 1,
+        f"Product child order is {order}",
+    ))
+
+    # Product Id="*" regenerates the ProductCode every build, so the MSI
+    # uninstall key moves each time and neither installer can ever detect the
+    # other. It also breaks MajorUpgrade and Windows Installer repair.
+    checks.append(_check(
+        "wxs: ProductCode is pinned, not auto-generated",
+        product.get("Id") not in (None, "", "*"),
+        'Product Id="*" regenerates ProductCode per build',
+    ))
+
+    checks.append(_check(
+        "wxs: ProductCode equals UpgradeCode so both guards use one GUID",
+        product.get("Id") == product.get("UpgradeCode"),
+        "the Inno guard probes UpgradeCode and the MSI guard probes ProductCode; "
+        "they must be the same GUID",
+    ))
+
     # --- shared ----------------------------------------------------------
     component_refs = [c.get("Id") for c in wxs.iter(WIX_NS + "ComponentRef")]
     defined = {e.get("Id") for e in wxs.iter() if e.get("Id")}
