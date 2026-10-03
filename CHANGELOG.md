@@ -47,13 +47,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Start-menu shortcut pointed at the wrong path.** The WiX shortcut target was
   `[INSTALLFOLDER]ohub.exe` with no directory separator, so the Start-menu entry could not launch
   the app.
-- **Installer PATH handling.** The Inno Setup installer compared the `PATH` value by substring, so
-  an unrelated folder such as `C:\Tools\ObtainHubBackup` suppressed the real entry; matching is
-  now on exact entries. Uninstall also removes the entry it added instead of leaving it behind.
 - **Build provenance was skipped while reporting success.** The provenance job downloaded its
   artifacts to the repository root and then guarded on `dist/` paths, which never exist after a
   download, so all three attestation steps were skipped and the job still went green. It now
   downloads the installer and SBOM artifacts to `artifacts/` and guards on those real paths.
+
+### Known issues
+- **The Inno Setup (EXE) installer still matches `PATH` by substring.** An unrelated folder such as
+  `C:\Tools\ObtainHubBackup` can suppress the installer's own `PATH` entry, and uninstalling leaves
+  that entry behind. A fix was attempted and reverted: the ISCC build step failed and the
+  available credentials could not read the build log to diagnose it, so the change was rolled back
+  rather than shipped unverified. `installer/setup.iss` is byte-identical to the version that
+  shipped in 2.0.0. The MSI installer is unaffected.
 
 ### Changed
 - Release assets are exactly `ObtainHub.msi` and `ObtainHub-Setup.exe`. The generated
