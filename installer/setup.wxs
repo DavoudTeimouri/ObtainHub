@@ -20,15 +20,19 @@
       <!-- GENERATED COMPONENT REFS -->
     </Feature>
 
-    <!-- Schema order: RegistrySearch and Launch must follow Feature. The EXE
-         installer writes its uninstall entry to Uninstall\{AppId}_is1 (Inno
-         appends _is1), and the AppId is the same GUID as the MSI UpgradeCode.
-         Probing that key stops the two installers double-installing. -->
-    <RegistrySearch Id="InnoUninstallEntrySearch" Root="HKLM"
-                    Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
-                    Format="exists" />
-    <Launch Condition="Installed OR NOT InnoUninstallEntrySearch"
-            Message="ObtainHub is already installed by ObtainHub-Setup.exe. Uninstall it first, then run this installer. Both installers write to the same folder." />
+    <!-- Guard against the EXE installer already being installed. WiX v3 has no
+         Launch element (that is v4); a launch condition is Condition, and a
+         RegistrySearch feeding it is nested in a Property. The EXE writes its
+         uninstall entry to Uninstall\{AppId}_is1, and the AppId is the same
+         GUID as the MSI UpgradeCode. -->
+    <Property Id="INNO_ALREADY_INSTALLED">
+      <RegistrySearch Id="InnoUninstallEntrySearch" Root="HKLM"
+                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
+                      Format="exists" />
+    </Property>
+    <Condition Message="ObtainHub is already installed by ObtainHub-Setup.exe. Uninstall it first, then run this installer. Both installers write to the same folder.">
+      <![CDATA[Installed OR NOT INNO_ALREADY_INSTALLED]]>
+    </Condition>
   </Product>
 
   <Fragment>

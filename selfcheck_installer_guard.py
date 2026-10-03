@@ -85,34 +85,28 @@ def main() -> int:
             for s in searches),
     ))
 
-    launches = list(wxs.iter(WIX_NS + "Launch"))
+    # WiX v3 has no Launch element -- that is v4 syntax and fails candle with
+    # CNDL0005. A v3 launch condition is Condition fed by a Property.
+    conditions = [c for c in wxs.iter(WIX_NS + "Condition") if c.get("Message")]
     checks.append(_check(
-        "wxs: Launch condition blocks on the Inno search result",
-        any("InnoUninstallEntrySearch" in (l.get("Condition") or "") and l.get("Message")
-            for l in launches),
+        "wxs: uses v3 Condition, not the v4 Launch element",
+        not list(wxs.iter(WIX_NS + "Launch")) and bool(conditions),
+        "<Launch> is WiX v4 syntax; v3 uses <Condition>",
     ))
 
-    parent_of = {child: parent for parent in wxs.iter() for child in parent}
     checks.append(_check(
-        "wxs: RegistrySearch is a direct child of Product, not a Component",
-        all(parent_of.get(s) is not None and parent_of[s].tag == WIX_NS + "Product"
-            for s in searches),
+        "wxs: launch condition blocks on the Inno search result",
+        any("INNO_ALREADY_INSTALLED" in (c.text or "") for c in conditions),
     ))
 
-    # WiX validates child order and rejects RegistrySearch/Launch placed
-    # before Feature (CNDL0005). Assert the schema order explicitly.
+    prop_of = {child: parent for parent in wxs.iter() for child in parent}
     product = next(iter(wxs.iter(WIX_NS + "Product")))
-    order = [e.tag.replace(WIX_NS, "") for e in product]
     checks.append(_check(
-        "wxs: RegistrySearch and Launch follow Feature (CNDL0005)",
-        order.index("Feature") < order.index("RegistrySearch") < order.index("Launch"),
-        f"Product child order is {order}",
-    ))
-
-    checks.append(_check(
-        "wxs: exactly one RegistrySearch and one Launch",
-        order.count("RegistrySearch") == 1 and order.count("Launch") == 1,
-        f"Product child order is {order}",
+        "wxs: RegistrySearch is nested in the Property it feeds",
+        all(prop_of.get(s) is not None
+            and prop_of[s].tag == WIX_NS + "Property"
+            and prop_of[s].get("Id") == "INNO_ALREADY_INSTALLED"
+            for s in searches),
     ))
 
     # Product Id="*" regenerates the ProductCode every build, so the MSI
