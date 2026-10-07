@@ -8,9 +8,6 @@
 ; - Silent install /S works without dialogs
 ; - Shared GUID for MSI upgrade detection: A1B2C3D4-E5F6-7890-ABCD-EF1234567890
 
-; Force 64-bit installer (required for 64-bit binary) - MUST be before includes
-!define NSIS_PTR_SIZE 64
-
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
