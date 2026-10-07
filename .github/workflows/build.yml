@@ -68,10 +68,10 @@ jobs:
           name: ohub-windows-x64
           path: target/release
 
-      - name: Install WiX Toolset v4
+      - name: Install WiX Toolset v3
         shell: powershell
         run: |
-          choco install wixtoolset -y --no-progress --version 4.0.0
+          choco install wixtoolset -y --no-progress
           Write-Host "WiX installed"
 
       - name: Build WiX MSI
@@ -80,8 +80,8 @@ jobs:
           Write-Host "=== WiX MSI Build ==="
           $wixBin = $null
           $wixPaths = @(
-            "C:\Program Files (x86)\WiX Toolset v4.0\bin",
-            "C:\Program Files\WiX Toolset v4.0\bin"
+            "C:\Program Files (x86)\WiX Toolset v3.14\bin",
+            "C:\Program Files\WiX Toolset v3.14\bin"
           )
           foreach ($p in $wixPaths) {
             $resolved = Get-Item -Path $p -ErrorAction SilentlyContinue
