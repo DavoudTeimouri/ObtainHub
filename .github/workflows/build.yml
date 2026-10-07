@@ -1,0 +1,219 @@
+name: Build Rust (Windows x64)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Rust Release
+    runs-on: windows-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build release binary
+        working-directory: ObtainHub-rs
+        run: cargo build --release --bin ohub
+
+      - name: Verify binary
+        working-directory: ObtainHub-rs
+        run: |
+          ./target/release/ohub.exe --version
+          ./target/release/ohub.exe --help
+
+      - name: Stage binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ohub-windows-x64
+          path: ObtainHub-rs/target/release/ohub.exe
+          if-no-files-found: error
+          retention-days: 5
+
+  installer-msi:
+    name: Build MSI Installer (WiX v4)
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ohub-windows-x64
+          path: ObtainHub-rs/target/release
+
+      - name: Install WiX Toolset v4
+        shell: powershell
+        run: |
+          choco install wixtoolset -y --no-progress
+          Write-Host "WiX installed"
+
+      - name: Build WiX MSI
+        shell: powershell
+        working-directory: ObtainHub-rs
+        run: |
+          Write-Host "=== WiX MSI Build ==="
+          $wixBin = $null
+          $wixPaths = @(
+            "C:\Program Files (x86)\WiX Toolset v4.0\bin",
+            "C:\Program Files\WiX Toolset v4.0\bin"
+          )
+          foreach ($p in $wixPaths) {
+            $resolved = Get-Item -Path $p -ErrorAction SilentlyContinue
+            if ($resolved -and (Test-Path (Join-Path $resolved.FullName "candle.exe"))) {
+              $wixBin = $resolved.FullName
+              Write-Host "Found WiX at: $wixBin"
+              break
+            }
+          }
+          if (-not $wixBin) {
+            $candlePath = Get-Command candle.exe -ErrorAction SilentlyContinue
+            if ($candlePath) { $wixBin = Split-Path $candlePath }
+          }
+          if (-not $wixBin) {
+            Write-Host "WiX NOT FOUND - skipping MSI"
+            exit 0
+          }
+          $candle = Join-Path $wixBin "candle.exe"
+          $light = Join-Path $wixBin "light.exe"
+          Write-Host "candle: $candle (exists: $(Test-Path $candle))"
+          Write-Host "light:  $light  (exists: $(Test-Path $light))"
+          & $candle -out ObtainHub.wixobj installer/setup.wxs 2>&1
+          Write-Host "candle exit: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $light -out ObtainHub.msi ObtainHub.wixobj 2>&1
+          Write-Host "light exit: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "MSI: $(Get-Item ObtainHub.msi)"
+
+      - name: Stage MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ObtainHub-MSI
+          path: ObtainHub-rs/ObtainHub.msi
+          if-no-files-found: error
+          retention-days: 5
+
+  installer-nsis:
+    name: Build NSIS EXE Installer
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ohub-windows-x64
+          path: ObtainHub-rs/target/release
+
+      - name: Install NSIS
+        shell: powershell
+        run: |
+          choco install nsis -y --no-progress
+          Write-Host "NSIS installed"
+          # Verify makensis is available
+          $makensisPath = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          if (-not $makensisPath) {
+            $makensisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
+            if (-not (Test-Path $makensisPath)) {
+              $makensisPath = "C:\Program Files\NSIS\makensis.exe"
+            }
+          }
+          if (-not (Test-Path $makensisPath)) {
+            Write-Host "makensis NOT FOUND"
+            exit 1
+          }
+          Write-Host "Found makensis at: $makensisPath"
+          Add-Content -Path $env:GITHUB_ENV -Value "MAKENSIS_PATH=$makensisPath"
+
+      - name: Build NSIS EXE installer
+        shell: powershell
+        working-directory: ObtainHub-rs
+        run: |
+          Write-Host "=== NSIS EXE Build ==="
+          $makensisPath = $env:MAKENSIS_PATH
+          if (-not $makensisPath -or -not (Test-Path $makensisPath)) {
+            Write-Host "makensis NOT FOUND at '$makensisPath'"
+            exit 1
+          }
+          Write-Host "makensis: $makensisPath"
+          & $makensisPath installer/ObtainHub.nsi 2>&1
+          if ($LASTEXITCODE -ne 0) { Write-Host "makensis failed: $LASTEXITCODE"; exit $LASTEXITCODE }
+          if (-not (Test-Path "installer/ObtainHub-Setup.exe")) {
+            Write-Host "installer/ObtainHub-Setup.exe NOT FOUND"
+            exit 1
+          }
+          Write-Host "EXE installer: $(Get-Item installer/ObtainHub-Setup.exe)"
+
+      - name: Stage EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ObtainHub-EXE
+          path: ObtainHub-rs/installer/ObtainHub-Setup.exe
+          if-no-files-found: error
+          retention-days: 5
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build, installer-msi, installer-nsis]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ohub-windows-x64
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ObtainHub-MSI
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ObtainHub-EXE
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/ohub.exe
+            dist/ObtainHub.msi
+            dist/ObtainHub-Setup.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

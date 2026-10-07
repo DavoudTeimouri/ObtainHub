@@ -1,0 +1,103 @@
+[package]
+name = "obtainhub"
+version = "3.0.0"
+edition = "2021"
+license = "MIT"
+description = "ObtainHub - GitHub repository search and management CLI"
+repository = "https://github.com/DavoudTeimouri/ObtainHub"
+authors = ["Davoud Teimouri <davoud@teimouri.com>"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4.5"
+
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# HTTP client
+minreq = { version = "2.0", features = ["https", "json-using-serde"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+toml = "0.8"
+
+# HTTP
+urlencoding = "2.1"
+
+# Version comparison
+semver = "1.0"
+
+# Time
+chrono = { version = "0.4.31", features = ["serde"] }
+
+# Table output
+comfy-table = "6.0"
+
+# File system
+walkdir = "2"
+zip = { version = "0.6", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "zstd"] }
+flate2 = "1.0"
+tar = "0.4"
+zstd = "0.13"
+sha2 = "0.10"
+blake3 = "1.5"
+hex = "0.4"
+lzma-rs = "0.3"
+tempfile = "3.10"
+
+# System
+dirs = "5.0"
+which = "3.0"
+home = "0.4"
+sysinfo = "0.30"
+
+# Config / state
+config = { version = "0.13", features = ["toml", "json", "yaml"] }
+once_cell = "1.19"
+
+# Keyring / credentials
+keyring = { version = "3.6", default-features = false, features = ["windows-native"] }
+
+# TUI
+ratatui = "0.27"
+crossterm = "0.27"
+
+# Logging
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter", "fmt"] }
+# tracing-appender = "0.2.3"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Self-update
+# self_update = { version = "0.44", default-features = false, features = ["ureq", "rustls", "archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate"] }
+
+# Utilities
+humantime = "2.1"
+indicatif = "0.17"
+regex = "1.10"
+
+[dev-dependencies]
+tempfile = "3.10"
+assert_cmd = "2.0"
+predicates = "3.0"
+serial_test = "3.0"
+
+[build-dependencies]
+vergen = "8.0"
+
+[[bin]]
+name = "ohub"
+path = "src/main.rs"

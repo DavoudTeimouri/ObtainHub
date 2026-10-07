@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="ObtainHub"
+           Version="3.0.0"
+           Manufacturer="DavoudTeimouri"
+           UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+           InstallerVersion="500"
+           Platform="x64"
+           InstallScope="perMachine"
+           Compressed="yes"
+           SummaryCodepage="1252" />
+
+  <MajorUpgrade DowngradeErrorMessage="A newer version of ObtainHub is already installed."
+                Schedule="afterInstallInitialize" />
+
+  <MediaTemplate EmbedCab="yes" />
+
+  <Feature Id="ProductFeature" Title="ObtainHub" Level="1">
+    <ComponentRef Id="MainExecutable" />
+    <ComponentRef Id="PathEnvironment" />
+  </Feature>
+
+  <!-- Guard against the EXE installer already being installed.
+       The EXE writes its uninstall entry to Uninstall\{AppId}_is1, and the AppId is the same
+       GUID as the MSI UpgradeCode. -->
+  <Property Id="EXE_ALREADY_INSTALLED_32">
+    <RegistrySearch Id="ExeUninstallEntrySearch32" Root="HKLM"
+                    Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
+                    Name="DisplayName" Type="raw" />
+  </Property>
+  <Property Id="EXE_ALREADY_INSTALLED_64">
+    <RegistrySearch Id="ExeUninstallEntrySearch64" Root="HKLM"
+                    Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
+                    Name="DisplayName" Type="raw" Win64="yes" />
+  </Property>
+  <Condition Message="ObtainHub is already installed by ObtainHub-Setup.exe. Uninstall it first, then run this installer. Both installers write to the same folder.">
+    <![CDATA[Installed OR (NOT EXE_ALREADY_INSTALLED_32 AND NOT EXE_ALREADY_INSTALLED_64)]]>
+  </Condition>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="ObtainHub" />
+      </Directory>
+    </Directory>
+  </Fragment>
+
+  <!-- PATH environment variable management -->
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="PathEnvironment" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567893" Win64="yes">
+        <Environment Id="AddToPath"
+                     Name="PATH"
+                     Value="[INSTALLFOLDER]\\"
+                     Action="set"
+                     Part="last"
+                     Permanent="no"
+                     System="no" />
+        <RegistryValue Root="HKLM" Key="Software\ObtainHub" Name="PathInstalled" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567891" Win64="yes">
+        <File Id="ohub.exe" Source="target\release\ohub.exe" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>
