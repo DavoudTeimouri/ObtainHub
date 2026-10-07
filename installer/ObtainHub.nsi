@@ -30,7 +30,7 @@ RequestExecutionLevel admin
 
 ; LZMA solid compression (NSIS 3 default)
 SetCompressor lzma
-SetCompressorDictSize 32768
+SetCompressorDictSize 8
 
 ; CRC check for installer integrity
 CRCCheck on
