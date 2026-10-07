@@ -13,7 +13,6 @@
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
-!include "x64.nsh"
 !include "FileFunc.nsh"
 !include "StrFunc.nsh"
 !include "WinCore.nsh"
@@ -55,7 +54,6 @@ CRCCheck on
 
 ; ---------- Mutual refusal: EXE detects MSI (shared GUID) ----------
 Function .onInit
-  ; 64-bit only check (runtime check must be inside function)
   ${IfNot} ${RunningX64}
     MessageBox MB_ICONSTOP "ObtainHub requires 64-bit Windows.$\n$\nSetup will now abort."
     Abort
