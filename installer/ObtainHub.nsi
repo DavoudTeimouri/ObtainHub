@@ -15,6 +15,11 @@
 !include "StrFunc.nsh"
 !include "WinCore.nsh"
 
+; Force x64 installer (required for 64-bit binary)
+!ifndef NSIS_PTR_SIZE
+  !error "This installer requires NSIS 3.0+ with 64-bit support"
+!endif
+
 ; Product GUID (MUST match MSI UpgradeCode in setup.wxs)
 !define PRODUCT_GUID "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 !define APP_NAME "ObtainHub"
@@ -32,6 +37,12 @@ RequestExecutionLevel admin
 ; LZMA solid compression (NSIS 3 default)
 SetCompressor lzma
 SetCompressorDictSize 32
+
+; Force 64-bit installer
+!define MUI_ICON "${NSISDIR}\\Contrib\\Graphics\\Icons\\modern-install.ico"
+
+; CRC check for installer integrity
+CRCCheck on
 
 ; MUI pages
 !define MUI_ABORTWARNING
@@ -54,6 +65,15 @@ Function .onInit
     MessageBox MB_ICONSTOP "ObtainHub requires 64-bit Windows.$\n$\nSetup will now abort."
     Abort
   ${EndIf}
+
+  ; Verify binary exists in installer directory
+  IfFileExists "$EXEDIR\${APP_EXE}" 0 binary_missing
+  StrCpy $0 1
+  Goto binary_ok
+binary_missing:
+  MessageBox MB_ICONSTOP "Installer corrupted: ${APP_EXE} not found in installer directory.$\n$\nPlease re-download the installer."
+  Abort
+binary_ok:
 
   ; Check 64-bit view first (MSI on 64-bit)
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName"
@@ -216,8 +236,8 @@ FunctionEnd
 ; ---------- Install section ----------
 Section "MainSection" SEC01
   SetOutPath "$INSTDIR"
-  File "${APP_EXE}"
-  WriteUninstaller "$INSTDIR\uninstall.exe"
+  File "/oname=$INSTDIR\\${APP_EXE}" "${APP_EXE}"
+  WriteUninstaller "$INSTDIR\\uninstall.exe"
 
   ; Registry under shared GUID (same as MSI)
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName" "${APP_NAME} ${VERSION}"
