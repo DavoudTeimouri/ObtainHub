@@ -71,7 +71,7 @@ jobs:
       - name: Install WiX Toolset v4
         shell: powershell
         run: |
-          choco install wixtoolset -y --no-progress
+          choco install wixtoolset -y --no-progress --version 4.0.0
           Write-Host "WiX installed"
 
       - name: Build WiX MSI
