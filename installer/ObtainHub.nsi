@@ -216,6 +216,7 @@ FunctionEnd
 ; ---------- Install section ----------
 Section "MainSection" SEC01
   SetOutPath "$INSTDIR"
+  File "${APP_EXE}"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   ; Registry under shared GUID (same as MSI)
