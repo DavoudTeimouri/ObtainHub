@@ -8,7 +8,6 @@
 ; - Silent install /S works without dialogs
 ; - Shared GUID for MSI upgrade detection: A1B2C3D4-E5F6-7890-ABCD-EF1234567890
 
-!include "LogicLib.nsh"
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "StrFunc.nsh"
@@ -51,13 +50,15 @@ CRCCheck on
 
 ; ---------- Mutual refusal: EXE detects MSI (shared GUID) ----------
 Function .onInit
-  ${IfNot} ${RunningX64}
-    MessageBox MB_ICONSTOP "ObtainHub requires 64-bit Windows.$\n$\nSetup will now abort."
-    Abort
-  ${EndIf}
+  ; 64-bit only check (runtime check using StrCmp instead of LogicLib)
+  ${RunningX64} $0
+  StrCmp $0 1 x64_ok
+  MessageBox MB_ICONSTOP "ObtainHub requires 64-bit Windows.$\n$\nSetup will now abort."
+  Abort
+x64_ok:
 
   ; Verify binary exists in installer directory
-  IfFileExists "$EXEDIR\\${APP_EXE}" 0 binary_missing
+  IfFileExists "$EXEDIR\${APP_EXE}" 0 binary_missing
   StrCpy $0 1
   Goto binary_ok
 binary_missing:
@@ -74,11 +75,14 @@ check_wow64:
   StrCmp $0 "" done_check msi_found
 msi_found:
   ; Silent mode: block without UI
-  ${If} ${Silent}
-    StrCpy $0 1
-  ${Else}
-    MessageBox MB_ICONSTOP|MB_OK "$\n${APP_NAME} is already installed via MSI (ObtainHub.msi).$\n$\nPlease uninstall the MSI version first, then run this installer again.$\n$\nFound: $0" /SD IDOK
-  ${EndIf}
+  ${RunningX64} $1
+  StrCmp $1 1 silent_x64
+  StrCmp ${Silent} 1 silent_x64
+  MessageBox MB_ICONSTOP|MB_OK "$\n${APP_NAME} is already installed via MSI (ObtainHub.msi).$\n$\nPlease uninstall the MSI version first, then run this installer again.$\n$\nFound: $0" /SD IDOK
+  Goto not_silent_x64
+silent_x64:
+  StrCpy $0 1
+not_silent_x64:
   StrCmp $0 1 abort_install
   Abort
 abort_install:
