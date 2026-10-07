@@ -168,8 +168,7 @@ jobs:
             exit 1
           }
           Write-Host "makensis: $makensisPath"
-          # Use /X64 flag to ensure 64-bit installer is built
-          & $makensisPath /X64 installer/ObtainHub.nsi 2>&1
+          & $makensisPath installer/ObtainHub.nsi 2>&1
           if ($LASTEXITCODE -ne 0) { Write-Host "makensis failed: $LASTEXITCODE"; exit $LASTEXITCODE }
           if (-not (Test-Path "installer/ObtainHub-Setup.exe")) {
             Write-Host "installer/ObtainHub-Setup.exe NOT FOUND"
