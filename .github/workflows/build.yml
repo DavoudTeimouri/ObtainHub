@@ -54,7 +54,7 @@ jobs:
           retention-days: 5
 
   installer-msi:
-    name: Build MSI Installer (WiX v4)
+    name: Build MSI Installer (WiX v3)
     runs-on: windows-latest
     needs: build
     steps:
