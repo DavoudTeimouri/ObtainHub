@@ -45,7 +45,7 @@ jobs:
           ./target/release/ohub.exe --version
           ./target/release/ohub.exe --help
 
-      - name: Stage binary artifact
+      - name: Stage binary artifact for installers
         uses: actions/upload-artifact@v4
         with:
           name: ohub-windows-x64
@@ -190,11 +190,6 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ohub-windows-x64
-          path: dist
-
-      - uses: actions/download-artifact@v4
-        with:
           name: ObtainHub-MSI
           path: dist
 
@@ -207,7 +202,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/ohub.exe
             dist/ObtainHub.msi
             dist/ObtainHub-Setup.exe
           generate_release_notes: true
