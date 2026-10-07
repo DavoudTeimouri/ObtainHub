@@ -168,6 +168,12 @@ jobs:
             exit 1
           }
           Write-Host "makensis: $makensisPath"
+          # Verify binary exists before building
+          if (-not (Test-Path "installer/ohub.exe")) {
+            Write-Host "installer/ohub.exe NOT FOUND - copying from target/release"
+            Copy-Item target/release/ohub.exe installer/ohub.exe
+          }
+          Write-Host "Binary for installer: $(Get-Item installer/ohub.exe)"
           & $makensisPath installer/ObtainHub.nsi 2>&1
           if ($LASTEXITCODE -ne 0) { Write-Host "makensis failed: $LASTEXITCODE"; exit $LASTEXITCODE }
           if (-not (Test-Path "installer/ObtainHub-Setup.exe")) {

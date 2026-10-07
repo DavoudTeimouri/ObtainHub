@@ -19,6 +19,7 @@
 !ifndef NSIS_PTR_SIZE
   !error "This installer requires NSIS 3.0+ with 64-bit support"
 !endif
+!define NSIS_PTR_SIZE 64
 
 ; Product GUID (MUST match MSI UpgradeCode in setup.wxs)
 !define PRODUCT_GUID "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
@@ -36,10 +37,7 @@ RequestExecutionLevel admin
 
 ; LZMA solid compression (NSIS 3 default)
 SetCompressor lzma
-SetCompressorDictSize 32
-
-; Force 64-bit installer
-!define MUI_ICON "${NSISDIR}\\Contrib\\Graphics\\Icons\\modern-install.ico"
+SetCompressorDictSize 32768
 
 ; CRC check for installer integrity
 CRCCheck on
@@ -67,7 +65,7 @@ Function .onInit
   ${EndIf}
 
   ; Verify binary exists in installer directory
-  IfFileExists "$EXEDIR\${APP_EXE}" 0 binary_missing
+  IfFileExists "$EXEDIR\\${APP_EXE}" 0 binary_missing
   StrCpy $0 1
   Goto binary_ok
 binary_missing:
