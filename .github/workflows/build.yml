@@ -141,8 +141,8 @@ jobs:
       - name: Install NSIS
         shell: powershell
         run: |
-          choco install nsis -y --no-progress
-          Write-Host "NSIS installed"
+          # Use winget for faster, more reliable NSIS install
+          winget install NSIS.NSIS --silent --accept-source-agreements --accept-package-agreements 2>&1
           # Verify makensis is available
           $makensisPath = Get-Command makensis.exe -ErrorAction SilentlyContinue
           if (-not $makensisPath) {
