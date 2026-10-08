@@ -76,6 +76,11 @@ jobs:
         run: |
           Copy-Item target/release/ohub.exe installer/ohub.exe
 
+      - name: Verify icon exists
+        run: |
+          Write-Host "Icon exists: $(Test-Path installer/icon.ico)"
+          Write-Host "Icon full path: $(Resolve-Path installer/icon.ico)"
+
       - name: Install WiX Toolset v3
         shell: powershell
         run: |
@@ -145,6 +150,11 @@ jobs:
       - name: Copy binary to installer dir
         run: |
           Copy-Item target/release/ohub.exe installer/ohub.exe
+
+      - name: Verify icon exists
+        run: |
+          Write-Host "Icon exists: $(Test-Path installer/icon.ico)"
+          Write-Host "Icon full path: $(Resolve-Path installer/icon.ico)"
 
       - name: Install NSIS
         shell: powershell
