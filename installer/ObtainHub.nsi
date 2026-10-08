@@ -29,10 +29,10 @@ RequestExecutionLevel admin
 
 ; LZMA solid compression (NSIS 3 default)
 SetCompressor lzma
-SetCompressorDictSize 8
+SetCompressorDictSize 64
 
-; CRC check for installer integrity
-CRCCheck on
+; CRC check for installer integrity - DISABLED (causes "Invalid opcode" on some binaries)
+; CRCCheck on
 
 ; MUI pages
 !define MUI_ABORTWARNING
