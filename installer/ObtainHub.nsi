@@ -27,12 +27,12 @@ InstallDir "$PROGRAMFILES64\${APP_NAME}"
 InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "InstallLocation"
 RequestExecutionLevel admin
 
-; LZMA solid compression (NSIS 3 default)
+; LZMA per-file compression (no /SOLID — avoids CRC bug with certain binaries)
 SetCompressor lzma
 SetCompressorDictSize 64
 
-; CRC check for installer integrity - DISABLED (causes "Invalid opcode" on some binaries)
-; CRCCheck on
+; CRC check for installer integrity (works with non-solid compression)
+CRCCheck on
 
 ; MUI pages
 !define MUI_ABORTWARNING
@@ -65,20 +65,47 @@ x64_ok:
 check_wow64:
   ; Check 32-bit view (MSI on 64-bit in WoW64)
   ReadRegStr $0 HKLM "Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName"
-  StrCmp $0 "" done_check msi_found
+  StrCmp $0 "" check_exe_installed msi_found
 msi_found:
-  ; Silent mode: block without UI
-  StrCmp $Silent 1 silent_mode
-  MessageBox MB_ICONSTOP|MB_OK "$\n${APP_NAME} is already installed via MSI (ObtainHub.msi).$\n$\nPlease uninstall the MSI version first, then run this installer again.$\n$\nFound: $0" /SD IDOK
-  Goto not_silent_mode
-silent_mode:
-  StrCpy $0 1
-not_silent_mode:
-  StrCmp $0 1 abort_install
+  ; MSI found - offer uninstall/overwrite options
+  StrCmp $Silent 1 silent_msi_conflict
+  MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is already installed via MSI (ObtainHub.msi).$\n$\nFound: $0$\n$\nChoose an option:$\n$\n  Yes = Uninstall MSI and continue with EXE install$\n  No  = Overwrite (keep MSI entry, replace files)$\n  Cancel = Abort install" /SD IDOK IDYES msi_uninstall IDNO msi_overwrite
   Abort
-abort_install:
-  SetErrorLevel 1
-  Quit
+msi_uninstall:
+  ; Launch MSI uninstall silently
+  ExecWait 'msiexec /x ${PRODUCT_GUID} /qn'
+  Goto done_check
+msi_overwrite:
+  ; Overwrite: remove MSI registry, keep going
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}"
+  DeleteRegKey HKLM "Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}"
+  Goto done_check
+silent_msi_conflict:
+  ; Silent mode: auto-uninstall MSI and continue
+  ExecWait 'msiexec /x ${PRODUCT_GUID} /qn'
+  Goto done_check
+
+check_exe_installed:
+  ; Check for existing EXE installation (same GUID)
+  ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName"
+  StrCmp $0 "" done_check exe_found
+exe_found:
+  ; EXE found - offer upgrade/overwrite
+  StrCmp $Silent 1 silent_exe_conflict
+  MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is already installed (EXE version).$\n$\nFound: $0$\n$\nChoose an option:$\n$\n  Yes = Uninstall existing and install fresh$\n  No  = Upgrade in place (replace files)$\n  Cancel = Abort install" /SD IDOK IDYES exe_uninstall IDNO exe_upgrade
+  Abort
+exe_uninstall:
+  ; Launch existing uninstaller
+  ReadRegStr $1 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "UninstallString"
+  ExecWait '"$1" /S'
+  Goto done_check
+exe_upgrade:
+  ; Upgrade in place: keep registry, just replace files
+  Goto done_check
+silent_exe_conflict:
+  ; Silent mode: upgrade in place
+  Goto done_check
+
 done_check:
 FunctionEnd
 
