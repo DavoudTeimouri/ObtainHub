@@ -59,15 +59,6 @@ not_x64:
   Abort
 x64_ok:
 
-  ; Verify binary exists in installer directory
-  IfFileExists "$EXEDIR\${APP_EXE}" 0 binary_missing
-  StrCpy $0 1
-  Goto binary_ok
-binary_missing:
-  MessageBox MB_ICONSTOP "Installer corrupted: ${APP_EXE} not found in installer directory.$\n$\nPlease re-download the installer."
-  Abort
-binary_ok:
-
   ; Check 64-bit view first (MSI on 64-bit)
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName"
   StrCmp $0 "" check_wow64 msi_found
