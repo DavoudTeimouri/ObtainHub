@@ -97,6 +97,7 @@ serial_test = "3.0"
 
 [build-dependencies]
 vergen = "8.0"
+winres = "0.1"
 
 [[bin]]
 name = "ohub"
