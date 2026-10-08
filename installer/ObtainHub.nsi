@@ -20,6 +20,7 @@
 !define PUBLISHER "DavoudTeimouri"
 !define URL "https://github.com/DavoudTeimouri/ObtainHub"
 !define VERSION "3.0.0"
+!define ICON_FILE "icon.ico"
 
 Name "${APP_NAME} ${VERSION}"
 OutFile "ObtainHub-Setup.exe"
@@ -27,7 +28,11 @@ InstallDir "$PROGRAMFILES64\${APP_NAME}"
 InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "InstallLocation"
 RequestExecutionLevel admin
 
-; zlib compression (no CRC bug, smaller than LZMA without /SOLID)
+; Icon
+!define MUI_ICON "${ICON_FILE}"
+!define MUI_UNICON "${ICON_FILE}"
+
+; LZMA per-file compression (no /SOLID — avoids CRC bug with certain binaries)
 SetCompressor zlib
 
 ; CRC check for installer integrity (works with zlib)
@@ -249,6 +254,9 @@ Section "MainSection" SEC01
   SetOutPath "$INSTDIR"
   File "/oname=$INSTDIR\\${APP_EXE}" "${APP_EXE}"
   WriteUninstaller "$INSTDIR\\uninstall.exe"
+
+  ; Set icon for uninstaller
+  !define MUI_UNICON "${ICON_FILE}"
 
   ; Registry under shared GUID (same as MSI)
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName" "${APP_NAME} ${VERSION}"

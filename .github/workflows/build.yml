@@ -68,6 +68,11 @@ jobs:
           name: ohub-windows-x64
           path: target/release
 
+      - name: Copy icon to installer dir
+        run: |
+          Copy-Item installer/icon.ico target/release/icon.ico
+          Copy-Item installer/icon.ico installer/icon.ico
+
       - name: Install WiX Toolset v3
         shell: powershell
         run: |
@@ -134,7 +139,11 @@ jobs:
           name: ohub-windows-x64
           path: target/release
 
-      - name: Copy binary to installer dir
+      - name: Copy icon to installer dir
+        run: |
+          Copy-Item installer/icon.ico installer/icon.ico
+
+      - name: Install NSIS
         run: |
           Copy-Item target/release/ohub.exe installer/ohub.exe
 
