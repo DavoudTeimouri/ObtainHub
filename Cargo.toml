@@ -98,7 +98,7 @@ serial_test = "3.0"
 
 [build-dependencies]
 vergen = "8.0"
-winres = "0.1"
+winres = { version = "0.1", cfg = "target_os = \"windows\"" }
 
 [[bin]]
 name = "ohub"
