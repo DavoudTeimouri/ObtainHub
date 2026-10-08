@@ -34,7 +34,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
     let installed = if args.all {
         enumerate_all_installed_software()?
     } else {
-        state.list_installed()
+        state.list_installed().into_iter().cloned().collect()
     };
 
     if installed.is_empty() {
@@ -161,7 +161,9 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
                                     version: display_version.unwrap_or_else(|| "unknown".to_string()),
                                     install_path: std::path::PathBuf::from(uninstall_string.unwrap_or_default()),
                                     installed_at: chrono::Utc::now(),
-                                    last_checked: None,
+                                    updated_at: None,
+                                    checksum: None,
+                                    metadata: serde_json::Value::Null,
                                 });
                             }
                         }
