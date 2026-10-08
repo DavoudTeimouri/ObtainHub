@@ -156,6 +156,10 @@ jobs:
           Write-Host "Icon exists: $(Test-Path installer/icon.ico)"
           Write-Host "Icon full path: $(Resolve-Path installer/icon.ico)"
 
+      - name: Copy icon to current dir for NSIS
+        run: |
+          Copy-Item installer/icon.ico icon.ico
+
       - name: Install NSIS
         shell: powershell
         run: |

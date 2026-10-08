@@ -28,8 +28,8 @@ InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRO
 RequestExecutionLevel admin
 
 ; Icon
-!define MUI_ICON "installer/icon.ico"
-!define MUI_UNICON "installer/icon.ico"
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
 
 ; LZMA per-file compression (no /SOLID — avoids CRC bug with certain binaries)
 SetCompressor zlib
