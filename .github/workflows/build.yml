@@ -143,7 +143,7 @@ jobs:
         run: |
           Copy-Item installer/icon.ico installer/icon.ico
 
-      - name: Install NSIS
+      - name: Copy binary to installer dir
         run: |
           Copy-Item target/release/ohub.exe installer/ohub.exe
 
