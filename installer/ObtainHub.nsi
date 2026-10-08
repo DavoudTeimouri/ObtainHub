@@ -8,7 +8,9 @@
 ; - Silent install /S works without dialogs
 ; - Shared GUID for MSI upgrade detection: A1B2C3D4-E5F6-7890-ABCD-EF1234567890
 
+!include "LogicLib.nsh"
 !include "MUI2.nsh"
+!include "x64.nsh"
 !include "FileFunc.nsh"
 !include "StrFunc.nsh"
 !include "WinCore.nsh"
@@ -50,12 +52,10 @@ CRCCheck on
 
 ; ---------- Mutual refusal: EXE detects MSI (shared GUID) ----------
 Function .onInit
-  ; 64-bit only check (runtime check using StrCmp instead of LogicLib)
-  ${RunningX64} $0
-  StrCmp $0 1 x64_ok
-  MessageBox MB_ICONSTOP "ObtainHub requires 64-bit Windows.$\n$\nSetup will now abort."
-  Abort
-x64_ok:
+  ${IfNot} ${RunningX64}
+    MessageBox MB_ICONSTOP "ObtainHub requires 64-bit Windows.$\n$\nSetup will now abort."
+    Abort
+  ${EndIf}
 
   ; Verify binary exists in installer directory
   IfFileExists "$EXEDIR\${APP_EXE}" 0 binary_missing
