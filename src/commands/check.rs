@@ -27,10 +27,16 @@ struct GitHubAsset {
 
 pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManager) -> Result<()> {
     info!("Checking for updates");
-    
+
     let token = config.get().github_token.as_deref();
-    let installed = state.list_installed();
-    
+
+    // If --all flag is set, enumerate all installed software from Windows registry
+    let installed = if args.all {
+        enumerate_all_installed_software()?
+    } else {
+        state.list_installed()
+    };
+
     if installed.is_empty() {
         println!("No repositories installed.");
         return Ok(());
@@ -115,4 +121,61 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>) -> Result<GitHubR
     }
     let resp: GitHubRelease = req.send()?.json()?;
     Ok(resp)
+}
+
+#[cfg(windows)]
+fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::InstalledRepo>> {
+    use std::collections::HashSet;
+    use winreg::enums::*;
+    use winreg::RegKey;
+    
+    let mut results = Vec::new();
+    let mut seen = HashSet::new();
+    
+    // Check both 64-bit and 32-bit registry views
+    for &root in &[HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
+        for &view in &[KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
+            let hklm = RegKey::predef(root);
+            let uninstall_path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+            
+            if let Ok(uninstall_key) = hklm.open_subkey_with_flags(uninstall_path, KEY_READ | view) {
+                for subkey_name in uninstall_key.enum_keys().flatten() {
+                    if let Ok(subkey) = uninstall_key.open_subkey_with_flags(&subkey_name, KEY_READ | view) {
+                        let display_name: Option<String> = subkey.get_value("DisplayName").ok();
+                        let display_version: Option<String> = subkey.get_value("DisplayVersion").ok();
+                        let publisher: Option<String> = subkey.get_value("Publisher").ok();
+                        let uninstall_string: Option<String> = subkey.get_value("UninstallString").ok();
+                        
+                        // Skip system components (no DisplayName)
+                        if let Some(name) = display_name {
+                            // Skip our own entry
+                            if name.contains("ObtainHub") {
+                                continue;
+                            }
+                            
+                            // Create a unique key to avoid duplicates
+                            let key = format!("{}|{}", name, display_version.clone().unwrap_or_default());
+                            if seen.insert(key) {
+                                results.push(crate::core::state::InstalledRepo {
+                                    repo: name.clone(),
+                                    version: display_version.unwrap_or_else(|| "unknown".to_string()),
+                                    install_path: std::path::PathBuf::from(uninstall_string.unwrap_or_default()),
+                                    installed_at: chrono::Utc::now(),
+                                    last_checked: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(results)
+}
+
+#[cfg(not(windows))]
+fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::InstalledRepo>> {
+    // Not implemented on non-Windows
+    Ok(Vec::new())
 }
