@@ -25,6 +25,10 @@ jobs:
         with:
           toolchain: stable
           target: x86_64-pc-windows-msvc
+          components: rust-src
+
+      - name: Add Windows target
+        run: rustup target add x86_64-pc-windows-msvc
 
       - name: Cache cargo registry
         uses: actions/cache@v4
