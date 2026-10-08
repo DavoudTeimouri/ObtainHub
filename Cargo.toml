@@ -61,8 +61,6 @@ which = "3.0"
 home = "0.4"
 sysinfo = "0.30"
 
-[target.'cfg(windows)'.dependencies]
-winreg = "0.52"
 
 # Config / state
 config = { version = "0.13", features = ["toml", "json", "yaml"] }
@@ -91,6 +89,9 @@ thiserror = "1.0"
 humantime = "2.1"
 indicatif = "0.17"
 regex = "1.10"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
 
 [dev-dependencies]
 tempfile = "3.10"

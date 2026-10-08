@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt, registry};
 
 pub fn init() -> Result<()> {
     let filter = EnvFilter::try_from_default_env()
