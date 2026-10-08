@@ -60,7 +60,7 @@ dirs = "5.0"
 which = "3.0"
 home = "0.4"
 sysinfo = "0.30"
-winreg = { version = "0.52", features = ["std"] }
+winreg = "0.52"
 
 # Config / state
 config = { version = "0.13", features = ["toml", "json", "yaml"] }
