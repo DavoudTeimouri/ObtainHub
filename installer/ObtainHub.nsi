@@ -77,7 +77,7 @@ check_wow64:
   StrCmp $0 "" done_check msi_found
 msi_found:
   ; Silent mode: block without UI
-  StrCmp ${Silent} 1 silent_mode
+  StrCmp $Silent 1 silent_mode
   MessageBox MB_ICONSTOP|MB_OK "$\n${APP_NAME} is already installed via MSI (ObtainHub.msi).$\n$\nPlease uninstall the MSI version first, then run this installer again.$\n$\nFound: $0" /SD IDOK
   Goto not_silent_mode
 silent_mode:
