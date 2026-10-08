@@ -60,6 +60,8 @@ dirs = "5.0"
 which = "3.0"
 home = "0.4"
 sysinfo = "0.30"
+
+[target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 
 # Config / state
@@ -98,7 +100,7 @@ serial_test = "3.0"
 
 [build-dependencies]
 vergen = "8.0"
-winres = { version = "0.1", cfg = "target_os = \"windows\"" }
+winres = "0.1"
 
 [[bin]]
 name = "ohub"
