@@ -16,7 +16,7 @@
              Comments="ObtainHub v3.0.0"
              SummaryCodepage="1252" />
 
-    <Icon Id="AppIcon" SourceFile="icon.ico" />
+    <Icon Id="AppIcon" SourceFile="installer/icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of ObtainHub is already installed."
