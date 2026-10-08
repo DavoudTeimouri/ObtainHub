@@ -27,11 +27,10 @@ InstallDir "$PROGRAMFILES64\${APP_NAME}"
 InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "InstallLocation"
 RequestExecutionLevel admin
 
-; LZMA per-file compression (no /SOLID — avoids CRC bug with certain binaries)
-SetCompressor lzma
-SetCompressorDictSize 64
+; zlib compression (no CRC bug, smaller than LZMA without /SOLID)
+SetCompressor zlib
 
-; CRC check for installer integrity (works with non-solid compression)
+; CRC check for installer integrity (works with zlib)
 CRCCheck on
 
 ; MUI pages
