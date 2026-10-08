@@ -20,7 +20,7 @@
 !define PUBLISHER "DavoudTeimouri"
 !define URL "https://github.com/DavoudTeimouri/ObtainHub"
 !define VERSION "3.0.0"
-!define ICON_FILE "icon.ico"
+!define ICON_FILE "installer/icon.ico"
 
 Name "${APP_NAME} ${VERSION}"
 OutFile "ObtainHub-Setup.exe"
