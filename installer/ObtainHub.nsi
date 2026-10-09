@@ -61,12 +61,11 @@ not_x64:
   Abort
 x64_ok:
 
-  ; Check 64-bit view first (MSI on 64-bit)
-  ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName"
-  StrCmp $0 "" check_wow64 msi_found
-check_wow64:
-  ; Check 32-bit view (MSI on 64-bit in WoW64)
-  ReadRegStr $0 HKLM "Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName"
+  ; Detect an existing MSI install. Searching Uninstall\${PRODUCT_GUID} never worked:
+  ; Windows Installer registers under the ProductCode, and setup.wxs uses Id="*", so
+  ; that key has a different GUID on every build. The MSI's stable marker is
+  ; HKLM\Software\ObtainHub\PathInstalled (PathEnvironment component KeyPath).
+  ReadRegStr $0 HKLM "Software\ObtainHub" "PathInstalled"
   StrCmp $0 "" check_exe_installed msi_found
 msi_found:
   ; MSI found - offer uninstall/overwrite options
@@ -275,6 +274,8 @@ Section "Uninstall"
   RMDir /r "$INSTDIR"
 
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}"
+  ; Also drop the shared MSI marker so a later install does not see a stale install.
+  DeleteRegKey HKLM "Software\ObtainHub"
 SectionEnd
 
 ; ---------- Silent uninstall mutual refusal ----------

@@ -29,13 +29,18 @@
     </Feature>
 
     <!-- Guard against the EXE installer already being installed.
-         The EXE writes its uninstall entry to Uninstall\{AppId}_is1, and the AppId is the same
-         GUID as the MSI UpgradeCode. -->
+         The NSIS script writes its uninstall entry to Uninstall\{ProductGuid} with NO
+         "_is1" suffix — NSIS only appends that when the app id is not already a GUID.
+         The previous "_is1" key never existed, so this check could never fire. -->
     <Property Id="EXE_ALREADY_INSTALLED_64">
       <RegistrySearch Id="ExeUninstallEntrySearch64" Root="HKLM"
-                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
+                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
                       Name="DisplayName" Type="raw" Win64="yes" />
     </Property>
+
+    <Condition Message="ObtainHub is already installed by ObtainHub-Setup.exe. Uninstall it first, then run this installer. Both installers write to the same folder.">
+      <![CDATA[Installed OR NOT EXE_ALREADY_INSTALLED_64]]>
+    </Condition>
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
