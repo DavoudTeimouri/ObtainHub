@@ -19,7 +19,7 @@
 !define APP_EXE "ohub.exe"
 !define PUBLISHER "DavoudTeimouri"
 !define URL "https://github.com/DavoudTeimouri/ObtainHub"
-!define VERSION "3.0.0"
+!define VERSION "3.0.1"
 
 ; Icon (before MUI pages)
 !define MUI_ICON "icon.ico"
@@ -70,7 +70,7 @@ check_wow64:
   StrCmp $0 "" check_exe_installed msi_found
 msi_found:
   ; MSI found - offer uninstall/overwrite options
-  StrCmp $Silent 1 silent_msi_conflict
+  IfSilent silent_msi_conflict check_exe_installed
   MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is already installed via MSI (ObtainHub.msi).$\n$\nFound: $0$\n$\nChoose an option:$\n$\n  Yes = Uninstall MSI and continue with EXE install$\n  No  = Overwrite (keep MSI entry, replace files)$\n  Cancel = Abort install" /SD IDOK IDYES msi_uninstall IDNO msi_overwrite
   Abort
 msi_uninstall:
@@ -93,7 +93,7 @@ check_exe_installed:
   StrCmp $0 "" done_check exe_found
 exe_found:
   ; EXE found - offer upgrade/overwrite
-  StrCmp $Silent 1 silent_exe_conflict
+  IfSilent silent_exe_conflict done_check
   MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is already installed (EXE version).$\n$\nFound: $0$\n$\nChoose an option:$\n$\n  Yes = Uninstall existing and install fresh$\n  No  = Upgrade in place (replace files)$\n  Cancel = Abort install" /SD IDOK IDYES exe_uninstall IDNO exe_upgrade
   Abort
 exe_uninstall:

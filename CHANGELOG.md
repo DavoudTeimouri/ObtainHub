@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.1] - 2026-10-09
+### Fixed
+- MSI build: `installer/setup.wxs` was missing `Platform="x64"`, so ICE80 rejected
+  the package (LGHT0204) because `PathEnvironment` and `MainExecutable` are both
+  `Win64="yes"`. Removed the 32-bit `RegistrySearch` too — a 64-bit package cannot
+  carry a 32-bit Locator (LGHT1076).
+- Zip-slip: `install.rs` joined attacker-controlled zip entry names onto the
+  install directory without validation, so an entry named `../../evil.exe` wrote
+  outside it. Reachable via `install` and `install --url`, which fetch archives
+  from the internet. `update.rs` had the same hole through `archive.extract()`.
+  Both now normalize the path through `Path::components()` before the containment
+  check, with three tests covering parent traversal, absolute paths, and normal
+  entries.
+- `uninstall --purge` now drops the repository's state metadata and its membership
+  in any group, instead of printing "not yet fully implemented".
+- `update` installs to `config.install_dir` instead of a hardcoded
+  `ObtainHub/repos` path, so a custom install directory is respected.
+- `ohub completion` no longer panics on a broken pipe (`ohub completion fish | head`).
+- Config values that would hang or divide by zero (`parallel_downloads`,
+  `timeout_seconds`, `update_check_interval_hours`, `schedule.interval_hours`)
+  are reset to defaults on load and on save.
+
+### Added
+- `PROJECT.md`: living reference for installer invariants, GUID requirements,
+  filesystem layout, config contract, and security posture.
+- `CONTRIBUTING.md`: build, test, installer, and release procedure.
+- README: examples for every major command; corrected config path.
+
 ## [v3.0.0] - 2026-10-08
 ### Added
 - Complete rewrite from Python to Rust (ObtainHub-rs merged into main)
