@@ -4,9 +4,8 @@ use anyhow::Result;
 use tracing::info;
 use std::fs;
 
-pub async fn execute(args: UninstallArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
+pub async fn execute(args: UninstallArgs, config: &mut ConfigManager, state: &mut StateManager) -> Result<()> {
     info!("Uninstalling: {}", args.repo);
-    
     let installed = state.list_installed();
     let repo_entry = installed.iter().find(|r| r.repo == args.repo);
     
@@ -44,10 +43,25 @@ pub async fn execute(args: UninstallArgs, config: &ConfigManager, state: &mut St
     state.remove_installed(&args.repo);
     state.save()?;
     
-    // TODO: If --purge, also remove config/data
     if args.purge {
-        // Additional cleanup if needed
-        println!("Config and data purge not yet fully implemented");
+        // No per-repo config files exist — state is one state.json plus group membership.
+        state.get_mut().metadata.remove(&args.repo);
+        state.save()?;
+        
+        let cfg = config.get_mut();
+        let mut dropped = Vec::new();
+        for (group, members) in cfg.groups.iter_mut() {
+            let before = members.len();
+            members.retain(|m| m != &args.repo);
+            if members.len() != before {
+                dropped.push(group.clone());
+            }
+        }
+        config.save()?;
+        
+        println!("  Purged metadata and group entries{}", 
+            if dropped.is_empty() { String::new() } 
+            else { format!(" (groups: {})", dropped.join(", ")) });
     }
     
     println!("Successfully uninstalled {}", args.repo);

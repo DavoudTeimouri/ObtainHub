@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
         Commands::Check(args) => commands::check::execute(args, &config_manager, &state_manager).await,
         Commands::List(args) => commands::list::execute(args, &config_manager, &state_manager).await,
         Commands::Update(args) => commands::update::execute(args, &config_manager, &mut state_manager).await,
-        Commands::Uninstall(args) => commands::uninstall::execute(args, &config_manager, &mut state_manager).await,
+        Commands::Uninstall(args) => commands::uninstall::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Tui(args) => commands::tui::execute(args, &config_manager, &state_manager).await,
         Commands::Config(args) => commands::config::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Backup(args) => commands::backup::execute(args, &config_manager, &state_manager).await,

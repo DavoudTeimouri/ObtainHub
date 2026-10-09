@@ -149,14 +149,32 @@ impl ConfigManager {
         
         let config_path = config_dir.join("config.toml");
         
-        let config = if config_path.exists() {
+        let mut config: Config = if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)?;
             toml::from_str(&content)?
         } else {
             Config::default()
         };
+        Self::sanitize(&mut config);
         
         Ok(Self { config, config_path })
+    }
+
+    /// Clamp out-of-range values that would otherwise cause hangs or div-by-zero
+    /// downstream. Config is user-editable, so treat bad values as defaults, not errors.
+    fn sanitize(config: &mut Config) {
+        if config.parallel_downloads == 0 {
+            config.parallel_downloads = 4;
+        }
+        if config.timeout_seconds == 0 {
+            config.timeout_seconds = 30;
+        }
+        if config.update_check_interval_hours == 0 {
+            config.update_check_interval_hours = 24;
+        }
+        if config.schedule.interval_hours == 0 {
+            config.schedule.interval_hours = 24;
+        }
     }
     
     pub fn get(&self) -> &Config {
@@ -168,7 +186,9 @@ impl ConfigManager {
     }
     
     pub fn save(&self) -> Result<()> {
-        let content = toml::to_string_pretty(&self.config)?;
+        let mut config = self.config.clone();
+        Self::sanitize(&mut config);
+        let content = toml::to_string_pretty(&config)?;
         std::fs::write(&self.config_path, content)?;
         Ok(())
     }
@@ -189,5 +209,37 @@ impl ConfigManager {
         }
         // Save to repair any corruption
         self.save()
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_clamps_zero_values() {
+        let mut c = Config::default();
+        c.parallel_downloads = 0;
+        c.timeout_seconds = 0;
+        c.update_check_interval_hours = 0;
+        c.schedule.interval_hours = 0;
+
+        ConfigManager::sanitize(&mut c);
+
+        assert_eq!(c.parallel_downloads, 4);
+        assert_eq!(c.timeout_seconds, 30);
+        assert_eq!(c.update_check_interval_hours, 24);
+        assert_eq!(c.schedule.interval_hours, 24);
+    }
+
+    #[test]
+    fn sanitize_leaves_valid_values_alone() {
+        let mut c = Config::default();
+        c.parallel_downloads = 8;
+        c.timeout_seconds = 90;
+
+        ConfigManager::sanitize(&mut c);
+
+        assert_eq!(c.parallel_downloads, 8);
+        assert_eq!(c.timeout_seconds, 90);
     }
 }

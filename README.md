@@ -10,9 +10,6 @@ Download the latest `.msi` from [Releases](https://github.com/DavoudTeimouri/Obt
 ### Windows (NSIS Installer)
 Download `ObtainHub-Setup.exe` from [Releases](https://github.com/DavoudTeimouri/ObtainHub/releases).
 
-### Portable Binary
-Download `ohub.exe` from [Releases](https://github.com/DavoudTeimouri/ObtainHub/releases) and place in your PATH.
-
 ### From Source
 ```bash
 cargo build --release
@@ -56,9 +53,11 @@ ohub <COMMAND>
 ```bash
 # Search for repositories
 ohub search ripgrep --min-stars 100
+ohub search rust --language Rust --sort-stars --limit 10
 
 # Install from GitHub
 ohub install BurntSushi/ripgrep
+ohub install BurntSushi/ripgrep --dry-run
 
 # Install from local archive
 ohub install --file ./myapp.zip
@@ -68,23 +67,51 @@ ohub install --url https://example.com/app.tar.gz
 
 # Check for updates
 ohub check
+ohub check --all                  # every installed Windows program, skips ohub itself
+ohub check --outdated-only
 
-# Update all
-ohub update
+# Update
+ohub update                        # all installed repos
+ohub update BurntSushi/ripgrep     # one repo
+ohub update --dry-run              # show what would change
 
-# Launch TUI
+# Manage installed repos
+ohub list
+ohub list --format json
+ohub uninstall BurntSushi/ripgrep --yes
+ohub uninstall BurntSushi/ripgrep --purge --yes   # also drop metadata + group entries
+ohub remove BurntSushi/ripgrep --yes             # untrack, keep files
+
+# Groups
+ohub group create dev
+ohub group add dev BurntSushi/ripgrep
+
+# Shell completions
+ohub completion fish > ~/.config/fish/completions/ohub.fish
+ohub completion powershell | Out-String | Invoke-Expression
+
+# Diagnostics
+ohub doctor
+ohub info BurntSushi/ripgrep
+
+# TUI
 ohub tui
 ```
 
 ## Configuration
 
-Config file: `%APPDATA%\ObtainHub\config.json` (Windows) or `~/.config/obtainhub/config.json` (Unix)
+Config file: `%APPDATA%\ObtainHub\config.toml` (Windows) or `$XDG_CONFIG_HOME/ObtainHub/config.toml` (Unix)
+State file: `%APPDATA%\ObtainHub\state.json`
 
 ```bash
 ohub config list          # Show all config
 ohub config get key       # Get value
 ohub config set key value # Set value
 ```
+
+Zero-valued `parallel_downloads`, `timeout_seconds`, and
+`update_check_interval_hours` are reset to their defaults on load — a hand-edited
+config can never set them to 0.
 
 ## License
 

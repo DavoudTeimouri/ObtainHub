@@ -4,8 +4,6 @@ use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use std::path::PathBuf;
-use dirs;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GitHubRelease {
@@ -68,7 +66,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                     }
                     
                     // Perform update (reinstall with new version)
-                    match install_release(repo_name, &latest_version, &release, token, state, args.force, args.skip_deps).await {
+                    match install_release(repo_name, &latest_version, &release, token, config, state, args.force, args.skip_deps).await {
                         Ok(_) => {
                             updated.push((repo_name.clone(), current_version.clone(), latest_version.clone()));
                             println!("  Updated to {}", latest_version);
@@ -131,6 +129,7 @@ async fn install_release(
     version: &str,
     release: &GitHubRelease,
     token: Option<&str>,
+    config: &ConfigManager,
     state: &mut StateManager,
     force: bool,
     _skip_deps: bool,
@@ -151,13 +150,11 @@ async fn install_release(
     let bytes = response.as_bytes();
     
     // Verify checksum if available
-    // TODO: Implement checksum verification
+    // ponytail: no checksum source exists in GitHub release JSON — trust-on-first-use
+    // upgrade path: verify against a release-published SHA256SUMS asset when repos provide one
     
-    // Determine install path
-    let install_dir = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("ObtainHub/repos")
-        .join(repo);
+    // Determine install path (config-driven, not hardcoded)
+    let install_dir = config.get().install_dir.join(repo);
     
     // Clean existing if force
     if force && install_dir.exists() {
