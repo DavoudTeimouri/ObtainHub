@@ -212,11 +212,26 @@ A command needs `&mut` only when it writes config.
 |---|---|
 | `self-update` | **No signature verification.** Downloads and runs the asset. Highest-risk gap in the project. |
 | Update assets | `verify_checksums` is read but the check never fires — see below. |
-| Archive extraction | `zip`/`tar` extract straight into the destination. Zip-slip is not explicitly guarded. |
+| Archive extraction | Zip-slip guarded in `install.rs` and `update.rs` (`safe_join` / inline equivalent). Tar uses `tar::unpack`, which sanitizes internally. |
 | GitHub token | Plaintext in config, not keyring. `reset.rs:24` claims to clear it from the keyring but prints "not implemented". |
 | Signing | Neither installer is Authenticode signed. |
 
 Anything above marked high-risk belongs on the fix list before the next feature.
+
+### Zip-slip was exploitable — now fixed
+
+`install.rs` did `install_dir.join(file.name())` on attacker-controlled zip
+entries with no validation, so an entry named `../../evil.exe` wrote outside the
+install directory. `install` and `install --url` both download archives from the
+internet and extract them, so this was reachable.
+
+`update.rs` had the same hole via `archive.extract()`, which the `zip` crate
+documents as unsafe for untrusted input.
+
+Both now normalize the joined path through `components()` before comparing with
+`starts_with`. The normalization is required: a raw `dest/../x` still lexically
+starts with `dest`, so a naive `starts_with` check passes it. Covered by
+`safe_join_*` tests in `src/commands/install.rs`.
 
 ### `verify_checksum` never verifies anything
 
@@ -283,6 +298,7 @@ Discovered by inspection, not in the plan:
 - NSIS uninstall leaves `HKLM\Software\ObtainHub` orphaned — section 5.
 - `keyring` dependency declared but never used; token stored in plaintext.
 - `verify_checksums` is read at `install.rs:113` but can never match — section 9.
-- `zip`/`tar` extraction does not guard against path traversal.
+- `zip`/`tar` extraction does not guard against path traversal. → **Fixed** in
+  `install.rs` + `update.rs`, see section 9.
 - `src/commands/reset.rs:41` binds `token_path` and never uses it.
 - `src/commands/backup.rs` backs up `config`, which can contain a GitHub token.

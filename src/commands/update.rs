@@ -208,7 +208,32 @@ fn extract_archive(name: &str, bytes: &[u8], dest: &std::path::Path) -> Result<(
 fn extract_zip(bytes: &[u8], dest: &std::path::Path) -> Result<()> {
     let cursor = std::io::Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor)?;
-    archive.extract(dest)?;
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let outpath = dest.join(file.name());
+        // Same zip-slip guard as install.rs: reject entries that escape dest.
+        // Normalized first — a raw `dest/../x` still lexically starts with dest.
+        let mut normalized = std::path::PathBuf::new();
+        for c in outpath.components() {
+            match c {
+                std::path::Component::ParentDir => { normalized.pop(); }
+                std::path::Component::CurDir => {}
+                other => normalized.push(other.as_os_str()),
+            }
+        }
+        if !normalized.starts_with(dest) {
+            anyhow::bail!("Refusing to extract '{}': path escapes install directory", file.name());
+        }
+        if file.name().ends_with('/') {
+            std::fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(parent) = outpath.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut outfile = std::fs::File::create(&outpath)?;
+            std::io::copy(&mut file, &mut outfile)?;
+        }
+    }
     Ok(())
 }
 

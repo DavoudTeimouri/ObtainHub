@@ -286,13 +286,36 @@ fn extract_asset(asset_path: &Path, install_dir: &Path, filename: &str) -> Resul
     }
 }
 
+/// Join an archive entry name onto the destination, rejecting any name that
+/// would escape it. Zip entries are attacker-controlled (we download them from
+/// the internet), so `../` traversal must fail closed.
+fn safe_join(dest: &Path, name: &str) -> Result<PathBuf> {
+    let outpath = dest.join(name);
+    // Normalize before comparing: `starts_with` walks components lexically, so the
+    // raw `dest/../x` would still appear to start with dest. Rebuilding the path
+    // through components() collapses `..` against what came before, so a name that
+    // climbs above dest no longer has dest as a prefix.
+    let mut normalized = PathBuf::new();
+    for c in outpath.components() {
+        match c {
+            std::path::Component::ParentDir => { normalized.pop(); }
+            std::path::Component::CurDir => {}
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    if !normalized.starts_with(dest) {
+        anyhow::bail!("Refusing to extract '{}': path escapes install directory", name);
+    }
+    Ok(outpath)
+}
+
 fn extract_zip(asset_path: &Path, install_dir: &Path) -> Result<PathBuf> {
     let file = fs::File::open(asset_path)?;
     let mut archive = ZipArchive::new(file)?;
     
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        let outpath = install_dir.join(file.name());
+        let outpath = safe_join(install_dir, file.name())?;
         
         if file.name().ends_with('/') {
             fs::create_dir_all(&outpath)?;
@@ -490,4 +513,30 @@ fn finalize_install(extracted_path: &Path, install_dir: &Path) -> Result<PathBuf
     }
     
     Ok(install_dir.to_path_buf())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_join_rejects_parent_traversal() {
+        let dest = Path::new("/tmp/install");
+        for name in ["../escaped.txt", "../../escaped.txt", "a/../../escaped.txt"] {
+            let err = safe_join(dest, name).unwrap_err().to_string();
+            assert!(err.contains("escapes install directory"), "{}: {}", name, err);
+        }
+    }
+
+    #[test]
+    fn safe_join_rejects_absolute_path() {
+        let dest = Path::new("/tmp/install");
+        assert!(safe_join(dest, "/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn safe_join_allows_normal_entries() {
+        let dest = Path::new("/tmp/install");
+        assert_eq!(safe_join(dest, "app/bin/tool.exe").unwrap(), dest.join("app/bin/tool.exe"));
+        assert_eq!(safe_join(dest, "flat.exe").unwrap(), dest.join("flat.exe"));
+    }
 }
