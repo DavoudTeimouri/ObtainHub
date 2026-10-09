@@ -26,6 +26,20 @@ All notable changes to this project will be documented in this file.
   self-update's verification satisfiable.
 - Tests for the digest parsers and the manifest filename match: 13 total.
 
+## [v3.0.2] - 2026-10-09
+### Fixed
+- Silent-install conflict handling never compiled. `StrCmp $Silent 1` was rejected
+  by makensis as an unknown variable, and the compiler silently ignored both
+  occurrences, so the auto-uninstall-MSI and upgrade-in-place branches were dropped
+  from the binary. Replaced with the `IfSilent` instruction.
+- Version numbers had drifted: the v3.0.1 tag was cut while `Cargo.toml`,
+  `installer/ObtainHub.nsi`, and `installer/setup.wxs` all still said 3.0.0, so the
+  published installers reported the wrong version. All four sites are now bumped
+  together and `PROJECT.md` §2 records the rule.
+
+### Changed
+- The NSIS installer builds with zero warnings (was 2).
+
 ## [v3.0.3] - 2026-10-09
 ### Fixed
 - Mutual refusal was dead code in both directions.
@@ -110,4 +124,7 @@ All notable changes to this project will be documented in this file.
 - Standalone ohub.exe from releases (only installers)
 - Python implementation and related scripts
 - ObtainHub-rs submodule/repository
+
+## [v3.0.5] - 2026-10-09
+### No changes — this tag exists to verify the automated changelog extraction.
 

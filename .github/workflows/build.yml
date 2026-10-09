@@ -237,13 +237,32 @@ jobs:
           sha256sum ObtainHub.msi ObtainHub-Setup.exe > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Extract changelog for this tag
+        shell: bash
+        run: |
+          # Each release body must be its own `## [vX.Y.Z]` section from
+          # CHANGELOG.md — not GitHub's auto-generated commit list.
+          SECTION="$(awk -v tag="${GITHUB_REF_NAME}" '
+            $0 ~ "^## \\[" tag "\\]" { found=1 }
+            found && /^## \\[/ && $0 !~ "^## \\[" tag "\\]" { exit }
+            found { print }
+          ' CHANGELOG.md)"
+          if [ -z "$SECTION" ]; then
+            echo "::error::No '## [${GITHUB_REF_NAME}]' section in CHANGELOG.md"
+            exit 1
+          fi
+          printf '%s\n' "$SECTION" > RELEASE_NOTES.md
+          echo "Release notes:"
+          cat RELEASE_NOTES.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          body_path: RELEASE_NOTES.md
           files: |
             dist/ObtainHub.msi
             dist/ObtainHub-Setup.exe
             dist/SHA256SUMS
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
