@@ -10,7 +10,7 @@
     <Package InstallerVersion="500"
              Compressed="yes"
              InstallScope="perMachine"
-             
+             Platform="x64"
              Description="ObtainHub CLI installer"
              Manufacturer="DavoudTeimouri"
              Comments="ObtainHub v3.0.0"
@@ -19,8 +19,7 @@
     <Icon Id="AppIcon" SourceFile="installer/icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of ObtainHub is already installed."
-                   />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ObtainHub is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
 
@@ -32,11 +31,6 @@
     <!-- Guard against the EXE installer already being installed.
          The EXE writes its uninstall entry to Uninstall\{AppId}_is1, and the AppId is the same
          GUID as the MSI UpgradeCode. -->
-    <Property Id="EXE_ALREADY_INSTALLED_32">
-      <RegistrySearch Id="ExeUninstallEntrySearch32" Root="HKLM"
-                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
-                      Name="DisplayName" Type="raw" />
-    </Property>
     <Property Id="EXE_ALREADY_INSTALLED_64">
       <RegistrySearch Id="ExeUninstallEntrySearch64" Root="HKLM"
                       Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1"
