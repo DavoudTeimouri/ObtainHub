@@ -220,7 +220,8 @@ split.
 
 | Area | State |
 |---|---|
-| `self-update` | **No signature verification.** Downloads and runs the asset. Highest-risk gap in the project. |
+| `self-update` | Digest-verified against a published `SHA256SUMS`. No GPG/Authenticode signature check. |
+
 | Update assets | Checksum verification now works for published digests — see below. `update` still does not verify. |
 | Archive extraction | Zip-slip guarded in `install.rs` and `update.rs` (`safe_join` / inline equivalent). Tar uses `tar::unpack`, which sanitizes internally. |
 | GitHub token | Plaintext in config, not keyring. `reset.rs:24` claims to clear it from the keyring but prints "not implemented". |
@@ -242,6 +243,24 @@ Both now normalize the joined path through `components()` before comparing with
 `starts_with`. The normalization is required: a raw `dest/../x` still lexically
 starts with `dest`, so a naive `starts_with` check passes it. Covered by
 `safe_join_*` tests in `src/commands/install.rs`.
+
+### Self-update verification
+
+`self-update` used to download a release asset, extract it, and overwrite the
+running binary with nothing checked in between. It now hashes the download and
+compares it against a digest published with the release (`<name>.sha256`, then
+`SHA256SUMS`, then `checksums.txt`). A mismatch deletes the download and aborts.
+If the release publishes no digest at all, the command refuses to run and tells
+the user to install manually — failing closed is the only safe default here.
+
+CI generates `SHA256SUMS` over both installers and publishes it as a third release
+asset. That asset is what makes the check satisfiable; without it every
+self-update would refuse.
+
+What this does **not** cover: there is still no cryptographic signature check. A
+checksum published by the same release it protects catches corruption and a
+truncated download, not a compromised release account. Closing that requires
+signing the release (GPG or a GitHub OIDC attestation), which is item 11 proper.
 
 ### Checksum verification
 
@@ -300,7 +319,7 @@ rejection.
 | 8 | Config validation | **Done** — `sanitize()` + 2 tests |
 | 9 | TUI discoverability | Closed — header already lists keybindings |
 | 10 | Search pagination | Open |
-| 11 | Self-update signature verification | Open — high risk |
+| 11 | Self-update signature verification | **Partial** — SHA256SUMS gate done; signing still open |
 | 12 | Fish completion | Closed — already supported |
 | 13 | Dependency tracking | Open |
 | 14 | Non-GitHub registries | Open |

@@ -94,6 +94,32 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
     let bytes = resp.as_bytes();
     fs::write(&download_path, bytes).context("Failed to write download")?;
 
+    // Verify the download against a digest published with the release before we
+    // execute anything from it. Without this, a compromised or hijacked release
+    // replaces the running binary unchallenged.
+    match find_published_digest(&release, asset_name) {
+        Some(expected) => {
+            let actual = sha256_hex(bytes);
+            if !expected.eq_ignore_ascii_case(&actual) {
+                let _ = fs::remove_file(&download_path);
+                anyhow::bail!(
+                    "Checksum mismatch for {}: release advertises {}, download is {}",
+                    asset_name, expected, actual
+                );
+            }
+            if !args.quiet {
+                println!("Checksum verified.");
+            }
+        }
+        None => {
+            let _ = fs::remove_file(&download_path);
+            anyhow::bail!(
+                "Refusing to self-update: {} publishes no checksum, so the download cannot be verified. Install manually from the release page.",
+                asset_name
+            );
+        }
+    }
+
     if !args.quiet {
         println!("Extracting...");
     }
@@ -198,4 +224,96 @@ fn find_binary(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
         }
     }
     None
+}
+
+/// Look for the asset's digest among the release's other assets: a per-asset
+/// `<name>.sha256` first, then a combined `SHA256SUMS` / `checksums.txt` manifest.
+fn find_published_digest(release: &serde_json::Value, asset_name: &str) -> Option<String> {
+    let assets = release.get("assets")?.as_array()?;
+
+    let manifest_names = [
+        format!("{}.sha256", asset_name),
+        "SHA256SUMS".to_string(),
+        "checksums.txt".to_string(),
+    ];
+
+    for manifest_name in &manifest_names {
+        // `continue`, not `?` — a release may ship a sidecar but no manifest, and
+        // we still want to try the next candidate.
+        let asset = match assets.iter().find(|a| {
+            a.get("name").and_then(|n| n.as_str())
+                .map(|n| n.eq_ignore_ascii_case(manifest_name))
+                .unwrap_or(false)
+        }) {
+            Some(a) => a,
+            None => continue,
+        };
+
+        let url = match asset.get("browser_download_url").and_then(|u| u.as_str()) {
+            Some(u) => u,
+            None => continue,
+        };
+
+        let mut req = minreq::get(url).with_header("User-Agent", "ohub");
+        if let Ok(resp) = req.send() {
+            if let Ok(text) = resp.as_str() {
+                if let Some(d) = digest_for(text, asset_name) {
+                    return Some(d);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Find the digest line belonging to `asset_name`. Exact filename match: a
+/// `dist/app.zip` entry must not answer for a top-level `app.zip`.
+fn digest_for(text: &str, asset_name: &str) -> Option<String> {
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let digest = match parts.next() {
+            Some(d) if d.len() == 64 && d.chars().all(|c| c.is_ascii_hexdigit()) => d,
+            _ => continue,
+        };
+        let name = parts.next().unwrap_or("").trim_start_matches('*');
+        if name == asset_name {
+            return Some(digest.to_ascii_lowercase());
+        }
+    }
+    None
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn digest_for_matches_exact_filename() {
+        let text = format!("{}  other.zip\n{}  app.zip\n", "1".repeat(64), "2".repeat(64));
+        assert_eq!(digest_for(&text, "app.zip"), Some("2".repeat(64)));
+        assert_eq!(digest_for(&text, "missing.zip"), None);
+    }
+
+    #[test]
+    fn digest_for_ignores_same_basename_in_subdir() {
+        let text = format!("{}  dist/app.zip\n", "3".repeat(64));
+        assert_eq!(digest_for(&text, "app.zip"), None);
+    }
+
+    #[test]
+    fn digest_for_accepts_bare_digest() {
+        // A per-asset sidecar often holds just the hash.
+        let text = format!("{}\n", "4".repeat(64));
+        // No filename on the line, so it does not match a named asset.
+        assert_eq!(digest_for(&text, "app.zip"), None);
+        assert_eq!(digest_for(&format!("{}  app.zip", "5".repeat(64)), "app.zip"), Some("5".repeat(64)));
+    }
 }

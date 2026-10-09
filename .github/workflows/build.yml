@@ -230,12 +230,20 @@ jobs:
           name: ObtainHub-EXE
           path: dist
 
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd dist
+          sha256sum ObtainHub.msi ObtainHub-Setup.exe > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             dist/ObtainHub.msi
             dist/ObtainHub-Setup.exe
+            dist/SHA256SUMS
           generate_release_notes: true
           draft: false
           prerelease: false
