@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.3] - 2026-10-09
+### Fixed
+- Mutual refusal was dead code in both directions.
+  - NSIS looked for the MSI under `Uninstall\{UpgradeCode}`, but Windows Installer
+    registers under the ProductCode and `setup.wxs` uses `Id="*"`, so that key
+    holds a different GUID on every build. NSIS now detects the MSI through its
+    stable marker `HKLM\Software\ObtainHub\PathInstalled`, and clears that
+    marker on uninstall.
+  - The MSI searched `Uninstall\{...}_is1`, but NSIS only appends `_is1` when the
+    app id is not already a GUID. The key never existed, so the search could not
+    match. Fixed the key and restored the launch Condition.
+- `check --all` sent every installed Windows program's `DisplayName` to the GitHub
+  releases API. `NVIDIA Corporation` is not `owner/repo`, so every lookup 404'd
+  and the request volume exhausted the unauthenticated rate limit. Only programs
+  tracked in `state.json` are now queried; the rest are reported as skipped.
+- Silent-install conflict handling never compiled: `StrCmp $Silent 1` was rejected
+  as an unknown variable, so the auto-uninstall-MSI and upgrade-in-place branches
+  were silently dropped. Replaced with the `IfSilent` instruction.
+
+### Changed
+- NSIS installer now builds with zero warnings (was 2).
+
 ## [v3.0.1] - 2026-10-09
 ### Fixed
 - MSI build: `installer/setup.wxs` was missing `Platform="x64"`, so ICE80 rejected
