@@ -65,7 +65,7 @@
 
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567891" Win64="yes">
-        <File Id="ohub.exe" Source="target/x86_64-pc-windows-gnu/release/ohub.exe" KeyPath="yes" />
+        <File Id="ohub.exe" Source="target/release/ohub.exe" KeyPath="yes" />
       </Component>
     </DirectoryRef>
   </Product>
