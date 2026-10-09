@@ -3,7 +3,7 @@
   <Product Id="*"
            Name="ObtainHub"
            Language="1033"
-           Version="3.0.3"
+           Version="3.0.4"
            Manufacturer="DavoudTeimouri"
            UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
 
@@ -13,7 +13,7 @@
              Platform="x64"
              Description="ObtainHub CLI installer"
              Manufacturer="DavoudTeimouri"
-             Comments="ObtainHub v3.0.3"
+             Comments="ObtainHub v3.0.4"
              SummaryCodepage="1252" />
 
     <Icon Id="AppIcon" SourceFile="installer/icon.ico" />

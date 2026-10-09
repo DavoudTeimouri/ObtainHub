@@ -19,7 +19,7 @@
 !define APP_EXE "ohub.exe"
 !define PUBLISHER "DavoudTeimouri"
 !define URL "https://github.com/DavoudTeimouri/ObtainHub"
-!define VERSION "3.0.3"
+!define VERSION "3.0.4"
 
 ; Icon (before MUI pages)
 !define MUI_ICON "icon.ico"

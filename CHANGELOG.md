@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.4] - 2026-10-09
+### Fixed
+- Checksum verification never verified anything. `verify_checksum` looked for a
+  `<archive>.sha256` file inside the newly created install directory, where
+  nothing ever writes one, so every install warned and returned `Ok`. `install`
+  now reads a digest published with the release (`<name>.sha256`, `SHA256SUMS`,
+  `checksums.txt`) and compares against it; `install --file` and `--url` read a
+  sidecar next to the archive. Mismatches abort the install.
+- `self-update` downloaded a release asset and overwrote the running binary with
+  nothing verified. It now requires a published digest and refuses to run when
+  none exists, failing closed.
+- `config get github_token` printed the token verbatim, leaking it into shell
+  history and CI logs. It now returns `[stored]`.
+- `backup` and `reset --backup` embedded the plaintext GitHub token in the archive.
+  Both strip it and report that they did.
+- `reset --move-token` and `--keep-token` were stubs that printed "not implemented".
+  The token is now captured before the reset: `--keep-token` restores it,
+  `--move-token` writes it to the given path with 0600 on Unix.
+
+### Added
+- Releases now publish `SHA256SUMS` alongside both installers, which is what makes
+  self-update's verification satisfiable.
+- Tests for the digest parsers and the manifest filename match: 13 total.
+
 ## [v3.0.3] - 2026-10-09
 ### Fixed
 - Mutual refusal was dead code in both directions.
