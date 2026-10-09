@@ -109,9 +109,20 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     let asset_path = install_dir.join(&asset.name);
     download_with_progress(&asset.browser_download_url, &asset_path, token, config.get().timeout_seconds).await?;
     
-    // Verify checksum if enabled
+    // Verify checksum against the release's published digest, when one exists
     if config.get().verify_checksums {
-        verify_checksum(&asset_path, &asset.name)?;
+        if let Some(expected) = fetch_published_checksum(&release, &asset.name, token).await? {
+            let actual = calculate_sha256(&asset_path)?;
+            if !expected.eq_ignore_ascii_case(&actual) {
+                return Err(anyhow::anyhow!(
+                    "Checksum mismatch for {}: expected {}, got {}",
+                    asset.name, expected, actual
+                ));
+            }
+            info!("Checksum verified for {}", asset.name);
+        } else {
+            warn!("No published checksum for {} — skipping verification", asset.name);
+        }
     }
     
     // Extract asset
@@ -241,20 +252,78 @@ async fn download_with_progress(url: &str, path: &Path, token: Option<&str>, tim
     Ok(())
 }
 
-fn verify_checksum(path: &Path, filename: &str) -> Result<()> {
-    // Check for checksum file alongside the asset
-    let checksum_path = path.with_extension(if filename.ends_with(".tar.gz") { "sha256" } else { "sha256" });
-    if checksum_path.exists() {
-        let expected = fs::read_to_string(&checksum_path)?.trim().to_string();
-        let actual = calculate_sha256(path)?;
-        if expected != actual {
-            return Err(anyhow::anyhow!("Checksum mismatch: expected {}, got {}", expected, actual));
+/// Look for a published digest for `asset_name` among the release's other assets.
+/// Covers the two conventions in wide use: a per-asset `<name>.sha256` and a
+/// combined `SHA256SUMS` / `checksums.txt` manifest. Returns None when the
+/// release publishes no digest, which is common and not itself an error.
+async fn fetch_published_checksum(
+    release: &GitHubRelease,
+    asset_name: &str,
+    token: Option<&str>,
+) -> Result<Option<String>> {
+    // Per-asset sidecar: <name>.sha256
+    let sidecar = format!("{}.sha256", asset_name);
+    if let Some(a) = release.assets.iter().find(|a| a.name == sidecar) {
+        if let Some(digest) = digest_from_text(&download_text(&a.browser_download_url, token).await?) {
+            return Ok(Some(digest));
         }
-        info!("Checksum verified: {}", expected);
-    } else {
-        warn!("No checksum file found for {}", filename);
     }
-    Ok(())
+
+    // Combined manifest: SHA256SUMS / checksums.txt
+    for manifest in ["SHA256SUMS", "checksums.txt"] {
+        if let Some(a) = release.assets.iter().find(|a| a.name.eq_ignore_ascii_case(manifest)) {
+            if let Ok(text) = download_text(&a.browser_download_url, token).await {
+                let digest = digest_from_manifest(&text, asset_name);
+                if digest.is_some() {
+                    return Ok(digest);
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// Read a digest from a `<archive>.sha256` file sitting next to a local archive.
+/// This is the only verification available for `install --file` / `--url`, where
+/// there is no release to consult.
+fn local_sidecar_digest(archive_path: &Path) -> Option<String> {
+    let sidecar = PathBuf::from(format!("{}.sha256", archive_path.display()));
+    let text = std::fs::read_to_string(sidecar).ok()?;
+    digest_from_text(&text)
+}
+
+async fn download_text(url: &str, token: Option<&str>) -> Result<String> {
+    let mut req = minreq::get(url).with_header("User-Agent", "ObtainHub/3.0.0");
+    if let Some(token) = token {
+        req = req.with_header("Authorization", &format!("Bearer {}", token));
+    }
+    let resp = req.send()?;
+    Ok(resp.as_str()?.to_string())
+}
+
+/// A per-asset `.sha256` file holds either a bare digest or `digest  filename`.
+fn digest_from_text(text: &str) -> Option<String> {
+    text.split_whitespace().next().map(|s| s.to_ascii_lowercase())
+}
+
+/// A combined manifest is `digest␠␠filename` per line; find our asset's line.
+fn digest_from_manifest(text: &str, asset_name: &str) -> Option<String> {
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let digest = match parts.next() {
+            Some(d) if d.len() == 64 => d,
+            _ => continue,
+        };
+        // sha256sum marks binary mode with a leading '*', e.g. "abc123 *app.zip".
+        let name = parts.next().unwrap_or("").trim_start_matches('*');
+        // Exact filename only. Matching on the basename would let a "./dist/app.zip"
+        // entry answer for a top-level "app.zip" — a different file.
+        if name == asset_name {
+            return Some(digest.to_ascii_lowercase());
+        }
+    }
+    None
 }
 
 fn calculate_sha256(path: &Path) -> Result<String> {
@@ -359,7 +428,20 @@ async fn install_from_file(args: &InstallArgs, file_path: &str, config: &ConfigM
     
     // Verify checksum if enabled
     if config.get().verify_checksums {
-        verify_checksum(&asset_path, filename)?;
+        // No release object for --file / --url, so there is no published digest.
+        // A sidecar the user placed next to the archive is the only thing checkable.
+        if let Some(expected) = local_sidecar_digest(&asset_path) {
+            let actual = calculate_sha256(&asset_path)?;
+            if !expected.eq_ignore_ascii_case(&actual) {
+                return Err(anyhow::anyhow!(
+                    "Checksum mismatch for {}: expected {}, got {}",
+                    filename, expected, actual
+                ));
+            }
+            info!("Checksum verified for {}", filename);
+        } else if config.get().verify_checksums {
+            warn!("No checksum available for {} — installed unverified", filename);
+        }
     }
     
     // Extract asset
@@ -420,7 +502,20 @@ async fn install_from_url(args: &InstallArgs, url: &str, config: &ConfigManager,
     
     // Verify checksum if enabled
     if config.get().verify_checksums {
-        verify_checksum(&asset_path, filename)?;
+        // No release object for --file / --url, so there is no published digest.
+        // A sidecar the user placed next to the archive is the only thing checkable.
+        if let Some(expected) = local_sidecar_digest(&asset_path) {
+            let actual = calculate_sha256(&asset_path)?;
+            if !expected.eq_ignore_ascii_case(&actual) {
+                return Err(anyhow::anyhow!(
+                    "Checksum mismatch for {}: expected {}, got {}",
+                    filename, expected, actual
+                ));
+            }
+            info!("Checksum verified for {}", filename);
+        } else if config.get().verify_checksums {
+            warn!("No checksum available for {} — installed unverified", filename);
+        }
     }
     
     // Extract asset
@@ -538,5 +633,38 @@ mod tests {
         let dest = Path::new("/tmp/install");
         assert_eq!(safe_join(dest, "app/bin/tool.exe").unwrap(), dest.join("app/bin/tool.exe"));
         assert_eq!(safe_join(dest, "flat.exe").unwrap(), dest.join("flat.exe"));
+    }
+
+    #[test]
+    fn digest_from_sidecar_handles_both_forms() {
+        let bare = "A".repeat(64);
+        assert_eq!(digest_from_text(&bare).as_deref(), Some(bare.to_ascii_lowercase().as_str()));
+        // `<digest>  <filename>`, as produced by sha256sum
+        let with_name = format!("{}  app-1.2.3.tar.gz\n", "b".repeat(64));
+        assert_eq!(digest_from_text(&with_name), Some("b".repeat(64)));
+    }
+
+    #[test]
+    fn digest_from_manifest_matches_by_basename() {
+        let text = format!(
+            "{}  other.zip\n{}  ./dist/app.zip\n{}  app.zip\n",
+            "1".repeat(64),
+            "2".repeat(64),
+            "3".repeat(64)
+        );
+        // Exact match only: ./dist/app.zip is a different file from app.zip
+        assert_eq!(digest_from_manifest(&text, "app.zip"), Some("3".repeat(64)));
+        assert_eq!(digest_from_manifest(&text, "missing.zip"), None);
+        // Binary-mode marker '*' is stripped
+        let starred = format!("{} *app.zip\n", "4".repeat(64));
+        assert_eq!(digest_from_manifest(&starred, "app.zip"), Some("4".repeat(64)));
+    }
+
+    #[test]
+    fn digest_from_manifest_rejects_differently_nested_file() {
+        // A same-basename entry in a subdirectory is a different file and must not
+        // answer for the top-level asset.
+        let text = format!("{}  dist/app.zip\n", "5".repeat(64));
+        assert_eq!(digest_from_manifest(&text, "app.zip"), None);
     }
 }

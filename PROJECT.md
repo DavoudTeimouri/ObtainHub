@@ -221,7 +221,7 @@ split.
 | Area | State |
 |---|---|
 | `self-update` | **No signature verification.** Downloads and runs the asset. Highest-risk gap in the project. |
-| Update assets | `verify_checksums` is read but the check never fires — see below. |
+| Update assets | Checksum verification now works for published digests — see below. `update` still does not verify. |
 | Archive extraction | Zip-slip guarded in `install.rs` and `update.rs` (`safe_join` / inline equivalent). Tar uses `tar::unpack`, which sanitizes internally. |
 | GitHub token | Plaintext in config, not keyring. `reset.rs:24` claims to clear it from the keyring but prints "not implemented". |
 | Signing | Neither installer is Authenticode signed. |
@@ -243,19 +243,29 @@ Both now normalize the joined path through `components()` before comparing with
 starts with `dest`, so a naive `starts_with` check passes it. Covered by
 `safe_join_*` tests in `src/commands/install.rs`.
 
-### `verify_checksum` never verifies anything
+### Checksum verification
 
-`install.rs:244` builds the expected-checksum path with
-`path.with_extension("sha256")`, where `path` is the downloaded asset inside the
-newly created install directory. Nothing ever writes a `.sha256` file there, so
-the `if checksum_path.exists()` branch is unreachable and every install falls
-through to `warn!("No checksum file found")` and returns `Ok`.
+`verify_checksums` (config, default `true`) previously called `verify_checksum`,
+which looked for `<archive>.sha256` **inside the newly created install directory**.
+Nothing ever writes a file there, so the check was unreachable: every install fell
+through to `warn!("No checksum file found")` and returned `Ok`. The warning fired
+on every run, teaching users to ignore it, and `state.json` recorded
+`checksum: None`.
 
-`verify_checksums` defaults to `true`, so the warning fires on every install and
-users learn to ignore it.
+Now:
 
-Fix: fetch a checksum asset from the release (`SHA256SUMS`, `*.sha256`) over HTTP
-and compare against that, instead of looking for a local sidecar file.
+- **GitHub releases** (`install <owner/repo>`) — `fetch_published_checksum` looks
+  for a digest published alongside the asset: first a per-asset `<name>.sha256`,
+  then a combined `SHA256SUMS` / `checksums.txt`. Manifest lines are matched on the
+  **exact** filename; matching on the basename would let a `dist/app.zip` entry
+  answer for a top-level `app.zip`. No published digest is a warning, not a failure
+  — most repositories do not publish one.
+- **Local archives** (`install --file`, `install --url`) — there is no release to
+  consult, so `local_sidecar_digest` reads a `<archive>.sha256` the user placed
+  next to the archive. A mismatch aborts the install.
+
+Three tests cover the sidecar parser, the manifest parser, and the nested-filename
+rejection.
 
 ---
 
@@ -281,7 +291,7 @@ and compare against that, instead of looking for a local sidecar file.
 | # | Item | State |
 |---|---|---|
 | 1 | `update.rs` hardcoded install dir | **Done** — uses `config.install_dir` |
-| 2 | `update.rs` checksum TODO | Closed — but the real bug is in `install.rs`, see section 9 |
+| 2 | Checksum verification | **Done** in `install.rs`; `update.rs` still unverified |
 | 3 | `uninstall --purge` stub | **Done** — drops state metadata + group entries |
 | 4 | Shared download/extract module | Open — deliberately, see rule 10 |
 | 5 | Error messages | Partial — EPIPE panic in `completion` fixed |
@@ -307,7 +317,8 @@ Discovered by inspection, not in the plan:
 - MSI ↔ NSIS mutual refusal is dead code both directions — section 4.
 - NSIS uninstall leaves `HKLM\Software\ObtainHub` orphaned — section 5.
 - `keyring` dependency declared but never used; token stored in plaintext.
-- `verify_checksums` is read at `install.rs:113` but can never match — section 9.
+- `verify_checksums` could never match → **Fixed** in `install.rs`, see section 9.
+- `update` downloads and extracts with no checksum check at all.
 - `zip`/`tar` extraction does not guard against path traversal. → **Fixed** in
   `install.rs` + `update.rs`, see section 9.
 - `src/commands/reset.rs:41` binds `token_path` and never uses it.
