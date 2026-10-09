@@ -198,11 +198,21 @@ A command needs `&mut` only when it writes config.
 
 ### `check --all` semantics
 
-`src/commands/check.rs:127` walks
+`src/commands/check.rs` walks
 `HKLM` and `HKCU` × `KEY_WOW64_64KEY` and `KEY_WOW64_32KEY` under
 `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`, collects entries with a
-`DisplayName`, dedupes on `name|version`, and skips any name containing
-`ObtainHub`. Non-Windows builds return an empty list.
+`DisplayName`, and dedupes on `name|version`. Non-Windows builds return an empty
+list.
+
+Entries are then partitioned by `partition_gitHub_managed`. Only programs matching
+an entry in `state.json` are checked, because a `DisplayName` like
+`NVIDIA Corporation` is not an `owner/repo`: the GitHub releases API would 404 on
+every one of them, and the volume exhausts the unauthenticated rate limit after
+roughly 60 requests. Unmatched programs are counted and reported as skipped.
+ObtainHub itself is always skipped.
+
+Two tests in `src/commands/check.rs` cover the self-skip and the tracked/unmanaged
+split.
 
 ---
 

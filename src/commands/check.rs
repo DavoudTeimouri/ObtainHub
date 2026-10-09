@@ -32,7 +32,14 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
 
     // If --all flag is set, enumerate all installed software from Windows registry
     let installed = if args.all {
-        enumerate_all_installed_software()?
+        let all = enumerate_all_installed_software()?;
+        let tracked = state.list_installed();
+        let (matched, skipped) = partition_gitHub_managed(&all, &tracked);
+        println!("Scanned {} installed programs.", all.len());
+        if !skipped.is_empty() {
+            println!("  {} not managed by ObtainHub (no GitHub origin) — skipped.", skipped.len());
+        }
+        matched
     } else {
         state.list_installed().into_iter().cloned().collect()
     };
@@ -180,4 +187,88 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
 fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::InstalledRepo>> {
     // Not implemented on non-Windows
     Ok(Vec::new())
+}
+/// Split enumerated Windows programs into ones ObtainHub actually manages and ones
+/// it does not. Only entries present in `state.json` have a known GitHub origin —
+/// a `DisplayName` like "NVIDIA Corporation" is not an `owner/repo` and would 404
+/// on every lookup while exhausting the GitHub API rate limit.
+fn partition_gitHub_managed(
+    all: &[crate::core::state::InstalledRepo],
+    tracked: &[&crate::core::state::InstalledRepo],
+) -> (Vec<crate::core::state::InstalledRepo>, Vec<String>) {
+    let mut matched = Vec::new();
+    let mut skipped = Vec::new();
+
+    for entry in all {
+        let name = entry.repo.to_ascii_lowercase();
+
+        // ObtainingHub manages it.
+        if name.contains("obtainhub") {
+            continue;
+        }
+
+        // Tracked in state -> we know its owner/repo.
+        if let Some(tracked) = tracked.iter().find(|r| {
+            let n = r.repo.to_ascii_lowercase();
+            n == name || name.ends_with(&n) || n.ends_with(&name)
+        }) {
+            matched.push(crate::core::state::InstalledRepo {
+                repo: tracked.repo.clone(),
+                version: tracked.version.clone(),
+                install_path: entry.install_path.clone(),
+                installed_at: entry.installed_at,
+                updated_at: entry.updated_at,
+                checksum: tracked.checksum.clone(),
+                metadata: tracked.metadata.clone(),
+            });
+        } else {
+            skipped.push(entry.repo.clone());
+        }
+    }
+
+    (matched, skipped)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn entry(name: &str) -> crate::core::state::InstalledRepo {
+        crate::core::state::InstalledRepo {
+            repo: name.to_string(),
+            version: "1.0".to_string(),
+            install_path: std::path::PathBuf::from("/tmp"),
+            installed_at: Utc::now(),
+            updated_at: None,
+            checksum: None,
+            metadata: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn partition_skips_self_and_unmanaged() {
+        let tracked: Vec<crate::core::state::InstalledRepo> = Vec::new();
+        let all = vec![
+            entry("ObtainHub 3.0.1"),
+            entry("NVIDIA Corporation"),
+            entry("7-Zip"),
+        ];
+        let tracked_refs: Vec<&crate::core::state::InstalledRepo> = tracked.iter().collect();
+        let (matched, skipped) = partition_gitHub_managed(&all, &tracked_refs);
+        assert!(matched.is_empty(), "nothing should match an empty state");
+        assert_eq!(skipped.len(), 2, "NVIDIA + 7-Zip are not managed");
+        assert!(!skipped.contains(&"ObtainHub 3.0.1".to_string()), "self must not be listed as skipped");
+    }
+
+    #[test]
+    fn partition_matches_tracked_repo() {
+        let tracked = vec![entry("BurntSushi/ripgrep")];
+        let tracked_refs: Vec<&crate::core::state::InstalledRepo> = tracked.iter().collect();
+        let all = vec![entry("ripgrep"), entry("7-Zip")];
+        let (matched, skipped) = partition_gitHub_managed(&all, &tracked_refs);
+        assert_eq!(matched.len(), 1);
+        assert_eq!(matched[0].repo, "BurntSushi/ripgrep");
+        assert_eq!(skipped, vec!["7-Zip".to_string()]);
+    }
 }
