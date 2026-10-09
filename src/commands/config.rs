@@ -171,7 +171,9 @@ fn set_config_value(config: &mut ConfigManager, key: &str, value: &str) -> Resul
 fn get_config_value(config: &ConfigManager, key: &str) -> Result<Option<String>> {
     let cfg = config.get();
     let value = match key {
-        "github_token" => cfg.github_token.as_ref().map(|v| v.clone()),
+        // Never echo the token: this value lands in shell history, CI logs, and
+        // `ohub config list | tee`. `config auth` reports presence instead.
+        "github_token" => cfg.github_token.as_ref().map(|_| "[stored]".to_string()),
         "install_dir" => Some(cfg.install_dir.display().to_string()),
         "parallel_downloads" => Some(cfg.parallel_downloads.to_string()),
         "timeout_seconds" => Some(cfg.timeout_seconds.to_string()),

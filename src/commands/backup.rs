@@ -64,14 +64,22 @@ pub async fn execute(args: BackupArgs, config: &ConfigManager, state: &StateMana
         }
     }
     
-    // Create main backup zip
+    // Create main backup zip.
+    // Strip the GitHub token: a backup is an archive the user copies around, and
+    // config.toml carries the token in plaintext.
+    let mut scrubbed = config.get().clone();
+    let had_token = scrubbed.github_token.take().is_some();
+
     let backup_data = BackupData {
         version: 1,
         created_at: chrono::Utc::now(),
-        config: config.get().clone(),
+        config: scrubbed,
         installed_repos: installed.iter().cloned().cloned().collect(),
         repo_archives: repo_archives.clone(),
     };
+    if had_token {
+        println!("Note: GitHub token excluded from backup. Re-add it after restoring.");
+    }
     
     let json_data = serde_json::to_string_pretty(&backup_data)?;
     let json_path = std::env::temp_dir().join("backup_metadata.json");

@@ -1,6 +1,6 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::ResetArgs;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
 use std::io::Write;
@@ -19,13 +19,9 @@ pub async fn execute(args: ResetArgs, config: &mut ConfigManager, state: &mut St
         println!("Backup created successfully.");
     }
 
-    // Handle token
-    if args.move_token.is_some() || !args.keep_token {
-        // Clear token from keyring if not keeping
-        if !args.keep_token {
-            println!("Note: GitHub token removal from keyring not implemented in this version");
-        }
-    }
+    // Capture the token BEFORE the reset — config.reset() wipes github_token, so
+    // reading it afterwards (as this used to) always found nothing.
+    let existing_token = config.get().github_token.clone();
 
     // Reset config
     println!("Resetting configuration...");
@@ -37,10 +33,34 @@ pub async fn execute(args: ResetArgs, config: &mut ConfigManager, state: &mut St
     state.clear()?;
     println!("State cleared.");
 
-    // Handle token move if requested
-    if let Some(token_path) = args.move_token {
-        // This would require reading token before reset
-        println!("Note: Token move not implemented in this version");
+    // The token lives in config, not the keyring (keyring is declared but unwired),
+    // so the reset above already removed it. --keep-token means "put it back".
+    match (&existing_token, args.keep_token, &args.move_token) {
+        (Some(token), true, _) => {
+            config.get_mut().github_token = Some(token.clone());
+            config.save()?;
+            println!("GitHub token preserved.");
+        }
+        (Some(_), false, Some(path)) => {
+            let dest = PathBuf::from(path);
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&dest, existing_token.as_deref().unwrap_or_default())
+                .with_context(|| format!("Failed to write token to {}", dest.display()))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&dest, fs::Permissions::from_mode(0o600))?;
+            }
+            println!("GitHub token written to {}", dest.display());
+        }
+        (Some(_), false, None) => {
+            println!("GitHub token cleared.");
+        }
+        (None, _, _) => {
+            println!("No GitHub token stored.");
+        }
     }
 
     println!("\nReset complete.");
@@ -56,8 +76,11 @@ fn create_backup(path: &PathBuf, config: &ConfigManager, state: &StateManager) -
     let mut zip = zip::ZipWriter::new(file);
     let options = FileOptions::default().compression_method(CompressionMethod::Deflated);
 
-    // Backup config
-    let config_toml = toml::to_string_pretty(config.get())?;
+    // Backup config — strip the GitHub token. The backup archive is meant to be
+    // copied around, and config.toml holds the token in plaintext.
+    let mut scrubbed = config.get().clone();
+    scrubbed.github_token = None;
+    let config_toml = toml::to_string_pretty(&scrubbed)?;
     zip.start_file("config.toml", options)?;
     zip.write_all(config_toml.as_bytes())?;
 

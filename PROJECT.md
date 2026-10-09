@@ -224,7 +224,7 @@ split.
 
 | Update assets | Checksum verification now works for published digests — see below. `update` still does not verify. |
 | Archive extraction | Zip-slip guarded in `install.rs` and `update.rs` (`safe_join` / inline equivalent). Tar uses `tar::unpack`, which sanitizes internally. |
-| GitHub token | Plaintext in config, not keyring. `reset.rs:24` claims to clear it from the keyring but prints "not implemented". |
+| GitHub token | Plaintext in config, not keyring. No longer echoed by `config get`, and excluded from backups. |
 | Signing | Neither installer is Authenticode signed. |
 
 Anything above marked high-risk belongs on the fix list before the next feature.
@@ -243,6 +243,26 @@ Both now normalize the joined path through `components()` before comparing with
 `starts_with`. The normalization is required: a raw `dest/../x` still lexically
 starts with `dest`, so a naive `starts_with` check passes it. Covered by
 `safe_join_*` tests in `src/commands/install.rs`.
+
+### GitHub token handling
+
+The token is stored as plaintext `github_token` in `config.toml`. The `keyring`
+crate is a declared dependency but nothing calls it.
+
+What protects it now:
+
+- `config get github_token` returns `[stored]`, never the value. The old code
+  printed it verbatim, which leaks it into shell history, CI logs, and
+  `ohub config list | tee`.
+- `config auth` already reported presence only.
+- `backup` and `reset --backup` strip the token from the archive. A backup is a
+  file the user copies between machines; a plaintext token inside one is a
+  credential in transit.
+
+What does not: `config set github_token <value>` still takes the token as a
+command-line argument, so it lands in shell history and process listings. Wiring
+`keyring` for storage, and reading the token from stdin or the environment when
+setting it, is the real fix. Until then, treat `config.toml` as a secret file.
 
 ### Self-update verification
 
@@ -335,10 +355,10 @@ Discovered by inspection, not in the plan:
 
 - MSI ↔ NSIS mutual refusal is dead code both directions — section 4.
 - NSIS uninstall leaves `HKLM\Software\ObtainHub` orphaned — section 5.
-- `keyring` dependency declared but never used; token stored in plaintext.
+- `keyring` declared but unwired; token is plaintext. Echoing and backups fixed, see section 9. Setting via CLI arg still leaks to shell history.
 - `verify_checksums` could never match → **Fixed** in `install.rs`, see section 9.
 - `update` downloads and extracts with no checksum check at all.
 - `zip`/`tar` extraction does not guard against path traversal. → **Fixed** in
   `install.rs` + `update.rs`, see section 9.
-- `src/commands/reset.rs:41` binds `token_path` and never uses it.
-- `src/commands/backup.rs` backs up `config`, which can contain a GitHub token.
+
+- `backup` embedded the GitHub token in the archive → **Fixed**, see section 9.
