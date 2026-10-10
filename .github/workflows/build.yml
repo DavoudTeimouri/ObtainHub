@@ -163,21 +163,40 @@ jobs:
       - name: Install NSIS
         shell: powershell
         run: |
-          # Use winget for faster, more reliable NSIS install
-          winget install NSIS.NSIS --silent --accept-source-agreements --accept-package-agreements 2>&1
-          # Verify makensis is available
-          $makensisPath = Get-Command makensis.exe -ErrorAction SilentlyContinue
-          if (-not $makensisPath) {
-            $makensisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
-            if (-not (Test-Path $makensisPath)) {
-              $makensisPath = "C:\Program Files\NSIS\makensis.exe"
-            }
+          # Pinned to 3.11 on purpose. winget installed 3.13 for the v3.0.4/v3.0.5
+          # builds, and the resulting installer failed on Windows with
+          # "Installer corrupted: invalid opcode" before any dialog appeared.
+          # The generated file was structurally valid (MZ header + NullsoftInst
+          # magic + sizes matching CI), so the fault is in how 3.13 emitted it,
+          # not in the download.
+          $nsisUrl = "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11-setup.exe"
+          $installer = "$env:RUNNER_TEMP\nsis-setup.exe"
+          Invoke-WebRequest -Uri $nsisUrl -OutFile $installer -UseBasicParsing
+
+          # Fail closed on a tampered or truncated toolchain download.
+          $expected = "38D49F8FE09B1C332B01D0940E57B7258F4447733643273A01C59959AD9D3B0A"  # nsis-3.11-setup.exe sha256
+          $actual = (Get-FileHash -Path $installer -Algorithm SHA256).Hash
+          if ($actual -ne $expected) {
+            Write-Host "::error::NSIS installer hash mismatch: got $actual"
+            exit 1
+          }
+          Write-Host "NSIS installer sha256: $actual"
+
+          Start-Process -FilePath $installer -ArgumentList "/S" -Wait
+          $makensisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensisPath)) {
+            $makensisPath = "C:\Program Files\NSIS\makensis.exe"
           }
           if (-not (Test-Path $makensisPath)) {
             Write-Host "makensis NOT FOUND"
             exit 1
           }
-          Write-Host "Found makensis at: $makensisPath"
+          $version = & $makensisPath -VERSION 2>&1
+          Write-Host "Found makensis at: $makensisPath ($version)"
+          if ($version -notmatch "3\.11") {
+            Write-Host "::error::Expected NSIS 3.11, got: $version"
+            exit 1
+          }
           Add-Content -Path $env:GITHUB_ENV -Value "MAKENSIS_PATH=$makensisPath"
 
       - name: Build NSIS EXE installer
