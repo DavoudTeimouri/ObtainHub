@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.6-rc1] - 2026-10-10
+### Fixed
+- The NSIS installer failed on Windows with "Installer corrupted: invalid
+  opcode" before showing any dialog. v3.0.4 and v3.0.5 were both built with
+  NSIS 3.13, which winget installs by default. The published file was not
+  corrupt in transit: its SHA-256 matched the published `SHA256SUMS`, the MZ
+  header was intact, the `NullsoftInst` magic sat at the expected offset, and
+  the sizes matched what CI built. The fault was in how 3.13 emitted this
+  script.
+- The build toolchain was unpinned. `winget install NSIS.NSIS` resolves to
+  whatever "latest" is, so the NSIS version could change between runs with no
+  diff to review. NSIS is now pinned to 3.11, the installer download is
+  verified by SHA-256 before use, and the build asserts `makensis -VERSION`
+  reports 3.11 before running.
+
+### Changed
+- The release job now checks out the repository. It previously ran the
+  changelog extraction against an empty workspace, so
+  `awk: cannot open file 'CHANGELOG.md'` failed every release.
+
+### Notes
+- This is a release candidate. Install `ObtainHub-Setup.exe` and confirm it
+  completes before v3.0.6 is cut.
+
+## [v3.0.5] - 2026-10-09
+### No changes — this tag exists to verify the automated changelog extraction.
+
 ## [v3.0.4] - 2026-10-09
 ### Fixed
 - Checksum verification never verified anything. `verify_checksum` looked for a
@@ -26,20 +53,6 @@ All notable changes to this project will be documented in this file.
   self-update's verification satisfiable.
 - Tests for the digest parsers and the manifest filename match: 13 total.
 
-## [v3.0.2] - 2026-10-09
-### Fixed
-- Silent-install conflict handling never compiled. `StrCmp $Silent 1` was rejected
-  by makensis as an unknown variable, and the compiler silently ignored both
-  occurrences, so the auto-uninstall-MSI and upgrade-in-place branches were dropped
-  from the binary. Replaced with the `IfSilent` instruction.
-- Version numbers had drifted: the v3.0.1 tag was cut while `Cargo.toml`,
-  `installer/ObtainHub.nsi`, and `installer/setup.wxs` all still said 3.0.0, so the
-  published installers reported the wrong version. All four sites are now bumped
-  together and `PROJECT.md` §2 records the rule.
-
-### Changed
-- The NSIS installer builds with zero warnings (was 2).
-
 ## [v3.0.3] - 2026-10-09
 ### Fixed
 - Mutual refusal was dead code in both directions.
@@ -61,6 +74,20 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - NSIS installer now builds with zero warnings (was 2).
+
+## [v3.0.2] - 2026-10-09
+### Fixed
+- Silent-install conflict handling never compiled. `StrCmp $Silent 1` was rejected
+  by makensis as an unknown variable, and the compiler silently ignored both
+  occurrences, so the auto-uninstall-MSI and upgrade-in-place branches were dropped
+  from the binary. Replaced with the `IfSilent` instruction.
+- Version numbers had drifted: the v3.0.1 tag was cut while `Cargo.toml`,
+  `installer/ObtainHub.nsi`, and `installer/setup.wxs` all still said 3.0.0, so the
+  published installers reported the wrong version. All four sites are now bumped
+  together and `PROJECT.md` §2 records the rule.
+
+### Changed
+- The NSIS installer builds with zero warnings (was 2).
 
 ## [v3.0.1] - 2026-10-09
 ### Fixed
@@ -124,7 +151,3 @@ All notable changes to this project will be documented in this file.
 - Standalone ohub.exe from releases (only installers)
 - Python implementation and related scripts
 - ObtainHub-rs submodule/repository
-
-## [v3.0.5] - 2026-10-09
-### No changes — this tag exists to verify the automated changelog extraction.
-

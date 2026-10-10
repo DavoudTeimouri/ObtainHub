@@ -37,6 +37,12 @@ Before tagging:
 4. `makensis installer/ObtainHub.nsi` — zero warnings.
 5. CI green on all four jobs for the tagged commit.
 
+**Exception — prerelease tags and the MSI version.** MSI `Product Version` must be
+numeric (major.minor.build, each 0–255). `light.exe` rejects `3.0.6-rc1`. So for a
+tag `vX.Y.Z-rcN`, set the binary version to `X.Y.Z` and keep the `-rcN` only in the
+tag and the changelog heading. The installers then report `X.Y.Z` while the release
+is flagged prerelease by the workflow's `contains(github.ref_name, '-')` check.
+
 **One release at a time.** Fix everything, then cut one tag. Do not ship a
 sequence of patch releases each fixing the last one's bug.
 
