@@ -242,9 +242,12 @@ jobs:
         run: |
           # Each release body must be its own `## [vX.Y.Z]` section from
           # CHANGELOG.md — not GitHub's auto-generated commit list.
+          # index(), not regex: `/^## \[/` inside a single-quoted awk program is
+          # parsed as an escaped backslash followed by an unterminated character
+          # class, which is what failed the previous runs.
           SECTION="$(awk -v tag="${GITHUB_REF_NAME}" '
-            $0 ~ "^## \\[" tag "\\]" { found=1 }
-            found && /^## \\[/ && $0 !~ "^## \\[" tag "\\]" { exit }
+            index($0, "## [" tag "]") == 1 { found=1 }
+            found && index($0, "## [") == 1 && index($0, "## [" tag "]") != 1 { exit }
             found { print }
           ' CHANGELOG.md)"
           if [ -z "$SECTION" ]; then
