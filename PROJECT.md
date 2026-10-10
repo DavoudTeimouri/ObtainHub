@@ -3,7 +3,52 @@
 Living reference for present and future work. Update this file in the same commit
 as any change it describes. If code and this file disagree, the code is the bug.
 
-Last verified against: `main` @ `66ff6ef` + uncommitted `installer/setup.wxs` fix.
+Last verified against: `main` @ `7e8a852`.
+
+---
+
+## 0. Release rules (non-negotiable)
+
+**Every release gets its own changelog section.** The release body is that
+section verbatim — never GitHub's auto-generated commit list.
+
+```markdown
+## [vX.Y.Z] - YYYY-MM-DD
+### Fixed
+- what was broken, with the file:line or the error string
+
+### Added
+- new capability
+
+### Changed
+- behaviour that is different but not a fix
+```
+
+Sections go newest-first at the top. `v3.0.2` was shipped without one; that is
+the failure this rule exists to prevent.
+
+Before tagging:
+
+1. All four version sites bumped — `Cargo.toml`, `installer/ObtainHub.nsi`
+   `!define VERSION`, `installer/setup.wxs` (`Version` + `Comments`),
+   `CHANGELOG.md`.
+2. `## [vX.Y.Z]` section written and non-empty.
+3. `cargo test` green.
+4. `makensis installer/ObtainHub.nsi` — zero warnings.
+5. CI green on all four jobs for the tagged commit.
+
+**One release at a time.** Fix everything, then cut one tag. Do not ship a
+sequence of patch releases each fixing the last one's bug.
+
+**Tag as pre-release until tested.** Tag `vX.Y.Z-rc1` (the workflow sets
+`prerelease` from the `-` in the tag). It only becomes a full release after you
+have installed it and confirmed it works. Never cut a final tag on untested
+code.
+
+**Do not force-move a tag you have published.** Force-moving
+`v3.0.5` was needed while nothing had downloaded it. Once users have the
+artifact, a rewritten tag leaves them holding a binary that does not match the
+tag they fetched. Cut a new version instead.
 
 ---
 
