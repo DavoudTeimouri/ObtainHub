@@ -1,9 +1,13 @@
 # ObtainHub — Project Logic
 
-Living reference for present and future work. Update this file in the same commit
-as any change it describes. If code and this file disagree, the code is the bug.
+Living reference for present and future work, readable by any agent or model.
+Update this file in the same commit as any change it describes. If code and this
+file disagree, the code is the bug.
 
-Last verified against: `main` @ `7e8a852`.
+**Start at `AGENTS.md`** — it is the entry point and points here.
+This file also owns the **changelog template** (§0).
+
+Last verified against: `main` @ `674bb48` (v3.0.6-rc1).
 
 ---
 
@@ -413,3 +417,47 @@ Discovered by inspection, not in the plan:
   `install.rs` + `update.rs`, see section 9.
 
 - `backup` embedded the GitHub token in the archive → **Fixed**, see section 9.
+
+---
+
+## 12. Repository documentation map
+
+Keep these in sync with the code. Every claim below is verified against a
+specific file.
+
+| File | Owner of | Audience |
+|---|---|---|
+| `AGENTS.md` | Orientation, hard rules, traps, verification commands | Any agent or model, first contact |
+| `PROJECT.md` | Everything technical: release rules (§0), invariants, layout, security posture, plan status | Deep readers and future sessions |
+| `CHANGELOG.md` | One `## [vX.Y.Z]` section per release; template in §0 | Users reading releases |
+| `CONTRIBUTING.md` | Build/test/installer/release commands | New contributors |
+| `PLAN.md` | Numbered improvement plan with per-item status | Work tracking |
+| `.github/sort_changelog.py` | Sorts CHANGELOG sections newest-first by semver | Run before tagging |
+
+Rules for the documentation itself:
+
+- **PROJECT.md is the source of truth.** Everything else points at it rather
+  than duplicating it, so a change lands in one place.
+- **Every claim carries a file reference** (`installer/ObtainHub.nsi:253`). A
+  claim without one is a guess; verify it or drop it.
+- **Record what was wrong, not just what is right.** Sections 4, 5, and 9
+  document defects that are already fixed, because those are the ones a future
+  agent will otherwise reintroduce. A "Known defects" heading with nothing under
+  it means nobody checked.
+- **When you find a bug not in PLAN.md, add it** to §11 "Untracked from PLAN.md"
+  so it is not lost between sessions.
+- **Do not record a fix you have not run.** Verify with `cargo test`,
+  `cargo check`, `makensis`, or by downloading the release asset and checking it
+  against `SHA256SUMS`.
+
+### What has already been tried and failed
+
+Recorded so the next agent does not repeat it:
+
+| Attempt | Outcome |
+|---|---|
+| `winget install NSIS.NSIS` | Unpinned "latest"; installed 3.13, which produced the "invalid opcode" installer. Replaced with a pinned `choco install nsis --version=3.11`. |
+| Pinned SHA-256 on a SourceForge NSIS URL | SourceForge served the runner different bytes than a local fetch (`5C0C2972...` vs `38D49F8F...`), so the hash gate failed for a real reason. Replaced with Chocolatey, which verifies its own integrity. |
+| `awk -v tag=... '$0 ~ "^## \[" tag "\]"'` | awk parses `/^## \[/` as an escaped backslash plus an unterminated character class: "unterminated regexp". Two attempts that only fixed tag escaping did not help. Replaced with `index()`. |
+| MSI `Version="3.0.6-rc1"` | wixl accepted it, but real WiX v3 `light.exe` requires a numeric version. Prerelease suffix stays in the tag only. |
+| Delegating the `src/core/assets.rs` extraction to a subagent | Returned `INTERRUPTED` after writing files that did not compile (5 errors, unbalanced braces that dropped the `verify_checksums` gate). Reverted. Verify subagent output before accepting it. |
