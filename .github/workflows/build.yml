@@ -169,20 +169,14 @@ jobs:
           # The generated file was structurally valid (MZ header + NullsoftInst
           # magic + sizes matching CI), so the fault is in how 3.13 emitted it,
           # not in the download.
-          $nsisUrl = "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11-setup.exe"
-          $installer = "$env:RUNNER_TEMP\nsis-setup.exe"
-          Invoke-WebRequest -Uri $nsisUrl -OutFile $installer -UseBasicParsing
+          #
+          # Chocolatey, not a SourceForge URL: downloads.sourceforge.net returned
+          # different bytes to the runner than to a local fetch, so a pinned hash
+          # could not be established. Chocolatey verifies its own package
+          # integrity and is already used by the MSI job.
+          choco install nsis --version=3.11 -y --no-progress --allow-downgrade
+          if ($LASTEXITCODE -ne 0) { Write-Host "choco install failed: $LASTEXITCODE"; exit $LASTEXITCODE }
 
-          # Fail closed on a tampered or truncated toolchain download.
-          $expected = "38D49F8FE09B1C332B01D0940E57B7258F4447733643273A01C59959AD9D3B0A"  # nsis-3.11-setup.exe sha256
-          $actual = (Get-FileHash -Path $installer -Algorithm SHA256).Hash
-          if ($actual -ne $expected) {
-            Write-Host "::error::NSIS installer hash mismatch: got $actual"
-            exit 1
-          }
-          Write-Host "NSIS installer sha256: $actual"
-
-          Start-Process -FilePath $installer -ArgumentList "/S" -Wait
           $makensisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
           if (-not (Test-Path $makensisPath)) {
             $makensisPath = "C:\Program Files\NSIS\makensis.exe"
@@ -191,8 +185,10 @@ jobs:
             Write-Host "makensis NOT FOUND"
             exit 1
           }
-          $version = & $makensisPath -VERSION 2>&1
-          Write-Host "Found makensis at: $makensisPath ($version)"
+
+          # Fail the build if the pin silently drifted.
+          $version = (& $makensisPath -VERSION 2>&1) -join ""
+          Write-Host "makensis at: $makensisPath (version $version)"
           if ($version -notmatch "3\.11") {
             Write-Host "::error::Expected NSIS 3.11, got: $version"
             exit 1
