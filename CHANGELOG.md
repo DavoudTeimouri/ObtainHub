@@ -151,3 +151,4 @@ All notable changes to this project will be documented in this file.
 - Standalone ohub.exe from releases (only installers)
 - Python implementation and related scripts
 - ObtainHub-rs submodule/repository
+## [v3.0.7-rc2] - 2026-10-11\n### Fixed\n- NSIS installer binary path now uses relative 'ohub.exe' to ensure the binary is correctly picked up from installer/ directory.
