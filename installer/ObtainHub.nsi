@@ -249,7 +249,7 @@ FunctionEnd
 ; ---------- Install section ----------
 Section "MainSection" SEC01
   SetOutPath "$INSTDIR"
-  File "/oname=$INSTDIR\\${APP_EXE}" "$EXEDIR\\${APP_EXE}"
+  File "/oname=\$INSTDIR\\\\${APP_EXE}" "ohub.exe"
   WriteUninstaller "$INSTDIR\\uninstall.exe"
 
   ; Registry under shared GUID (same as MSI)
