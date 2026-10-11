@@ -27,40 +27,41 @@ struct SearchResponse {
 
 pub async fn execute(args: SearchArgs, config: &ConfigManager, _state: &StateManager, format: OutputFormat) -> Result<()> {
     info!("Searching for: {}", args.query);
-    
+
     let token = config.get().github_token.as_deref();
-    
+
     let mut url = format!(
-        "https://api.github.com/search/repositories?q={}&per_page={}&sort={}&order=desc",
+        "https://api.github.com/search/repositories?q={}&per_page={}&page={}&sort={}&order=desc",
         urlencoding::encode(&args.query),
-        args.limit.min(100),
+        args.per_page.min(100),
+        args.page,
         if args.sort_stars { "stars" } else { "best-match" }
     );
-    
+
     if args.active_only {
         let year_ago = chrono::Utc::now() - chrono::Duration::days(365);
         url.push_str(&format!("+pushed:>={}", year_ago.format("%Y-%m-%d")));
     }
-    
+
     if let Some(lang) = &args.language {
         url.push_str(&format!("+language:{}", urlencoding::encode(lang)));
     }
-    
+
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
         req = req.with_header("Authorization", &format!("Bearer {}", token));
     }
-    
+
     let resp: SearchResponse = req.with_timeout(config.get().timeout_seconds as u64).send()?.json()?;
-    
+
     let mut results: Vec<_> = resp.items.into_iter()
         .filter(|r| r.stargazers_count >= args.min_stars)
         .collect();
-    
+
     if args.case_insensitive {
         // Already handled by GitHub API
     }
-    
+
     // Output based on format
     match format {
         OutputFormat::Json => {
@@ -73,7 +74,7 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, _state: &StateMan
             print_table(&results);
         }
     }
-    
+
     Ok(())
 }
 

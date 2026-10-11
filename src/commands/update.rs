@@ -3,11 +3,24 @@ use crate::cli::UpdateArgs;
 use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use std::path::Path;
+use tracing::{info, warn};
+
+use crate::commands::install::{fetch_published_checksum, calculate_sha256, GitHubRelease as InstallGitHubRelease, GitHubAsset as InstallGitHubAsset};
+use sha2::{Digest, Sha256};
+
+fn calculate_sha256_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GitHubRelease {
     tag_name: String,
+    name: Option<String>,
+    prerelease: bool,
+    draft: bool,
     assets: Vec<GitHubAsset>,
     zipball_url: String,
     tarball_url: String,
@@ -136,35 +149,60 @@ async fn install_release(
 ) -> Result<()> {
     // Find suitable asset (prefer zip, then tar.gz, then tar.xz)
     let asset = select_asset(&release.assets)?;
-    
+
     println!("  Downloading {}...", asset.name);
-    
+
     // Download with progress
     let download_url = &asset.browser_download_url;
     let mut req = minreq::get(download_url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
         req = req.with_header("Authorization", &format!("Bearer {}", token));
     }
-    
+
     let response = req.send()?;
     let bytes = response.as_bytes();
-    
+
     // Verify checksum if available
-    // ponytail: no checksum source exists in GitHub release JSON — trust-on-first-use
-    // upgrade path: verify against a release-published SHA256SUMS asset when repos provide one
+    let install_release = &InstallGitHubRelease {
+        tag_name: release.tag_name.clone(),
+        name: release.name.clone(),
+        prerelease: release.prerelease,
+        draft: release.draft,
+        assets: release.assets.iter().map(|a| InstallGitHubAsset {
+            name: a.name.clone(),
+            browser_download_url: a.browser_download_url.clone(),
+            size: a.size,
+            content_type: a.content_type.clone(),
+        }).collect(),
+        zipball_url: release.zipball_url.clone(),
+        tarball_url: release.tarball_url.clone(),
+    };
     
+    if let Some(expected) = fetch_published_checksum(install_release, &asset.name, token).await? {
+        let actual = calculate_sha256_bytes(bytes);
+        if !expected.eq_ignore_ascii_case(&actual) {
+            return Err(anyhow::anyhow!(
+                "Checksum mismatch for {}: expected {}, got {}",
+                asset.name, expected, actual
+            ));
+        }
+        info!("Checksum verified for {}", asset.name);
+    } else if config.get().verify_checksums {
+        warn!("No published checksum for {} — skipping verification", asset.name);
+    }
+
     // Determine install path (config-driven, not hardcoded)
     let install_dir = config.get().install_dir.join(repo);
-    
+
     // Clean existing if force
     if force && install_dir.exists() {
         std::fs::remove_dir_all(&install_dir)?;
     }
-    
+
     // Extract
     std::fs::create_dir_all(&install_dir)?;
     extract_archive(&asset.name, &bytes, &install_dir)?;
-    
+
     // Update state
     let repo_entry = crate::core::state::InstalledRepo {
         repo: repo.to_string(),
@@ -175,10 +213,10 @@ async fn install_release(
         checksum: None,
         metadata: serde_json::Value::Null,
     };
-    
+
     state.add_installed(repo_entry);
     state.save()?;
-    
+
     Ok(())
 }
 

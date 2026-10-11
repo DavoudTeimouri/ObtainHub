@@ -17,22 +17,22 @@ use tempfile;
 use std::io::{BufReader, BufWriter, Write};
 
 #[derive(Deserialize, Serialize, Debug)]
-struct GitHubRelease {
-    tag_name: String,
-    name: Option<String>,
-    prerelease: bool,
-    draft: bool,
-    assets: Vec<GitHubAsset>,
-    zipball_url: String,
-    tarball_url: String,
+pub struct GitHubRelease {
+    pub tag_name: String,
+    pub name: Option<String>,
+    pub prerelease: bool,
+    pub draft: bool,
+    pub assets: Vec<GitHubAsset>,
+    pub zipball_url: String,
+    pub tarball_url: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-    size: u64,
-    content_type: Option<String>,
+pub struct GitHubAsset {
+    pub name: String,
+    pub browser_download_url: String,
+    pub size: u64,
+    pub content_type: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -256,7 +256,7 @@ async fn download_with_progress(url: &str, path: &Path, token: Option<&str>, tim
 /// Covers the two conventions in wide use: a per-asset `<name>.sha256` and a
 /// combined `SHA256SUMS` / `checksums.txt` manifest. Returns None when the
 /// release publishes no digest, which is common and not itself an error.
-async fn fetch_published_checksum(
+pub async fn fetch_published_checksum(
     release: &GitHubRelease,
     asset_name: &str,
     token: Option<&str>,
@@ -326,7 +326,7 @@ fn digest_from_manifest(text: &str, asset_name: &str) -> Option<String> {
     None
 }
 
-fn calculate_sha256(path: &Path) -> Result<String> {
+pub fn calculate_sha256(path: &Path) -> Result<String> {
     let mut file = fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0; 8192];

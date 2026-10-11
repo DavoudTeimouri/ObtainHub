@@ -115,38 +115,46 @@ pub struct SearchArgs {
     /// Search query
     #[arg(value_name = "QUERY")]
     pub query: String,
-    
+
     /// Minimum stars filter
     #[arg(long, default_value = "0")]
     pub min_stars: u32,
-    
+
     /// Only show actively maintained repos (updated within 1 year)
     #[arg(long)]
     pub active_only: bool,
-    
+
     /// Include archived/inactive repos (default: true when --active-only not used)
     #[arg(long, conflicts_with = "active_only")]
     pub include_inactive: bool,
-    
+
     /// Sort by stars (default: best match)
     #[arg(long)]
     pub sort_stars: bool,
-    
+
     /// Maximum results
     #[arg(long, default_value = "20")]
     pub limit: usize,
-    
+
     /// Language filter
     #[arg(long)]
     pub language: Option<String>,
-    
+
     /// Case-insensitive search
     #[arg(long)]
     pub case_insensitive: bool,
-    
+
     /// Dry run - show query without executing
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Page number for pagination (1-indexed)
+    #[arg(long, default_value = "1")]
+    pub page: usize,
+
+    /// Results per page (max 100)
+    #[arg(long, default_value = "30")]
+    pub per_page: usize,
 }
 
 #[derive(Args, Debug)]
