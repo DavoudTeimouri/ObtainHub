@@ -151,4 +151,29 @@ All notable changes to this project will be documented in this file.
 - Standalone ohub.exe from releases (only installers)
 - Python implementation and related scripts
 - ObtainHub-rs submodule/repository
-## [v3.0.7-rc2] - 2026-10-11\n### Fixed\n- NSIS installer binary path now uses relative 'ohub.exe' to ensure the binary is correctly picked up from installer/ directory.
+## [v3.0.7-rc2] - 2026-10-11
+### Fixed
+- NSIS installer binary path now uses relative 'ohub.exe' to ensure the binary is correctly picked up from installer/ directory
+- Checksum verification now works in `update` command by fetching published SHA256SUMS/checksums.txt from release assets
+- Search command now supports pagination (`--page`, `--per-page`) and per-repo timeout configuration
+- Architecture selection now consistent across install/update commands (Plan #7)
+
+### Added
+- Public `fetch_published_checksum` and `calculate_sha256` functions in install module for cross-command reuse
+- GitHub API pagination support in search command (respects GitHub's 100 results/page limit)
+- Config-driven install directory now properly used in update command
+- Shared download/verify/extract utilities in `src/core/assets.rs` (Plan #4)
+- Config validation with upper bounds and absolute path normalization (Plan #8)
+- Tests for config validation (15 tests total now)
+- Error handling improvements with better context (Plan #5)
+- TUI in-app help screen with key bindings (Plan #9)
+- Rollback support: `previous_version` and `previous_install_path` stored in state (Plan #15)
+- Network bandwidth throttling for downloads via `download_bandwidth_limit` config (Plan #16)
+- New `ohub rollback <repo>` command to revert to previous version (Plan #15)
+- Self-update signature verification with Ed25519 (Plan #11)
+- `--skip-signature` flag for self-update (emergency bypass)
+- Dependency tracking for installed apps (Plan #13)
+  - `dependencies` field in state for declaring repo dependencies
+  - Auto-update of dependencies during `ohub update` (with `--skip-deps` to opt out)
+  - Uninstall protects dependencies with `--force` override
+  - `--dependencies` flag for `ohub install` to declare deps at install time

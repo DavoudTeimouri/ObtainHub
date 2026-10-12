@@ -1,6 +1,6 @@
 [package]
 name = "obtainhub"
-version = "3.0.7-rc2"
+version = "3.0.8-rc1"
 edition = "2021"
 license = "MIT"
 description = "ObtainHub - GitHub repository search and management CLI"
@@ -84,11 +84,16 @@ thiserror = "1.0"
 
 # Self-update
 # self_update = { version = "0.44", default-features = false, features = ["ureq", "rustls", "archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate"] }
+ed25519-dalek = "2"
+ed25519-compact = "2.6"
+# Signature verification for self-update
+base64 = "0.22"
 
 # Utilities
 humantime = "2.1"
 indicatif = "0.17"
 regex = "1.10"
+async-trait = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
