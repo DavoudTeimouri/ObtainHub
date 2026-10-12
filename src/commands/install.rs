@@ -1,10 +1,11 @@
-use crate::core::{ConfigManager, StateManager};
+use crate::core::{ConfigManager, StateManager, assets::{download_verify_extract, calculate_sha256_bytes}, registries::{create_registry, RegistryRelease, RegistryAsset}};
 use crate::cli::InstallArgs;
 use anyhow::{Result, Context};
 use minreq;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::fs;
+use std::collections::HashMap;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 use flate2::read::GzDecoder;
@@ -54,7 +55,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     if let Some(url) = &args.url {
         return install_from_url(&args, url, config, state_manager).await;
     }
-
+    
     // Dry run - show what would be installed
     if args.dry_run {
         println!("DRY RUN: Would install {}", args.repo);
@@ -69,6 +70,8 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
         return Ok(());
     }
     
+    // Determine registry to use
+    // First, check if there's a manifest source matching this repo
     let token = config.get().github_token.as_deref();
     let install_dir = config.get().install_dir.join(&args.repo);
     
@@ -83,15 +86,19 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
         }
     }
     
-    // Get repo info
-    let repo_info = fetch_repo_info(&args.repo, token).await?;
+    // Find appropriate manifest source
+    let source = find_matching_source(&args.repo, config).await?;
+    let registry = create_registry(&source);
+    
+    // Determine package name (could be different from repo name for some registries)
+    let package_name = source.package_name.as_deref().unwrap_or(&args.repo);
     
     // Determine version to install
     let (release, version) = if let Some(version) = &args.version {
-        let release = fetch_release_by_tag(&args.repo, version, token).await?;
+        let release = registry.fetch_release_by_tag(package_name, version, token).await?;
         (release, version.clone())
     } else {
-        let release = fetch_latest_release(&args.repo, token).await?;
+        let release = registry.fetch_latest_release(package_name, token).await?;
         let version = release.tag_name.clone();
         (release, version)
     };
@@ -99,62 +106,84 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     info!("Installing {}@{}", args.repo, version);
     
     // Find appropriate asset
-    let asset = select_asset(&release)?;
+    let asset = registry.select_asset(&release)?;
     debug!("Selected asset: {} ({} bytes)", asset.name, asset.size);
     
     // Create install directory
     fs::create_dir_all(&install_dir)?;
     
-    // Download asset with progress
+    // Download, verify, and extract using registry
     let asset_path = install_dir.join(&asset.name);
-    download_with_progress(&asset.browser_download_url, &asset_path, token, config.get().timeout_seconds).await?;
+    registry.download_asset(&asset, &asset_path, token, config).await?;
     
-    // Verify checksum against the release's published digest, when one exists
+    // Verify checksum if enabled
     if config.get().verify_checksums {
-        if let Some(expected) = fetch_published_checksum(&release, &asset.name, token).await? {
-            let actual = calculate_sha256(&asset_path)?;
-            if !expected.eq_ignore_ascii_case(&actual) {
-                return Err(anyhow::anyhow!(
-                    "Checksum mismatch for {}: expected {}, got {}",
-                    asset.name, expected, actual
-                ));
+        // TODO: Implement checksum verification for non-GitHub registries
+        if source.registry_type == "github" {
+            if let Some(expected) = crate::commands::install::fetch_published_checksum(
+                &crate::commands::install::GitHubRelease {
+                    tag_name: release.tag_name.clone(),
+                    name: release.name.clone(),
+                    prerelease: release.prerelease,
+                    draft: release.draft,
+                    assets: release.assets.iter().map(|a| crate::commands::install::GitHubAsset {
+                        name: a.name.clone(),
+                        browser_download_url: a.browser_download_url.clone(),
+                        size: a.size,
+                        content_type: a.content_type.clone(),
+                    }).collect(),
+                    zipball_url: release.zipball_url.clone(),
+                    tarball_url: release.tarball_url.clone(),
+                },
+                &asset.name,
+                token,
+            ).await? {
+                let actual = crate::core::assets::calculate_sha256_bytes(&std::fs::read(&asset_path)?);
+                if !expected.eq_ignore_ascii_case(&actual) {
+                    return Err(anyhow::anyhow!(
+                        "Checksum mismatch for {}: expected {}, got {}",
+                        asset.name, expected, actual
+                    ));
+                }
+                info!("Checksum verified for {}", asset.name);
+            } else if config.get().verify_checksums {
+                warn!("No published checksum for {} — skipping verification", asset.name);
             }
-            info!("Checksum verified for {}", asset.name);
-        } else {
-            warn!("No published checksum for {} — skipping verification", asset.name);
         }
     }
     
-    // Extract asset
-    let extracted_path = extract_asset(&asset_path, &install_dir, &asset.name)?;
+    // Extract
+    crate::core::assets::extract_archive(&asset.name, &std::fs::read(&asset_path)?, &install_dir)?;
     
-    // Move contents to install_dir if extracted to subdirectory
-    let final_path = finalize_install(&extracted_path, &install_dir)?;
-
     // Create installed repo record
     let version_clone = version.clone();
     let installed_repo = crate::core::state::InstalledRepo {
         repo: args.repo.clone(),
         version: version_clone,
-        install_path: final_path.clone(),
+        install_path: install_dir.clone(),
         installed_at: chrono::Utc::now(),
         updated_at: None,
-        checksum: Some(calculate_sha256(&asset_path)?),
+        checksum: Some(crate::core::assets::calculate_sha256_bytes(&std::fs::read(&asset_path)?)),
         metadata: serde_json::json!({
-            "repo_info": repo_info,
+            "source": source.registry_type,
+            "source_name": source.name,
             "asset_name": asset.name,
             "asset_size": asset.size,
         }),
+        previous_version: None,
+        previous_install_path: None,
+        dependencies: args.dependencies.clone(),
+        is_dependency: false,
     };
-
+    
     // Update state
     state_manager.add_installed(installed_repo);
     state_manager.save()?;
     
     // Cleanup asset file
-    fs::remove_file(&asset_path)?;
+    let _ = fs::remove_file(&asset_path);
     
-    println!("Successfully installed {}@{} to {}", args.repo, version, final_path.display());
+    println!("Successfully installed {}@{} to {}", args.repo, version, install_dir.display());
     Ok(())
 }
 
@@ -188,7 +217,8 @@ async fn fetch_release_by_tag(repo: &str, tag: &str, token: Option<&str>) -> Res
     Ok(resp)
 }
 
-fn select_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
+/// Select the best asset for the current platform
+pub fn select_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
     // Priority: platform-specific asset > generic archive > zipball
     let target_os = std::env::consts::OS;
     let target_arch = std::env::consts::ARCH;
@@ -204,7 +234,7 @@ fn select_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
             }
         }
     }
-    
+
     // Fallback: any archive asset
     for asset in &release.assets {
         let name = asset.name.to_lowercase();
@@ -212,7 +242,7 @@ fn select_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
             return Ok(asset.clone());
         }
     }
-    
+
     // Last resort: use zipball
     let zipball_asset = GitHubAsset {
         name: format!("{}.zip", release.tag_name),
@@ -223,33 +253,13 @@ fn select_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
     Ok(zipball_asset)
 }
 
-async fn download_with_progress(url: &str, path: &Path, token: Option<&str>, timeout_secs: u64) -> Result<()> {
-    let mut req = minreq::get(url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
-    }
-    
-    let resp = req.with_timeout(timeout_secs).send()?;
-    let total_size = resp.headers.get("content-length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-    
-    let pb = ProgressBar::new(total_size);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-        .unwrap()
-        .progress_chars("#>-"));
-    
-    let mut file = fs::File::create(path)?;
-    let mut downloaded = 0u64;
-    let body = resp.as_bytes();
-    
-    for chunk in body.chunks(8192) {
-        std::io::Write::write_all(&mut file, chunk)?;
-        downloaded += chunk.len() as u64;
-        pb.set_position(downloaded);
-    }
-    
-    pb.finish_with_message("Download complete");
-    Ok(())
+/// Read a digest from a `<archive>.sha256` file sitting next to a local archive.
+/// This is the only verification available for `install --file` / `--url`, where
+/// there is no release to consult.
+fn local_sidecar_digest(archive_path: &Path) -> Option<String> {
+    let sidecar = PathBuf::from(format!("{}.sha256", archive_path.display()));
+    let text = std::fs::read_to_string(sidecar).ok()?;
+    digest_from_text(&text)
 }
 
 /// Look for a published digest for `asset_name` among the release's other assets.
@@ -284,13 +294,33 @@ pub async fn fetch_published_checksum(
     Ok(None)
 }
 
-/// Read a digest from a `<archive>.sha256` file sitting next to a local archive.
-/// This is the only verification available for `install --file` / `--url`, where
-/// there is no release to consult.
-fn local_sidecar_digest(archive_path: &Path) -> Option<String> {
-    let sidecar = PathBuf::from(format!("{}.sha256", archive_path.display()));
-    let text = std::fs::read_to_string(sidecar).ok()?;
-    digest_from_text(&text)
+async fn download_with_progress(url: &str, path: &Path, token: Option<&str>, timeout_secs: u64) -> Result<()> {
+    let mut req = minreq::get(url).with_header("User-Agent", "ObtainHub/3.0.0");
+    if let Some(token) = token {
+        req = req.with_header("Authorization", &format!("Bearer {}", token));
+    }
+    
+    let resp = req.with_timeout(timeout_secs).send()?;
+    let total_size = resp.headers.get("content-length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+        .unwrap()
+        .progress_chars("#>-"));
+    
+    let mut file = fs::File::create(path)?;
+    let mut downloaded = 0u64;
+    let body = resp.as_bytes();
+    
+    for chunk in body.chunks(8192) {
+        std::io::Write::write_all(&mut file, chunk)?;
+        downloaded += chunk.len() as u64;
+        pb.set_position(downloaded);
+    }
+    
+    pb.finish_with_message("Download complete");
+    Ok(())
 }
 
 async fn download_text(url: &str, token: Option<&str>) -> Result<String> {
@@ -463,6 +493,10 @@ async fn install_from_file(args: &InstallArgs, file_path: &str, config: &ConfigM
             "file_path": file_path,
             "asset_name": filename,
         }),
+        previous_version: None,
+        previous_install_path: None,
+        dependencies: args.dependencies.clone(),
+        is_dependency: false,
     };
     
     // Update state
@@ -537,6 +571,10 @@ async fn install_from_url(args: &InstallArgs, url: &str, config: &ConfigManager,
             "url": url,
             "asset_name": filename,
         }),
+        previous_version: None,
+        previous_install_path: None,
+        dependencies: args.dependencies.clone(),
+        is_dependency: false,
     };
     
     // Update state
@@ -667,4 +705,40 @@ mod tests {
         let text = format!("{}  dist/app.zip\n", "5".repeat(64));
         assert_eq!(digest_from_manifest(&text, "app.zip"), None);
     }
+}
+
+/// Find a manifest source that matches the given repo name
+async fn find_matching_source(
+    repo: &str,
+    config: &ConfigManager,
+) -> Result<crate::core::config::ManifestSource> {
+    // First, try exact match on name or URL
+    for source in &config.get().manifest_sources {
+        if !source.enabled {
+            continue;
+        }
+        if source.name == repo || source.url.contains(repo) {
+            return Ok(source.clone());
+        }
+        // Check if package_name matches
+        if let Some(pkg) = &source.package_name {
+            if pkg == repo {
+                return Ok(source.clone());
+            }
+        }
+    }
+    
+    // Default to GitHub source
+    Ok(crate::core::config::ManifestSource {
+        name: "github".to_string(),
+        url: "https://api.github.com".to_string(),
+        enabled: true,
+        headers: HashMap::new(),
+        src_type: "github".to_string(),
+        hooks: HashMap::new(),
+        priority: None,
+        auto_sync: false,
+        registry_type: "github".to_string(),
+        package_name: Some(repo.to_string()),
+    })
 }

@@ -16,6 +16,24 @@ pub async fn execute(args: UninstallArgs, config: &mut ConfigManager, state: &mu
         }
     };
     
+    // Check if this repo is a dependency of another repo
+    // Clone the list to avoid borrowing issues
+    let all_installed: Vec<_> = state.list_installed().into_iter().cloned().collect();
+    let dependents: Vec<_> = all_installed
+        .iter()
+        .filter(|r| r.dependencies.contains(&args.repo))
+        .cloned()
+        .collect();
+    
+    if !dependents.is_empty() && !args.force {
+        println!("Warning: {} is a dependency of the following repos:", args.repo);
+        for dep in &dependents {
+            println!("  {}", dep.repo);
+        }
+        println!("Use --force to uninstall anyway (may break dependents).");
+        return Ok(());
+    }
+    
     // Confirmation unless --yes
     if !args.yes {
         println!("About to uninstall {}@{} from {}", args.repo, entry.version, entry.install_path.display());
@@ -41,6 +59,20 @@ pub async fn execute(args: UninstallArgs, config: &mut ConfigManager, state: &mu
     
     // Remove from state
     state.remove_installed(&args.repo);
+    state.save()?;
+    
+    // Update other repos that had this as dependency
+    // Get fresh list after removal
+    let mut all_installed: Vec<_> = state.list_installed().into_iter().cloned().collect();
+    for repo in &mut all_installed {
+        if repo.dependencies.contains(&args.repo) {
+            repo.dependencies.retain(|d| d != &args.repo);
+        }
+    }
+    // Re-add all to update dependencies
+    for repo in all_installed {
+        state.add_installed(repo);
+    }
     state.save()?;
     
     if args.purge {

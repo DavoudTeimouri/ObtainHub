@@ -36,6 +36,10 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
                 updated_at: None,
                 checksum: None,
                 metadata: serde_json::Value::Null,
+                previous_version: None,
+                previous_install_path: None,
+                dependencies: Vec::new(),
+                is_dependency: false,
             };
             
             state.add_installed(repo);

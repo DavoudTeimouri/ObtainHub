@@ -22,7 +22,7 @@ pub async fn execute(args: SourceArgs, config: &mut ConfigManager, _state: &Stat
                 }
             }
         }
-        SourceAction::Add { name, url, src_type, pre_install, post_install, pre_uninstall, post_uninstall, priority, enabled, auto_sync } => {
+        SourceAction::Add { name, url, src_type, registry_type, package_name, pre_install, post_install, pre_uninstall, post_uninstall, priority, enabled, auto_sync } => {
             // Validate the source
             let api_url = if url.contains("/releases") && url.contains("api.github.com") {
                 url.clone()
@@ -75,6 +75,8 @@ pub async fn execute(args: SourceArgs, config: &mut ConfigManager, _state: &Stat
                 hooks,
                 priority,
                 auto_sync,
+                registry_type,
+                package_name,
             };
             let src_type = src.src_type.clone();
             config_data.manifest_sources.push(src);

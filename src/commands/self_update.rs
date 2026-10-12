@@ -8,9 +8,17 @@ use std::fs;
 use std::path::Path;
 use tracing::info;
 
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_compact::PublicKey;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+
 const REPO_OWNER: &str = "DavoudTeimouri";
 const REPO_NAME: &str = "ObtainHub";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+// Public key for verifying release signatures (base64 encoded Ed25519 public key)
+// This should be set at build time from a secure source
+static RELEASE_PUBLIC_KEY_B64: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &StateManager) -> Result<()> {
     info!("Checking for self-update");
@@ -118,6 +126,29 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
                 asset_name
             );
         }
+    }
+
+    // Verify Ed25519 signature if available
+    let sig_asset_name = format!("{}.sig", asset_name);
+    if let Some(sig_asset) = assets.iter().find(|a| a["name"].as_str() == Some(&sig_asset_name)) {
+        if let Some(sig_url) = sig_asset["browser_download_url"].as_str() {
+            if !args.quiet {
+                println!("Verifying signature...");
+            }
+            if let Err(e) = verify_signature(sig_url, &bytes).await {
+                let _ = fs::remove_file(&download_path);
+                anyhow::bail!("Signature verification failed: {}", e);
+            }
+            if !args.quiet {
+                println!("Signature verified.");
+            }
+        }
+    } else if !args.skip_signature {
+        let _ = fs::remove_file(&download_path);
+        anyhow::bail!(
+            "Refusing to self-update: {} publishes no signature (.sig), so authenticity cannot be verified. Use --skip-signature to bypass.",
+            asset_name
+        );
     }
 
     if !args.quiet {
@@ -289,6 +320,47 @@ fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hex::encode(hasher.finalize())
+}
+
+async fn verify_signature(sig_url: &str, data: &[u8]) -> Result<()> {
+    let mut req = minreq::get(sig_url).with_header("User-Agent", "ohub");
+    let resp = req.send().context("Failed to download signature")?;
+    let sig_b64 = resp.as_str()?.trim();
+    
+    let sig_bytes = BASE64_STANDARD.decode(sig_b64)
+        .context("Failed to decode base64 signature")?;
+    
+    if sig_bytes.len() != 64 {
+        anyhow::bail!("Invalid signature length: expected 64 bytes, got {}", sig_bytes.len());
+    }
+    
+    // Get public key from OnceLock
+    let public_key_b64 = RELEASE_PUBLIC_KEY_B64.get_or_init(|| {
+        std::env::var("RELEASE_PUBLIC_KEY_B64").unwrap_or_default()
+    });
+    
+    let public_key_bytes = BASE64_STANDARD.decode(public_key_b64)
+        .context("Failed to decode public key")?;
+    
+    if public_key_bytes.len() != 32 {
+        anyhow::bail!("Invalid public key length: expected 32 bytes, got {}", public_key_bytes.len());
+    }
+    
+    let public_key_array: [u8; 32] = public_key_bytes.try_into()
+        .map_err(|_| anyhow::anyhow!("Failed to convert public key to fixed array"))?;
+    
+    let verifying_key = VerifyingKey::from_bytes(&public_key_array)
+        .context("Failed to create verifying key")?;
+    
+    let sig_array: [u8; 64] = sig_bytes.try_into()
+        .map_err(|_| anyhow::anyhow!("Failed to convert signature to fixed array"))?;
+    
+    let signature = Signature::from_bytes(&sig_array);
+    
+    verifying_key.verify(data, &signature)
+        .context("Ed25519 signature verification failed")?;
+    
+    Ok(())
 }
 
 #[cfg(test)]

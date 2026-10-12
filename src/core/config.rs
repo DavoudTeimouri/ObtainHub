@@ -20,9 +20,17 @@ pub struct ManifestSource {
     pub priority: Option<i32>,
     #[serde(default)]
     pub auto_sync: bool,
+    /// Registry type: github, github-packages, crates-io, npm, pypi, generic
+    #[serde(default = "default_registry_type")]
+    pub registry_type: String,
+    /// Package name in the registry (if different from repo name)
+    #[serde(default)]
+    pub package_name: Option<String>,
 }
 
 fn default_src_type() -> String { "github".to_string() }
+
+fn default_registry_type() -> String { "github".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScheduleConfig {
@@ -55,31 +63,34 @@ pub struct Config {
     pub shim_dir: PathBuf,
     
     #[serde(default = "default_parallel_downloads")]
-    pub parallel_downloads: usize,
-    
-    #[serde(default = "default_timeout")]
-    pub timeout_seconds: u64,
-    
-    #[serde(default = "default_check_interval")]
-    pub update_check_interval_hours: u64,
-    
-    #[serde(default = "default_true")]
-    pub auto_cleanup: bool,
-    
-    #[serde(default)]
-    pub proxy: Option<String>,
-    
-    #[serde(default = "default_true")]
-    pub verify_checksums: bool,
-    
-    #[serde(default)]
-    pub manifest_sources: Vec<ManifestSource>,
-    
-    #[serde(default)]
-    pub schedule: ScheduleConfig,
-    
-    #[serde(default)]
-    pub groups: HashMap<String, Vec<String>>,
+        pub parallel_downloads: usize,
+
+        #[serde(default = "default_timeout")]
+        pub timeout_seconds: u64,
+
+        #[serde(default = "default_check_interval")]
+        pub update_check_interval_hours: u64,
+
+        #[serde(default = "default_true")]
+        pub auto_cleanup: bool,
+
+        #[serde(default)]
+        pub proxy: Option<String>,
+
+        #[serde(default = "default_true")]
+        pub verify_checksums: bool,
+
+        #[serde(default)]
+        pub download_bandwidth_limit: Option<u64>,
+
+        #[serde(default)]
+        pub manifest_sources: Vec<ManifestSource>,
+
+        #[serde(default)]
+        pub schedule: ScheduleConfig,
+
+        #[serde(default)]
+        pub groups: HashMap<String, Vec<String>>,
 }
 
 fn default_download_dir() -> PathBuf {
@@ -121,6 +132,7 @@ impl Default for Config {
             auto_cleanup: true,
             proxy: None,
             verify_checksums: true,
+            download_bandwidth_limit: None,
             manifest_sources: Vec::new(),
             schedule: ScheduleConfig {
                 enabled: false,
@@ -166,14 +178,36 @@ impl ConfigManager {
         if config.parallel_downloads == 0 {
             config.parallel_downloads = 4;
         }
+        if config.parallel_downloads > 32 {
+            config.parallel_downloads = 32;
+        }
         if config.timeout_seconds == 0 {
             config.timeout_seconds = 30;
+        }
+        if config.timeout_seconds > 3600 {
+            config.timeout_seconds = 3600;
         }
         if config.update_check_interval_hours == 0 {
             config.update_check_interval_hours = 24;
         }
+        if config.update_check_interval_hours > 8760 {
+            config.update_check_interval_hours = 8760;
+        }
         if config.schedule.interval_hours == 0 {
             config.schedule.interval_hours = 24;
+        }
+        if config.schedule.interval_hours > 8760 {
+            config.schedule.interval_hours = 8760;
+        }
+        // Ensure paths are absolute
+        if !config.install_dir.is_absolute() {
+            config.install_dir = std::env::current_dir().unwrap_or_default().join(config.install_dir.clone());
+        }
+        if !config.download_dir.is_absolute() {
+            config.download_dir = std::env::current_dir().unwrap_or_default().join(config.download_dir.clone());
+        }
+        if !config.shim_dir.is_absolute() {
+            config.shim_dir = std::env::current_dir().unwrap_or_default().join(config.shim_dir.clone());
         }
     }
     
@@ -241,5 +275,35 @@ mod tests {
 
         assert_eq!(c.parallel_downloads, 8);
         assert_eq!(c.timeout_seconds, 90);
+    }
+
+    #[test]
+    fn sanitize_clamps_max_values() {
+        let mut c = Config::default();
+        c.parallel_downloads = 100;
+        c.timeout_seconds = 10000;
+        c.update_check_interval_hours = 20000;
+        c.schedule.interval_hours = 20000;
+
+        ConfigManager::sanitize(&mut c);
+
+        assert_eq!(c.parallel_downloads, 32);
+        assert_eq!(c.timeout_seconds, 3600);
+        assert_eq!(c.update_check_interval_hours, 8760);
+        assert_eq!(c.schedule.interval_hours, 8760);
+    }
+
+    #[test]
+    fn sanitize_makes_paths_absolute() {
+        let mut c = Config::default();
+        c.install_dir = PathBuf::from("relative/install");
+        c.download_dir = PathBuf::from("relative/download");
+        c.shim_dir = PathBuf::from("relative/shim");
+
+        ConfigManager::sanitize(&mut c);
+
+        assert!(c.install_dir.is_absolute());
+        assert!(c.download_dir.is_absolute());
+        assert!(c.shim_dir.is_absolute());
     }
 }

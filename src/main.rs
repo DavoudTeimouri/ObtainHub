@@ -36,6 +36,7 @@ async fn main() -> Result<()> {
         Commands::Backup(args) => commands::backup::execute(args, &config_manager, &state_manager).await,
         Commands::Restore(args) => commands::restore::execute(args, &config_manager, &mut state_manager).await,
         Commands::SelfUpdate(args) => commands::self_update::execute(args, &config_manager, &state_manager).await,
+        Commands::Rollback(args) => commands::rollback::execute(args, &config_manager, &mut state_manager).await,
         Commands::Completion(args) => commands::completion::execute(args).await,
         Commands::Doctor(args) => commands::doctor::execute(args, &config_manager, &mut state_manager).await,
         Commands::Info(args) => commands::info::execute(args, &config_manager, &state_manager).await,

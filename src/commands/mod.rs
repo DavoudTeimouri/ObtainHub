@@ -9,6 +9,7 @@ pub mod config;
 pub mod backup;
 pub mod restore;
 pub mod self_update;
+pub mod rollback;
 pub mod completion;
 pub mod doctor;
 pub mod info;

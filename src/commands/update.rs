@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tracing::{info, warn};
 
-use crate::commands::install::{fetch_published_checksum, calculate_sha256, GitHubRelease as InstallGitHubRelease, GitHubAsset as InstallGitHubAsset};
+use crate::commands::install::{fetch_published_checksum, GitHubRelease as InstallGitHubRelease, GitHubAsset as InstallGitHubAsset, select_asset as install_select_asset};
 use sha2::{Digest, Sha256};
 
 fn calculate_sha256_bytes(bytes: &[u8]) -> String {
@@ -66,6 +66,31 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     
     for (repo_name, current_version) in targets {
         println!("Checking {}@{}...", repo_name, current_version);
+        
+        // First, check if this repo has dependencies that need updating
+        if !args.skip_deps {
+            let deps = state.get_installed(repo_name).map(|e| e.dependencies.clone()).unwrap_or_default();
+            for dep in &deps {
+                println!("  Checking dependency {}...", dep);
+                if let Some(dep_entry) = state.get_installed(dep) {
+                    match fetch_latest_release(dep, token).await {
+                        Ok(dep_release) => {
+                            let dep_latest = dep_release.tag_name.clone();
+                            if dep_latest != dep_entry.version {
+                                println!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest);
+                                if !args.dry_run {
+                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, args.force, true).await {
+                                        Ok(_) => println!("    Updated dependency {} to {}", dep, dep_latest),
+                                        Err(e) => eprintln!("    Failed to update dependency {}: {}", dep, e),
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("    Error checking dependency {}: {}", dep, e),
+                    }
+                }
+            }
+        }
         
         match fetch_latest_release(repo_name, token).await {
             Ok(release) => {
@@ -147,22 +172,7 @@ async fn install_release(
     force: bool,
     _skip_deps: bool,
 ) -> Result<()> {
-    // Find suitable asset (prefer zip, then tar.gz, then tar.xz)
-    let asset = select_asset(&release.assets)?;
-
-    println!("  Downloading {}...", asset.name);
-
-    // Download with progress
-    let download_url = &asset.browser_download_url;
-    let mut req = minreq::get(download_url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
-    }
-
-    let response = req.send()?;
-    let bytes = response.as_bytes();
-
-    // Verify checksum if available
+    // Find suitable asset using install command's logic (considers architecture)
     let install_release = &InstallGitHubRelease {
         tag_name: release.tag_name.clone(),
         name: release.name.clone(),
@@ -177,6 +187,20 @@ async fn install_release(
         zipball_url: release.zipball_url.clone(),
         tarball_url: release.tarball_url.clone(),
     };
+    
+    let asset = install_select_asset(install_release)?;
+
+    println!("  Downloading {}...", asset.name);
+
+    // Download with progress
+    let download_url = &asset.browser_download_url;
+    let mut req = minreq::get(download_url).with_header("User-Agent", "ObtainHub/3.0.0");
+    if let Some(token) = token {
+        req = req.with_header("Authorization", &format!("Bearer {}", token));
+    }
+
+    let response = req.send()?;
+    let bytes = response.as_bytes();
     
     if let Some(expected) = fetch_published_checksum(install_release, &asset.name, token).await? {
         let actual = calculate_sha256_bytes(bytes);
@@ -204,6 +228,8 @@ async fn install_release(
     extract_archive(&asset.name, &bytes, &install_dir)?;
 
     // Update state
+    // Get the existing entry to preserve previous version for rollback
+    let existing = state.get_installed(repo);
     let repo_entry = crate::core::state::InstalledRepo {
         repo: repo.to_string(),
         version: version.to_string(),
@@ -212,23 +238,16 @@ async fn install_release(
         updated_at: Some(chrono::Utc::now()),
         checksum: None,
         metadata: serde_json::Value::Null,
+        previous_version: existing.map(|e| e.version.clone()),
+        previous_install_path: existing.map(|e| e.install_path.clone()),
+        dependencies: existing.map(|e| e.dependencies.clone()).unwrap_or_default(),
+        is_dependency: existing.map(|e| e.is_dependency).unwrap_or(false),
     };
 
     state.add_installed(repo_entry);
     state.save()?;
 
     Ok(())
-}
-
-fn select_asset(assets: &[GitHubAsset]) -> Result<&GitHubAsset> {
-    // Prefer zip, then tar.gz, then tar.xz
-    for ext in &[".zip", ".tar.gz", ".tar.xz", ".tgz", ".txz"] {
-        if let Some(asset) = assets.iter().find(|a| a.name.ends_with(ext)) {
-            return Ok(asset);
-        }
-    }
-    // Fallback to first asset
-    assets.first().ok_or_else(|| anyhow::anyhow!("No suitable asset found"))
 }
 
 fn extract_archive(name: &str, bytes: &[u8], dest: &std::path::Path) -> Result<()> {

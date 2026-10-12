@@ -54,10 +54,12 @@ ohub <COMMAND>
 # Search for repositories
 ohub search ripgrep --min-stars 100
 ohub search rust --language Rust --sort-stars --limit 10
+ohub search cli --page 1 --per-page 30 --timeout 60
 
 # Install from GitHub
 ohub install BurntSushi/ripgrep
 ohub install BurntSushi/ripgrep --dry-run
+ohub install BurntSushi/ripgrep --version 14.1.0 --arch x64
 
 # Install from local archive
 ohub install --file ./myapp.zip
@@ -69,11 +71,17 @@ ohub install --url https://example.com/app.tar.gz
 ohub check
 ohub check --all                  # every installed Windows program, skips ohub itself
 ohub check --outdated-only
+ohub check --force                # bypass recent check cache
 
 # Update
 ohub update                        # all installed repos
 ohub update BurntSushi/ripgrep     # one repo
 ohub update --dry-run              # show what would change
+ohub update --force                # reinstall even if current
+
+# Rollback
+ohub rollback BurntSushi/ripgrep   # revert to previous version
+ohub rollback BurntSushi/ripgrep --yes  # skip confirmation
 
 # Manage installed repos
 ohub list
@@ -85,17 +93,25 @@ ohub remove BurntSushi/ripgrep --yes             # untrack, keep files
 # Groups
 ohub group create dev
 ohub group add dev BurntSushi/ripgrep
+ohub group list
+ohub group install dev           # install all apps in group
 
 # Shell completions
 ohub completion fish > ~/.config/fish/completions/ohub.fish
 ohub completion powershell | Out-String | Invoke-Expression
+ohub completion bash > /usr/local/etc/bash_completion.d/ohub
+
+# Configuration
+ohub config list                 # Show all config
+ohub config get install_dir      # Get install directory
+ohub config set download_bandwidth_limit 1048576  # Limit to 1 MB/s
 
 # Diagnostics
 ohub doctor
 ohub info BurntSushi/ripgrep
 
 # TUI
-ohub tui
+ohub tui                         # Press '?' for help, 'j/k' to navigate
 ```
 
 ## Configuration
@@ -108,6 +124,16 @@ ohub config list          # Show all config
 ohub config get key       # Get value
 ohub config set key value # Set value
 ```
+
+Key configuration options:
+- `install_dir` - Where to install repositories (default: `%APPDATA%\ObtainHub\repos`)
+- `download_dir` - Where to cache downloads (default: `%APPDATA%\ObtainHub\downloads`)
+- `parallel_downloads` - Max concurrent downloads (default: 4, max: 32)
+- `timeout_seconds` - GitHub API request timeout (default: 30, max: 3600)
+- `update_check_interval_hours` - Scheduled check interval (default: 24, max: 8760)
+- `download_bandwidth_limit` - Bandwidth limit in bytes/sec (default: unlimited)
+- `verify_checksums` - Verify SHA256 checksums (default: true)
+- `auto_cleanup` - Auto-cleanup temp files (default: true)
 
 Zero-valued `parallel_downloads`, `timeout_seconds`, and
 `update_check_interval_hours` are reset to their defaults on load — a hand-edited

@@ -64,6 +64,7 @@ struct App {
     selected_index: Option<usize>,
     should_quit: bool,
     status_message: String,
+    show_help: bool,
 }
 
 #[derive(Clone)]
@@ -87,6 +88,7 @@ async fn run_app<B: ratatui::backend::Backend>(
         selected_index: None,
         should_quit: false,
         status_message: "Loading...".to_string(),
+        show_help: false,
     };
 
     // Load initial data
@@ -151,7 +153,14 @@ async fn handle_key_event(
 ) -> Result<()> {
     match key {
         KeyCode::Char('q') | KeyCode::Esc => {
-            app.should_quit = true;
+            if app.show_help {
+                app.show_help = false;
+            } else {
+                app.should_quit = true;
+            }
+        }
+        KeyCode::Char('?') | KeyCode::Char('h') | KeyCode::F(1) => {
+            app.show_help = !app.show_help;
         }
         KeyCode::Char('j') | KeyCode::Down => {
             if let Some(selected) = app.list_state.selected() {
@@ -191,39 +200,107 @@ fn ui<B: ratatui::backend::Backend>(f: &mut ratatui::Frame, app: &mut App) {
         .split(f.size());
 
     // Header
-    let header = Paragraph::new("ObtainHub TUI - Press 'q' to quit, 'j/k' to navigate, 'r' to refresh")
+    let header = Paragraph::new("ObtainHub TUI - Press '?' for help, 'q' to quit, 'j/k' to navigate, 'r' to refresh")
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .block(Block::default().borders(Borders::ALL).title("ObtainHub"));
     f.render_widget(header, chunks[0]);
 
-    // App list
-    let items: Vec<ListItem> = app
-        .apps
-        .iter()
-        .map(|a| {
-            let status_style = match a.status.as_str() {
-                "Current" => Style::default().fg(Color::Green),
-                "Update" | "Outdated" => Style::default().fg(Color::Red),
-                _ => Style::default().fg(Color::Yellow),
-            };
-            
-            ListItem::new(Line::from(vec![
-                Span::styled(&a.name, Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw("  "),
-                Span::raw(format!("v{} ", a.current_version)),
-                Span::styled(&a.status, status_style),
-                Span::raw("  "),
-                Span::styled(&a.repo, Style::default().fg(Color::DarkGray)),
-            ]))
-        })
-        .collect();
+    // App list or Help
+    if app.show_help {
+        let help_text = vec![
+            Line::from(vec![
+                Span::styled("Key Bindings", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  q / Esc", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Quit (closes help if open)"),
+            ]),
+            Line::from(vec![
+                Span::styled("  ? / h / F1", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Toggle this help screen"),
+            ]),
+            Line::from(vec![
+                Span::styled("  j / ↓", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Move selection down"),
+            ]),
+            Line::from(vec![
+                Span::styled("  k / ↑", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Move selection up"),
+            ]),
+            Line::from(vec![
+                Span::styled("  r", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Refresh app list"),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Status Colors:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
+            ]),
+            Line::from(vec![
+                Span::styled("  Green", Style::default().fg(Color::Green)),
+                Span::raw("  - Current / up to date"),
+            ]),
+            Line::from(vec![
+                Span::styled("  Red", Style::default().fg(Color::Red)),
+                Span::raw("  - Update available / outdated"),
+            ]),
+            Line::from(vec![
+                Span::styled("  Yellow", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Unknown / unmanaged"),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Commands (run in terminal):", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
+            ]),
+            Line::from("  ohub search <query> [--min-stars N] [--sort-stars] [--language LANG]"),
+            Line::from("  ohub install <owner/repo> [--version TAG] [--dry-run] [--file PATH] [--url URL]"),
+            Line::from("  ohub check [--all] [--outdated-only]"),
+            Line::from("  ohub update [<owner/repo>] [--dry-run] [--force]"),
+            Line::from("  ohub list [--format table|json|yaml]"),
+            Line::from("  ohub uninstall <owner/repo> [--purge] [--yes]"),
+            Line::from("  ohub group create <name> / add <group> <repo>"),
+            Line::from("  ohub config list / get <key> / set <key> <value>"),
+            Line::from("  ohub self-update [--check-only] [--force]"),
+            Line::from("  ohub completion <shell>  # bash|zsh|fish|powershell|elvish"),
+            Line::from("  ohub doctor"),
+            Line::from("  ohub tui"),
+        ];
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Managed Apps"))
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-        .highlight_symbol("► ");
+        let help = Paragraph::new(help_text)
+            .style(Style::default().fg(Color::White))
+            .block(Block::default().borders(Borders::ALL).title("Help - Press '?' to close"))
+            .wrap(Wrap { trim: true });
+        f.render_widget(help, chunks[1]);
+    } else {
+        // App list
+        let items: Vec<ListItem> = app
+            .apps
+            .iter()
+            .map(|a| {
+                let status_style = match a.status.as_str() {
+                    "Current" => Style::default().fg(Color::Green),
+                    "Update" | "Outdated" => Style::default().fg(Color::Red),
+                    _ => Style::default().fg(Color::Yellow),
+                };
 
-    f.render_stateful_widget(list, chunks[1], &mut app.list_state);
+                ListItem::new(Line::from(vec![
+                    Span::styled(&a.name, Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw("  "),
+                    Span::raw(format!("v{} ", a.current_version)),
+                    Span::styled(&a.status, status_style),
+                    Span::raw("  "),
+                    Span::styled(&a.repo, Style::default().fg(Color::DarkGray)),
+                ]))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title("Managed Apps"))
+            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+            .highlight_symbol("► ");
+
+        f.render_stateful_widget(list, chunks[1], &mut app.list_state);
+    }
 
     // Footer / status
     let footer = Paragraph::new(app.status_message.as_str())

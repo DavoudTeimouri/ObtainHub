@@ -20,6 +20,16 @@ pub struct InstalledRepo {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub checksum: Option<String>,
     pub metadata: serde_json::Value,
+    /// Previous version for rollback support
+    pub previous_version: Option<String>,
+    /// Previous install path for rollback support
+    pub previous_install_path: Option<PathBuf>,
+    /// Dependencies on other managed repositories (owner/repo format)
+    #[serde(default)]
+    pub dependencies: Vec<String>,
+    /// Whether this repo is a dependency of another repo (prevents auto-removal)
+    #[serde(default)]
+    pub is_dependency: bool,
 }
 
 pub struct StateManager {

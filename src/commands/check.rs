@@ -171,6 +171,10 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
                                     updated_at: None,
                                     checksum: None,
                                     metadata: serde_json::Value::Null,
+                                    previous_version: None,
+                                    previous_install_path: None,
+                                    dependencies: Vec::new(),
+                                    is_dependency: false,
                                 });
                             }
                         }
@@ -220,6 +224,10 @@ fn partition_gitHub_managed(
                 updated_at: entry.updated_at,
                 checksum: tracked.checksum.clone(),
                 metadata: tracked.metadata.clone(),
+                previous_version: tracked.previous_version.clone(),
+                previous_install_path: tracked.previous_install_path.clone(),
+                dependencies: tracked.dependencies.clone(),
+                is_dependency: tracked.is_dependency,
             });
         } else {
             skipped.push(entry.repo.clone());
@@ -243,6 +251,10 @@ mod tests {
             updated_at: None,
             checksum: None,
             metadata: serde_json::Value::Null,
+            previous_version: None,
+            previous_install_path: None,
+            dependencies: Vec::new(),
+            is_dependency: false,
         }
     }
 

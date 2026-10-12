@@ -95,10 +95,13 @@ pub enum Commands {
     Restore(RestoreArgs),
     
     /// Update ohub itself
-    SelfUpdate(SelfUpdateArgs),
-    
-    /// Generate shell completions
-    Completion(CompletionArgs),
+        SelfUpdate(SelfUpdateArgs),
+
+        /// Rollback a repository to its previous version
+        Rollback(RollbackArgs),
+
+        /// Generate shell completions
+        Completion(CompletionArgs),
     
     /// Diagnose installation issues
     Doctor(DoctorArgs),
@@ -214,6 +217,10 @@ pub struct InstallArgs {
     /// Install from direct URL
     #[arg(long)]
     pub url: Option<String>,
+
+    /// Declare dependencies (owner/repo format, comma-separated or repeat flag)
+    #[arg(long, value_delimiter = ',')]
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
@@ -331,18 +338,29 @@ pub struct UpdateArgs {
     /// Auto-confirm prompts
     #[arg(short, long)]
     pub yes: bool,
-    
+
     /// Forget saved asset/repo choices so prompts re-appear
     #[arg(long)]
     pub reset: bool,
-    
+
     /// Launch installers visibly and let you drive them
     #[arg(long)]
     pub interactive: bool,
-    
+
     /// Show release notes for available updates
     #[arg(long)]
     pub notes: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RollbackArgs {
+    /// Repository to rollback (owner/repo)
+    #[arg(value_name = "REPO")]
+    pub repo: String,
+
+    /// Skip confirmation
+    #[arg(long)]
+    pub yes: bool,
 }
 
 #[derive(Args, Debug)]
@@ -350,14 +368,18 @@ pub struct UninstallArgs {
     /// Repository to uninstall (owner/repo)
     #[arg(value_name = "REPO")]
     pub repo: String,
-    
+
     /// Remove config and data too
     #[arg(long)]
     pub purge: bool,
-    
+
     /// Skip confirmation
     #[arg(long)]
     pub yes: bool,
+
+    /// Force uninstall even if it's a dependency of other repos
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Args, Debug)]
@@ -437,6 +459,10 @@ pub enum SourceAction {
         url: String,
         #[arg(long, default_value = "github")]
         src_type: String,
+        #[arg(long, default_value = "github")]
+        registry_type: String,
+        #[arg(long)]
+        package_name: Option<String>,
         #[arg(long)]
         pre_install: Option<String>,
         #[arg(long)]
@@ -766,6 +792,10 @@ pub struct SelfUpdateArgs {
     /// Suppress non-error output
     #[arg(long, short)]
     pub quiet: bool,
+    
+    /// Skip signature verification (not recommended for security)
+    #[arg(long)]
+    pub skip_signature: bool,
 }
 
 #[derive(Args, Debug)]
