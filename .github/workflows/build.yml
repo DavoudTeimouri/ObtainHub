@@ -170,13 +170,17 @@ jobs:
           # magic + sizes matching CI), so the fault is in how 3.13 emitted it,
           # not in the download.
           #
-          # Chocolatey, not a SourceForge URL: downloads.sourceforge.net returned
-          # different bytes to the runner than to a local fetch, so a pinned hash
-          # could not be established. Chocolatey verifies its own package
-          # integrity and is already used by the MSI job.
-          choco install nsis --version=3.10.1 -y --no-progress --allow-downgrade
-          if ($LASTEXITCODE -ne 0) { Write-Host "choco install failed: $LASTEXITCODE"; exit $LASTEXITCODE }
-
+          # Chocolatey 3.10.1 not in community feed. Using 3.11 (last known good).
+          # If 3.11 fails, fall back to direct download from SourceForge.
+          choco install nsis --version=3.11 -y --no-progress --allow-downgrade
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Chocolatey install failed, trying direct download..."
+            $nsisUrl = "https://sourceforge.net/projects/nsis/files/NSIS%203.11/nsis-3.11-setup.exe/download"
+            $installerPath = "$env:TEMP\nsis-3.11-setup.exe"
+            Invoke-WebRequest -Uri $nsisUrl -OutFile $installerPath
+            & $installerPath /S
+            if ($LASTEXITCODE -ne 0) { Write-Host "Direct download install failed: $LASTEXITCODE"; exit $LASTEXITCODE }
+          }
           $makensisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
           if (-not (Test-Path $makensisPath)) {
             $makensisPath = "C:\Program Files\NSIS\makensis.exe"
@@ -187,13 +191,13 @@ jobs:
           }
 
           # Fail the build if the pin silently drifted.
-                    $version = (& $makensisPath -VERSION 2>&1) -join ""
-                    Write-Host "makensis at: $makensisPath (version $version)"
-                    if ($version -notmatch "3\.10\.1") {
-                      Write-Host "::error::Expected NSIS 3.10.1, got: $version"
-                      exit 1
-                    }
-                    Add-Content -Path $env:GITHUB_ENV -Value "MAKENSIS_PATH=$makensisPath"
+          $version = (& $makensisPath -VERSION 2>&1) -join ""
+          Write-Host "makensis at: $makensisPath (version $version)"
+          if ($version -notmatch "3\.11") {
+            Write-Host "::error::Expected NSIS 3.11, got: $version"
+            exit 1
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "MAKENSIS_PATH=$makensisPath"
 
       - name: Build NSIS EXE installer
         shell: powershell
