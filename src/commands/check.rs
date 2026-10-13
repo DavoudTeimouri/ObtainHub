@@ -5,10 +5,13 @@ use minreq;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::time::Duration;
 use tracing::info;
 use comfy_table::{Table, Cell};
 use urlencoding;
 use dialoguer::{Select, MultiSelect, Confirm, theme::ColorfulTheme};
+use indicatif::{ProgressBar, ProgressStyle};
+use console::style;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GitHubRelease {
@@ -34,12 +37,26 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
     let token = config.get().github_token.as_deref();
 
+    // Create a theme with green check marks and gray boxes for MultiSelect
+    let theme = ColorfulTheme::default();
+
     // Get all installed software if --all or --candidates
     let (matched, skipped) = if args.all || args.candidates {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} {msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        pb.set_message("Scanning installed programs...");
+        pb.enable_steady_tick(Duration::from_millis(80));
+
         let all = enumerate_all_installed_software()?;
         let tracked = state.list_installed();
         let (matched, skipped) = partition_gitHub_managed(&all, &tracked);
-        println!("Scanned {} installed programs.", all.len());
+        
+        pb.finish_with_message(format!("Scanned {} installed programs.", all.len()));
         if !skipped.is_empty() {
             println!("  {} not managed by ObtainHub (no GitHub origin).", skipped.len());
         }
@@ -84,7 +101,16 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     // Handle --candidates flag for unmanaged apps - interactive selection
     if args.candidates {
         if !skipped.is_empty() {
-            println!("\nFinding candidate repositories for unmanaged apps...");
+            // Progress bar for finding candidates
+            let pb = ProgressBar::new(skipped.len() as u64);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                    .unwrap()
+                    .progress_chars("█▉▊▋▌▍▎▏  "),
+            );
+            pb.set_message("Finding candidate repositories...");
+
             for name in &skipped {
                 match find_candidate_repos(name, token).await {
                     Ok(candidates) if !candidates.is_empty() => {
@@ -92,12 +118,14 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                     }
                     _ => {}
                 }
+                pb.inc(1);
             }
+            pb.finish_with_message("Candidate search complete.");
 
             if !candidates_map.is_empty() {
                 // Interactive: let user select which apps to manage
                 let app_names: Vec<String> = candidates_map.keys().cloned().collect();
-                let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+                let selections = MultiSelect::with_theme(&theme)
                     .with_prompt("Select apps to manage with ObtainHub (Space to select, Enter to confirm)")
                     .items(&app_names)
                     .interact_opt()?;
@@ -107,7 +135,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                         let app_name = &app_names[idx];
                         if let Some(candidates) = candidates_map.get(app_name) {
                             // Show candidates for this app and let user choose one
-                            let choice = Select::with_theme(&ColorfulTheme::default())
+                            let choice = Select::with_theme(&theme)
                                 .with_prompt(format!("Choose repository for '{}'", app_name))
                                 .items(candidates)
                                 .default(0)
@@ -134,15 +162,25 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                 println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
                                 
                                 // Check for updates immediately
+                                let pb = ProgressBar::new_spinner();
+                                pb.set_style(
+                                    ProgressStyle::default_spinner()
+                                        .template("{spinner:.green} {msg}")
+                                        .unwrap()
+                                        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                                );
+                                pb.set_message(format!("Checking latest version for {}...", selected_repo));
+                                pb.enable_steady_tick(Duration::from_millis(80));
+
                                 match fetch_latest_release(selected_repo, token).await {
                                     Ok(release) => {
                                         new_repo.version = release.tag_name.clone();
                                         state.add_installed(new_repo);
                                         state.save()?;
-                                        println!("  Latest version: {}", release.tag_name);
+                                        pb.finish_with_message(format!("Latest version: {}", release.tag_name));
                                     }
                                     Err(e) => {
-                                        println!("  Could not fetch latest version: {}", e);
+                                        pb.finish_with_message(format!("Could not fetch latest version: {}", e));
                                     }
                                 }
                             }
@@ -163,7 +201,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                     // Show candidates and let user choose one or skip
                     let mut items = candidates.clone();
                     items.push("--- Skip ---".to_string());
-                    let choice = Select::with_theme(&ColorfulTheme::default())
+                    let choice = Select::with_theme(&theme)
                         .with_prompt(format!("Choose repository for '{}' (or Skip)", name))
                         .items(&items)
                         .default(0)

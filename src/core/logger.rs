@@ -14,6 +14,7 @@ pub fn init() -> Result<()> {
             .with_thread_names(false)
             .with_file(false)
             .with_line_number(false)
+            .without_time()
         )
         .init();
     
@@ -32,6 +33,7 @@ pub fn init_with_level(level: &str) -> Result<()> {
             .with_thread_names(false)
             .with_file(false)
             .with_line_number(false)
+            .without_time()
         )
         .init();
     

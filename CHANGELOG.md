@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.15-rc1] - 2026-10-13
+### Added
+- Check command: Removed timestamp from command output (clean output)
+- Check command: Progress bars for scanning and candidate searching
+- Check command: Green tick marks and gray checkboxes in interactive selection (MultiSelect)
+- Check command: Interactive `--all` offers selectable list for unmanaged apps
+- Check command: Interactive `--candidates` offers selectable list to add apps to management
+- Check command: After selecting app, immediately checks candidates and offers repository selection
+- Added `dialoguer`, `console`, `indicatif` dependencies for interactive prompts and progress bars
+
+### Fixed
+- Check command: `--candidates` works independently of `--all`
+- Check command: Shows candidate repositories for unmanaged apps with GitHub search
+- Check command: Self-update check when no specific repo specified
+- Check command: `--quiet` flag to suppress non-error output
+- NSIS "Installer corrupted: invalid opcode" - pinned NSIS 3.11 with SourceForge fallback
+- NSIS PathHasEntry Exch → Push fix for NSIS 3.13 stack-exchange bug
+
 ## [v3.0.14-rc1] - 2026-10-13
 ### Added
 - Check command: `--all` now offers interactive selectable list for unmanaged apps
