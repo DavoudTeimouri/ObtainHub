@@ -1,10 +1,12 @@
 use crate::core::{ConfigManager, StateManager};
-use crate::cli::CheckArgs;
+use crate::cli::{CheckArgs, SelfUpdateArgs};
 use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::info;
 use comfy_table::{Table, Cell};
+use urlencoding;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GitHubRelease {
@@ -48,11 +50,17 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
         println!("No repositories installed.");
         return Ok(());
     }
-    
+
+    // Check for self-update if not checking specific repo
+    if args.repo.is_none() {
+        check_self_update(config, args.quiet).await?;
+    }
+
     let mut outdated = Vec::new();
     let mut current = Vec::new();
     let mut errors = Vec::new();
-    
+    let mut candidates_map: HashMap<String, Vec<String>> = HashMap::new();
+
     for repo in installed {
         // Skip if checking specific repo
         if let Some(ref target) = args.repo {
@@ -60,7 +68,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
                 continue;
             }
         }
-        
+
         match fetch_latest_release(&repo.repo, token).await {
             Ok(release) => {
                 let latest_version = release.tag_name;
@@ -75,7 +83,26 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
             }
         }
     }
-    
+
+    // Handle --candidates flag for unmanaged apps
+    if args.candidates && args.all {
+        let all = enumerate_all_installed_software()?;
+        let tracked = state.list_installed();
+        let (_, skipped) = partition_gitHub_managed(&all, &tracked);
+        
+        if !skipped.is_empty() && args.candidates {
+            println!("\nFinding candidate repositories for unmanaged apps...");
+            for name in skipped {
+                match find_candidate_repos(&name, token).await {
+                    Ok(candidates) if !candidates.is_empty() => {
+                        candidates_map.insert(name, candidates);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     if args.outdated_only {
         if outdated.is_empty() {
             println!("All repositories are up to date.");
@@ -89,19 +116,19 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
         }
         return Ok(());
     }
-    
+
     // Show all results
     if !outdated.is_empty() {
         println!("Outdated ({}):", outdated.len());
         let mut table = Table::new();
         table.set_header(vec!["Repository", "Current", "Latest"]);
         for (repo, current_ver, latest_ver) in &outdated {
-            table.add_row(vec![Cell::new(repo), Cell::new(current_ver), Cell::new(latest_ver)]);
+            table.add_row(vec![Cell::new(repo), Cell::new(current_ver), Cell::new(&latest_ver)]);
         }
         println!("{}", table);
         println!();
     }
-    
+
     if !current.is_empty() {
         println!("Up to date ({})", current.len());
         for repo in &current {
@@ -109,14 +136,26 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
         }
         println!();
     }
-    
+
     if !errors.is_empty() {
-        println!("Errors ({})", errors.len());
+        println!("Errors ({}):", errors.len());
         for (repo, error) in &errors {
             println!("  {}: {}", repo, error);
         }
+        println!();
     }
-    
+
+    // Show candidates if any
+    if !candidates_map.is_empty() {
+        println!("Candidate repositories for unmanaged apps:");
+        for (name, candidates) in candidates_map {
+            println!("  {}:", name);
+            for candidate in candidates {
+                println!("    - {}", candidate);
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -235,6 +274,37 @@ fn partition_gitHub_managed(
     }
 
     (matched, skipped)
+}
+
+async fn check_self_update(config: &ConfigManager, quiet: bool) -> Result<()> {
+    use crate::commands::self_update::{execute as self_update_execute};
+    let args = SelfUpdateArgs {
+        check_only: true,
+        prerelease: false,
+        force: false,
+        json: false,
+        quiet,
+        skip_signature: false,
+    };
+    self_update_execute(args, &ConfigManager::new()?, &StateManager::new()?).await
+}
+
+async fn find_candidate_repos(name: &str, token: Option<&str>) -> Result<Vec<String>> {
+    let encoded_name = urlencoding::encode(name);
+    let url = format!("https://api.github.com/search/repositories?q={}&per_page=5", encoded_name);
+    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+    if let Some(token) = token {
+        req = req.with_header("Authorization", &format!("Bearer {}", token));
+    }
+    let resp: serde_json::Value = req.send()?.json()?;
+    let items = resp["items"].as_array().unwrap_or(&vec![]).to_vec();
+    let mut candidates = Vec::new();
+    for item in items {
+        if let Some(full_name) = item["full_name"].as_str() {
+            candidates.push(full_name.to_string());
+        }
+    }
+    Ok(candidates)
 }
 
 #[cfg(test)]

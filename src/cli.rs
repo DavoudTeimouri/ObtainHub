@@ -283,12 +283,16 @@ pub struct CheckArgs {
     pub notes: bool,
     
     /// Force check even if recent
-    #[arg(long)]
-    pub force: bool,
-    
-    /// Dry run - show what would be done without making changes
-    #[arg(long)]
-    pub dry_run: bool,
+        #[arg(long)]
+        pub force: bool,
+
+        /// Quiet mode - suppress non-error output
+        #[arg(short, long)]
+        pub quiet: bool,
+
+        /// Dry run - show what would be done without making changes
+        #[arg(long)]
+        pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
