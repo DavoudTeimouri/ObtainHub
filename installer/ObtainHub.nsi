@@ -147,7 +147,7 @@ done:
   Pop $R3
   Pop $R2
   Pop $R1
-  Exch $R0
+  Push $R0
 FunctionEnd
 
 Function un.PathHasEntry
@@ -186,7 +186,7 @@ done:
   Pop $R3
   Pop $R2
   Pop $R1
-  Exch $R0
+  Push $R0
 FunctionEnd
 
 Function AddToUserPath
