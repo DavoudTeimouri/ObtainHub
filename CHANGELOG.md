@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.11-rc1] - 2026-10-12
+### Fixed
+- NSIS "Installer corrupted: invalid opcode" — replaced `Exch $R0` with `Push $R0` in `PathHasEntry` / `un.PathHasEntry` to avoid NSIS 3.13 stack-exchange bug triggered by compiler optimization `+2`
+
+## [v3.0.10-rc1] - 2026-10-12
+### Fixed
+- NSIS "Installer corrupted: invalid opcode" — replaced `Exch $R0` with `Push $R0` in `PathHasEntry` / `un.PathHasEntry` to avoid NSIS 3.13 stack-exchange bug triggered by compiler optimization `+2`
+
 ## [v3.0.9-rc1] - 2026-10-12
 ### Added
 - RC build for v3.0.9 with all v3.0.8 features
