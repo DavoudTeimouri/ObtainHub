@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.9-rc1] - 2026-10-12
+### Added
+- RC build for v3.0.9 with all v3.0.8 features
+### Fixed
+- NSIS pinned to 3.11 with SourceForge fallback (fixes "Installer corrupted: invalid opcode")
+
 ## [v3.0.8-rc1] - 2026-10-12
 ### Added
 - RC build for v3.0.8 with all v3.0.7 features
