@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.12-rc1] - 2026-10-12
+### Fixed
+- Check command: added self-update check when no specific repo specified
+- Check command: added `--candidates` flag to find GitHub repos for unmanaged apps
+- Check command: added `--quiet` flag to suppress non-error output
+
 ## [v3.0.11-rc1] - 2026-10-12
 ### Fixed
 - NSIS "Installer corrupted: invalid opcode" — replaced `Exch $R0` with `Push $R0` in `PathHasEntry` / `un.PathHasEntry` to avoid NSIS 3.13 stack-exchange bug triggered by compiler optimization `+2`
