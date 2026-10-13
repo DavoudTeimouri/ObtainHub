@@ -32,24 +32,19 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
 
     let token = config.get().github_token.as_deref();
 
-    // If --all flag is set, enumerate all installed software from Windows registry
-    let installed = if args.all {
+    // Get all installed software if --all or --candidates
+    let (matched, skipped) = if args.all || args.candidates {
         let all = enumerate_all_installed_software()?;
         let tracked = state.list_installed();
         let (matched, skipped) = partition_gitHub_managed(&all, &tracked);
         println!("Scanned {} installed programs.", all.len());
         if !skipped.is_empty() {
-            println!("  {} not managed by ObtainHub (no GitHub origin) — skipped.", skipped.len());
+            println!("  {} not managed by ObtainHub (no GitHub origin).", skipped.len());
         }
-        matched
+        (matched, skipped)
     } else {
-        state.list_installed().into_iter().cloned().collect()
+        (state.list_installed().into_iter().cloned().collect(), Vec::new())
     };
-
-    if installed.is_empty() {
-        println!("No repositories installed.");
-        return Ok(());
-    }
 
     // Check for self-update if not checking specific repo
     if args.repo.is_none() {
@@ -61,8 +56,8 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
     let mut errors = Vec::new();
     let mut candidates_map: HashMap<String, Vec<String>> = HashMap::new();
 
-    for repo in installed {
-        // Skip if checking specific repo
+    // Process tracked (matched) repositories
+    for repo in matched {
         if let Some(ref target) = args.repo {
             if &repo.repo != target {
                 continue;
@@ -85,20 +80,36 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
     }
 
     // Handle --candidates flag for unmanaged apps
-    if args.candidates && args.all {
-        let all = enumerate_all_installed_software()?;
-        let tracked = state.list_installed();
-        let (_, skipped) = partition_gitHub_managed(&all, &tracked);
-        
-        if !skipped.is_empty() && args.candidates {
+    if args.candidates {
+        if !skipped.is_empty() {
             println!("\nFinding candidate repositories for unmanaged apps...");
-            for name in skipped {
-                match find_candidate_repos(&name, token).await {
+            for name in &skipped {
+                match find_candidate_repos(name, token).await {
                     Ok(candidates) if !candidates.is_empty() => {
-                        candidates_map.insert(name, candidates);
+                        candidates_map.insert(name.clone(), candidates);
                     }
                     _ => {}
                 }
+            }
+        }
+    }
+
+    // Also check unmanaged apps for updates if --all (try to find GitHub repo by name)
+    if args.all && !args.candidates && !skipped.is_empty() {
+        println!("\nChecking unmanaged apps for GitHub repositories...");
+        for name in &skipped {
+            match find_candidate_repos(name, token).await {
+                Ok(candidates) if !candidates.is_empty() => {
+                    // Use first candidate to check for updates
+                    let candidate = &candidates[0];
+                    match fetch_latest_release(candidate, token).await {
+                        Ok(release) => {
+                            outdated.push((format!("{} (via {})", name, candidate), "unknown".to_string(), release.tag_name));
+                        }
+                        Err(_) => {}
+                    }
+                }
+                _ => {}
             }
         }
     }

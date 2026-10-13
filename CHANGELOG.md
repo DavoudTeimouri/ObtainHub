@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.13-rc1] - 2026-10-13
+### Fixed
+- Check command: `--all` now checks unmanaged apps by finding GitHub repos by name
+- Check command: `--candidates` now works independently of `--all`
+- Check command: shows candidate repositories for unmanaged apps with GitHub search
+
 ## [v3.0.12-rc1] - 2026-10-12
 ### Fixed
 - Check command: added self-update check when no specific repo specified
