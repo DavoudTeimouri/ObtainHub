@@ -1,5 +1,6 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::{CheckArgs, SelfUpdateArgs};
+use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     info!("Checking for updates");
 
     let token = config.get().github_token.as_deref();
+    let retry_config = RetryConfig::from_config(config);
 
     // Create a theme with green check marks and gray boxes for MultiSelect
     let theme = ColorfulTheme::default();
@@ -67,7 +69,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
     // Check for self-update if not checking specific repo
     if args.repo.is_none() && !args.candidates {
-        check_self_update(config, args.quiet).await?;
+        check_self_update(config, args.quiet, &retry_config).await?;
     }
 
     let mut outdated = Vec::new();
@@ -83,7 +85,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             }
         }
 
-        match fetch_latest_release(&repo.repo, token).await {
+        match fetch_latest_release(&repo.repo, token, &retry_config).await {
             Ok(release) => {
                 let latest_version = release.tag_name;
                 if latest_version != repo.version {
@@ -100,40 +102,68 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
     // Handle --candidates flag for unmanaged apps - interactive selection
     if args.candidates {
-        if !skipped.is_empty() {
-            // Progress bar for finding candidates
-            let pb = ProgressBar::new(skipped.len() as u64);
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-                    .unwrap()
-                    .progress_chars("█▉▊▋▌▍▎▏  "),
-            );
-            pb.set_message("Finding candidate repositories...");
+        // Progress bar for finding candidates
+        let pb = ProgressBar::new(skipped.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                .unwrap()
+                .progress_chars("█▉▊▋▌▍▎▏  "),
+        );
+        pb.set_message("Finding candidate repositories...");
 
-            for name in &skipped {
-                match find_candidate_repos(name, token).await {
-                    Ok(candidates) if !candidates.is_empty() => {
-                        candidates_map.insert(name.clone(), candidates);
-                    }
-                    _ => {}
+        // Track all unmanaged apps with their candidates (including empty)
+        let mut all_candidates_map: HashMap<String, Vec<String>> = HashMap::new();
+        
+        for name in &skipped {
+            match find_candidate_repos(name, token, &retry_config).await {
+                Ok(candidates) => {
+                    // Show all unmanaged apps, even those with no candidates
+                    all_candidates_map.insert(name.clone(), candidates);
                 }
-                pb.inc(1);
+                Err(e) => {
+                    // On error, still show the app with empty candidates
+                    all_candidates_map.insert(name.clone(), Vec::new());
+                    if !args.quiet {
+                        eprintln!("Warning: Failed to find candidates for '{}': {}", name, e);
+                    }
+                }
             }
-            pb.finish_with_message("Candidate search complete.");
+            pb.inc(1);
+        }
+        pb.finish_with_message("Candidate search complete.");
 
-            if !candidates_map.is_empty() {
-                // Interactive: let user select which apps to manage
-                let app_names: Vec<String> = candidates_map.keys().cloned().collect();
+        // Display all unmanaged apps with their candidates (including empty)
+        if !all_candidates_map.is_empty() {
+            println!("\nUnmanaged applications and candidate repositories:");
+            for (name, candidates) in &all_candidates_map {
+                if candidates.is_empty() {
+                    println!("  {} - no candidate repositories found", name);
+                } else {
+                    println!("  {}:", name);
+                    for candidate in candidates {
+                        println!("    - {}", candidate);
+                    }
+                }
+            }
+
+            // Interactive: let user select which apps to manage (only those with candidates)
+            let apps_with_candidates: Vec<String> = all_candidates_map
+                .iter()
+                .filter(|(_, c)| !c.is_empty())
+                .map(|(n, _)| n.clone())
+                .collect();
+            
+            if !apps_with_candidates.is_empty() {
                 let selections = MultiSelect::with_theme(&theme)
                     .with_prompt("Select apps to manage with ObtainHub (Space to select, Enter to confirm)")
-                    .items(&app_names)
+                    .items(&apps_with_candidates)
                     .interact_opt()?;
 
                 if let Some(selected_indices) = selections {
                     for idx in selected_indices {
-                        let app_name = &app_names[idx];
-                        if let Some(candidates) = candidates_map.get(app_name) {
+                        let app_name = &apps_with_candidates[idx];
+                        if let Some(candidates) = all_candidates_map.get(app_name) {
                             // Show candidates for this app and let user choose one
                             let choice = Select::with_theme(&theme)
                                 .with_prompt(format!("Choose repository for '{}'", app_name))
@@ -172,7 +202,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                 pb.set_message(format!("Checking latest version for {}...", selected_repo));
                                 pb.enable_steady_tick(Duration::from_millis(80));
 
-                                match fetch_latest_release(selected_repo, token).await {
+                                match fetch_latest_release(selected_repo, token, &retry_config).await {
                                     Ok(release) => {
                                         new_repo.version = release.tag_name.clone();
                                         state.add_installed(new_repo);
@@ -196,7 +226,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     if args.all && !skipped.is_empty() {
         println!("\nChecking unmanaged apps for GitHub repositories...");
         for name in &skipped {
-            match find_candidate_repos(name, token).await {
+            match find_candidate_repos(name, token, &retry_config).await {
                 Ok(candidates) if !candidates.is_empty() => {
                     // Show candidates and let user choose one or skip
                     let mut items = candidates.clone();
@@ -210,7 +240,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                     if let Some(repo_idx) = choice {
                         if repo_idx < candidates.len() {
                             let selected_repo = &candidates[repo_idx];
-                            match fetch_latest_release(selected_repo, token).await {
+                            match fetch_latest_release(selected_repo, token, &retry_config).await {
                                 Ok(release) => {
                                     outdated.push((format!("{} (via {})", name, selected_repo), "unknown".to_string(), release.tag_name));
                                 }
@@ -280,14 +310,22 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     Ok(())
 }
 
-async fn fetch_latest_release(repo: &str, token: Option<&str>) -> Result<GitHubRelease> {
+async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<GitHubRelease> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
-    }
-    let resp: GitHubRelease = req.send()?.json()?;
-    Ok(resp)
+    let token_clone = token.map(|s| s.to_string());
+    
+    execute_with_retry(retry_config, || {
+        let url = url.clone();
+        let token = token_clone.clone();
+        async move {
+            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            if let Some(token) = token {
+                req = req.with_header("Authorization", &format!("Bearer {}", token));
+            }
+            let resp: GitHubRelease = req.send()?.json()?;
+            Ok(resp)
+        }
+    }, "fetch_latest_release").await
 }
 
 #[cfg(windows)]
@@ -398,8 +436,9 @@ fn partition_gitHub_managed(
     (matched, skipped)
 }
 
-async fn check_self_update(config: &ConfigManager, quiet: bool) -> Result<()> {
+async fn check_self_update(config: &ConfigManager, quiet: bool, retry_config: &RetryConfig) -> Result<()> {
     use crate::commands::self_update::{execute as self_update_execute};
+    use crate::cli::SelfUpdateArgs;
     let args = SelfUpdateArgs {
         check_only: true,
         prerelease: false,
@@ -408,25 +447,33 @@ async fn check_self_update(config: &ConfigManager, quiet: bool) -> Result<()> {
         quiet,
         skip_signature: false,
     };
-    self_update_execute(args, &ConfigManager::new()?, &StateManager::new()?).await
+    self_update_execute(args, &ConfigManager::new()?, &StateManager::new()?, retry_config).await
 }
 
-async fn find_candidate_repos(name: &str, token: Option<&str>) -> Result<Vec<String>> {
+async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Vec<String>> {
     let encoded_name = urlencoding::encode(name);
     let url = format!("https://api.github.com/search/repositories?q={}&per_page=5", encoded_name);
-    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
-    }
-    let resp: serde_json::Value = req.send()?.json()?;
-    let items = resp["items"].as_array().unwrap_or(&vec![]).to_vec();
-    let mut candidates = Vec::new();
-    for item in items {
-        if let Some(full_name) = item["full_name"].as_str() {
-            candidates.push(full_name.to_string());
+    let token_clone = token.map(|s| s.to_string());
+    
+    execute_with_retry(retry_config, || {
+        let url = url.clone();
+        let token = token_clone.clone();
+        async move {
+            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            if let Some(token) = token {
+                req = req.with_header("Authorization", &format!("Bearer {}", token));
+            }
+            let resp: serde_json::Value = req.send()?.json()?;
+            let items = resp["items"].as_array().unwrap_or(&vec![]).to_vec();
+            let mut candidates = Vec::new();
+            for item in items {
+                if let Some(full_name) = item["full_name"].as_str() {
+                    candidates.push(full_name.to_string());
+                }
+            }
+            Ok(candidates)
         }
-    }
-    Ok(candidates)
+    }, "find_candidate_repos").await
 }
 
 #[cfg(test)]

@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.16-rc1] - 2026-10-13
+### Fixed
+- Self-update check 404 - fixed GitHub API endpoint and added retry logic
+- Check command: `--candidates` now shows all unmanaged apps with their candidate repositories
+- Check command: `--all` now shows all unmanaged apps with interactive selection
+- Colors: Only green for selection checkboxes/ticks, default color for all other text
+- Added retry logic for all HTTP requests, configurable via config (http_retries, http_retry_delay_ms, http_retry_backoff)
+- More informative output - progress bars for scanning and candidate searching with detailed messages
+- Self-update check now uses retry config and proper error handling
+
+### Added
+- Progress bars for scanning installed programs and finding candidates
+- Green tick marks and gray checkboxes in interactive MultiSelect
+- Interactive `--all` offers selectable list for unmanaged apps
+- Interactive `--candidates` offers selectable list to add apps to management
+- After selecting app, immediately checks candidates and offers repository selection
+- Added `dialoguer`, `console`, `indicatif` dependencies for interactive prompts and progress bars
+- Retry configuration in config.json (http_retries=3, http_retry_delay_ms=1000, http_retry_backoff=2.0)
+
 ## [v3.0.15-rc1] - 2026-10-13
 ### Added
 - Check command: Removed timestamp from command output (clean output)

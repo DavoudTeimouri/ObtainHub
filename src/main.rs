@@ -21,21 +21,24 @@ async fn main() -> Result<()> {
     let mut config_manager = config::ConfigManager::new()?;
     let mut state_manager = state::StateManager::new()?;
     
+    // Create retry config from config
+    let retry_config = crate::utils::retry::RetryConfig::from_config(&config_manager);
+    
     let format = cli.format;
     
     // Handle command
     match cli.command {
         Commands::Search(args) => commands::search::execute(args, &config_manager, &state_manager, format).await,
-        Commands::Install(args) => commands::install::execute(args, &config_manager, &mut state_manager).await,
+        Commands::Install(args) => commands::install::execute(args, &config_manager, &mut state_manager, &retry_config).await,
         Commands::Check(args) => commands::check::execute(args, &config_manager, &mut state_manager).await,
         Commands::List(args) => commands::list::execute(args, &config_manager, &state_manager).await,
-        Commands::Update(args) => commands::update::execute(args, &config_manager, &mut state_manager).await,
+        Commands::Update(args) => commands::update::execute(args, &config_manager, &mut state_manager, &retry_config).await,
         Commands::Uninstall(args) => commands::uninstall::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Tui(args) => commands::tui::execute(args, &config_manager, &state_manager).await,
         Commands::Config(args) => commands::config::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Backup(args) => commands::backup::execute(args, &config_manager, &state_manager).await,
         Commands::Restore(args) => commands::restore::execute(args, &config_manager, &mut state_manager).await,
-        Commands::SelfUpdate(args) => commands::self_update::execute(args, &config_manager, &state_manager).await,
+        Commands::SelfUpdate(args) => commands::self_update::execute(args, &config_manager, &state_manager, &retry_config).await,
         Commands::Rollback(args) => commands::rollback::execute(args, &config_manager, &mut state_manager).await,
         Commands::Completion(args) => commands::completion::execute(args).await,
         Commands::Doctor(args) => commands::doctor::execute(args, &config_manager, &mut state_manager).await,

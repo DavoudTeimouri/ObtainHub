@@ -1,5 +1,6 @@
 use crate::core::{ConfigManager, StateManager, assets::{download_verify_extract, calculate_sha256_bytes}, registries::{create_registry, RegistryRelease, RegistryAsset}};
 use crate::cli::InstallArgs;
+use crate::utils::retry::RetryConfig;
 use anyhow::{Result, Context};
 use minreq;
 use serde::{Deserialize, Serialize};
@@ -43,7 +44,7 @@ struct GitHubRepoInfo {
     description: Option<String>,
 }
 
-pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &mut StateManager) -> Result<()> {
+pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Installing: {}", args.repo);
     
     // Handle --file (local file install)

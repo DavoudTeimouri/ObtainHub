@@ -1,5 +1,6 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::UpdateArgs;
+use crate::utils::retry::RetryConfig;
 use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,7 @@ struct GitHubAsset {
     content_type: Option<String>,
 }
 
-pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
+pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Updating repositories");
     
     let token = config.get().github_token.as_deref();

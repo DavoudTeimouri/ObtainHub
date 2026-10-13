@@ -1,5 +1,6 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::SelfUpdateArgs;
+use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::{Context, Result};
 use minreq;
 use semver::Version;
@@ -13,31 +14,38 @@ use ed25519_compact::PublicKey;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 
 const REPO_OWNER: &str = "DavoudTeimouri";
-const REPO_NAME: &str = "ObtainHub";
+const REPO_NAME: &str = "obtainhub";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Public key for verifying release signatures (base64 encoded Ed25519 public key)
 // This should be set at build time from a secure source
 static RELEASE_PUBLIC_KEY_B64: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &StateManager) -> Result<()> {
+pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Checking for self-update");
 
     let current_version = Version::parse(CURRENT_VERSION)?;
 
-    // Fetch latest release from GitHub
+    // Fetch latest release from GitHub with retry
     let url = format!("https://api.github.com/repos/{}/{}/releases/latest", REPO_OWNER, REPO_NAME);
-    let resp = minreq::get(&url)
-        .with_header("User-Agent", "ohub")
-        .with_header("Accept", "application/vnd.github.v3+json")
-        .send()
-        .context("Failed to fetch latest release")?;
+    let release = execute_with_retry(retry_config, || {
+        let url = url.clone();
+        async move {
+            let resp = minreq::get(&url)
+                .with_header("User-Agent", "ohub")
+                .with_header("Accept", "application/vnd.github.v3+json")
+                .send()
+                .context("Failed to fetch latest release")?;
 
-    if !(resp.status_code >= 200 && resp.status_code < 300) {
-        return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
-    }
+            if !(resp.status_code >= 200 && resp.status_code < 300) {
+                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+            }
 
-    let release: serde_json::Value = resp.json()?;
+            let release: serde_json::Value = resp.json()?;
+            Ok(release)
+        }
+    }, "fetch_self_update_release").await?;
+
     let tag_name = release["tag_name"].as_str().context("No tag_name in release")?;
     let latest_version_str = tag_name.trim_start_matches('v');
     let latest_version = Version::parse(latest_version_str)?;
@@ -90,24 +98,30 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
         println!("Downloading {} ({})...", asset_name, latest_version_str);
     }
 
-    // Download to temp file
+    // Download to temp file with retry
     let tmp_dir = env::temp_dir();
     let download_path = tmp_dir.join(asset_name);
     
-    let mut resp = minreq::get(download_url)
-        .with_header("User-Agent", "ohub")
-        .send()
-        .context("Failed to download release asset")?;
+    let bytes = execute_with_retry(retry_config, || {
+        let download_url = download_url.to_string();
+        async move {
+            let mut resp = minreq::get(download_url)
+                .with_header("User-Agent", "ohub")
+                .send()
+                .context("Failed to download release asset")?;
+            let bytes = resp.as_bytes().to_vec();
+            Ok(bytes)
+        }
+    }, "download_self_update_asset").await?;
 
-    let bytes = resp.as_bytes();
-    fs::write(&download_path, bytes).context("Failed to write download")?;
+    fs::write(&download_path, &bytes).context("Failed to write download")?;
 
     // Verify the download against a digest published with the release before we
     // execute anything from it. Without this, a compromised or hijacked release
     // replaces the running binary unchallenged.
     match find_published_digest(&release, asset_name) {
         Some(expected) => {
-            let actual = sha256_hex(bytes);
+            let actual = sha256_hex(&bytes);
             if !expected.eq_ignore_ascii_case(&actual) {
                 let _ = fs::remove_file(&download_path);
                 anyhow::bail!(
@@ -135,7 +149,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
             if !args.quiet {
                 println!("Verifying signature...");
             }
-            if let Err(e) = verify_signature(sig_url, &bytes).await {
+            if let Err(e) = verify_signature(sig_url, &bytes, retry_config).await {
                 let _ = fs::remove_file(&download_path);
                 anyhow::bail!("Signature verification failed: {}", e);
             }
@@ -146,7 +160,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
     } else if !args.skip_signature {
         let _ = fs::remove_file(&download_path);
         anyhow::bail!(
-            "Refusing to self-update: {} publishes no signature (.sig), so authenticity cannot be verified. Use --skip-signature to bypass.",
+            "Refusing to self-update: no signature file found for {}. Use --skip-signature to bypass.",
             asset_name
         );
     }
@@ -322,44 +336,50 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
-async fn verify_signature(sig_url: &str, data: &[u8]) -> Result<()> {
-    let mut req = minreq::get(sig_url).with_header("User-Agent", "ohub");
-    let resp = req.send().context("Failed to download signature")?;
-    let sig_b64 = resp.as_str()?.trim();
-    
+async fn verify_signature(sig_url: &str, data: &[u8], retry_config: &RetryConfig) -> Result<()> {
+    let sig_b64 = execute_with_retry(retry_config, || {
+        let sig_url = sig_url.to_string();
+        async move {
+            let mut req = minreq::get(sig_url).with_header("User-Agent", "ohub");
+            let resp = req.send().context("Failed to download signature")?;
+            let sig_b64 = resp.as_str()?.trim().to_string();
+            Ok(sig_b64)
+        }
+    }, "verify_signature_download").await?;
+
     let sig_bytes = BASE64_STANDARD.decode(sig_b64)
         .context("Failed to decode base64 signature")?;
-    
+
     if sig_bytes.len() != 64 {
         anyhow::bail!("Invalid signature length: expected 64 bytes, got {}", sig_bytes.len());
     }
-    
+
     // Get public key from OnceLock
     let public_key_b64 = RELEASE_PUBLIC_KEY_B64.get_or_init(|| {
         std::env::var("RELEASE_PUBLIC_KEY_B64").unwrap_or_default()
     });
-    
+
     let public_key_bytes = BASE64_STANDARD.decode(public_key_b64)
         .context("Failed to decode public key")?;
-    
+
     if public_key_bytes.len() != 32 {
         anyhow::bail!("Invalid public key length: expected 32 bytes, got {}", public_key_bytes.len());
     }
-    
+
     let public_key_array: [u8; 32] = public_key_bytes.try_into()
         .map_err(|_| anyhow::anyhow!("Failed to convert public key to fixed array"))?;
-    
+
     let verifying_key = VerifyingKey::from_bytes(&public_key_array)
         .context("Failed to create verifying key")?;
-    
+
     let sig_array: [u8; 64] = sig_bytes.try_into()
         .map_err(|_| anyhow::anyhow!("Failed to convert signature to fixed array"))?;
-    
+
     let signature = Signature::from_bytes(&sig_array);
-    
+
     verifying_key.verify(data, &signature)
         .context("Ed25519 signature verification failed")?;
-    
+
     Ok(())
 }
 

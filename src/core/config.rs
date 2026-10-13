@@ -64,33 +64,43 @@ pub struct Config {
     
     #[serde(default = "default_parallel_downloads")]
         pub parallel_downloads: usize,
-
+    
         #[serde(default = "default_timeout")]
         pub timeout_seconds: u64,
-
+    
         #[serde(default = "default_check_interval")]
         pub update_check_interval_hours: u64,
-
+    
         #[serde(default = "default_true")]
         pub auto_cleanup: bool,
-
+    
         #[serde(default)]
         pub proxy: Option<String>,
-
+    
         #[serde(default = "default_true")]
         pub verify_checksums: bool,
-
+    
         #[serde(default)]
         pub download_bandwidth_limit: Option<u64>,
-
+    
         #[serde(default)]
         pub manifest_sources: Vec<ManifestSource>,
-
+    
         #[serde(default)]
         pub schedule: ScheduleConfig,
-
+    
         #[serde(default)]
         pub groups: HashMap<String, Vec<String>>,
+    
+        // HTTP retry configuration
+        #[serde(default = "default_http_retries")]
+        pub http_retries: u32,
+    
+        #[serde(default = "default_http_retry_delay")]
+        pub http_retry_delay_ms: u64,
+    
+        #[serde(default = "default_http_retry_backoff")]
+        pub http_retry_backoff: f64,
 }
 
 fn default_download_dir() -> PathBuf {
@@ -119,6 +129,11 @@ fn default_timeout() -> u64 { 30 }
 fn default_check_interval() -> u64 { 24 }
 fn default_true() -> bool { true }
 
+// HTTP retry defaults
+fn default_http_retries() -> u32 { 3 }
+fn default_http_retry_delay() -> u64 { 1000 } // 1 second
+fn default_http_retry_backoff() -> f64 { 2.0 } // exponential backoff factor
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -142,6 +157,9 @@ impl Default for Config {
                 last_run: None,
             },
             groups: HashMap::new(),
+            http_retries: 3,
+            http_retry_delay_ms: 1000,
+            http_retry_backoff: 2.0,
         }
     }
 }
