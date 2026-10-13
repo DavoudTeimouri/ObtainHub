@@ -1,6 +1,6 @@
 [package]
 name = "obtainhub"
-version = "3.0.13-rc1"
+version = "3.0.14-rc1"
 edition = "2021"
 license = "MIT"
 description = "ObtainHub - GitHub repository search and management CLI"
@@ -42,6 +42,10 @@ chrono = { version = "0.4.31", features = ["serde"] }
 
 # Table output
 comfy-table = "6.0"
+
+# Interactive prompts
+dialoguer = { version = "0.11" }
+console = "0.15"
 
 # File system
 walkdir = "2"

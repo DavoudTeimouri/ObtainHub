@@ -629,6 +629,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dialoguer"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "658bce805d770f407bc62102fca7c2c64ceef2fbcb2b8bd19d2765ce093980de"
+dependencies = [
+ "console",
+ "shell-words",
+ "tempfile",
+ "thiserror",
+ "zeroize",
+]
+
+[[package]]
 name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1265,7 +1278,7 @@ dependencies = [
 
 [[package]]
 name = "obtainhub"
-version = "3.0.12-rc1"
+version = "3.0.13-rc1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1277,7 +1290,9 @@ dependencies = [
  "clap_complete",
  "comfy-table",
  "config",
+ "console",
  "crossterm 0.27.0",
+ "dialoguer",
  "dirs",
  "ed25519-compact",
  "ed25519-dalek",
@@ -1874,6 +1889,12 @@ checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
 ]
+
+[[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"

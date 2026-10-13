@@ -4,9 +4,11 @@ use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::{self, Write};
 use tracing::info;
 use comfy_table::{Table, Cell};
 use urlencoding;
+use dialoguer::{Select, MultiSelect, Confirm, theme::ColorfulTheme};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GitHubRelease {
@@ -27,7 +29,7 @@ struct GitHubAsset {
     content_type: Option<String>,
 }
 
-pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManager) -> Result<()> {
+pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
     info!("Checking for updates");
 
     let token = config.get().github_token.as_deref();
@@ -47,7 +49,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
     };
 
     // Check for self-update if not checking specific repo
-    if args.repo.is_none() {
+    if args.repo.is_none() && !args.candidates {
         check_self_update(config, args.quiet).await?;
     }
 
@@ -79,7 +81,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
         }
     }
 
-    // Handle --candidates flag for unmanaged apps
+    // Handle --candidates flag for unmanaged apps - interactive selection
     if args.candidates {
         if !skipped.is_empty() {
             println!("\nFinding candidate repositories for unmanaged apps...");
@@ -91,22 +93,92 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
                     _ => {}
                 }
             }
+
+            if !candidates_map.is_empty() {
+                // Interactive: let user select which apps to manage
+                let app_names: Vec<String> = candidates_map.keys().cloned().collect();
+                let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Select apps to manage with ObtainHub (Space to select, Enter to confirm)")
+                    .items(&app_names)
+                    .interact_opt()?;
+
+                if let Some(selected_indices) = selections {
+                    for idx in selected_indices {
+                        let app_name = &app_names[idx];
+                        if let Some(candidates) = candidates_map.get(app_name) {
+                            // Show candidates for this app and let user choose one
+                            let choice = Select::with_theme(&ColorfulTheme::default())
+                                .with_prompt(format!("Choose repository for '{}'", app_name))
+                                .items(candidates)
+                                .default(0)
+                                .interact_opt()?;
+
+                            if let Some(repo_idx) = choice {
+                                let selected_repo = &candidates[repo_idx];
+                                // Add to state.json
+                                let mut new_repo = crate::core::state::InstalledRepo {
+                                    repo: selected_repo.clone(),
+                                    version: "unknown".to_string(),
+                                    install_path: std::path::PathBuf::new(),
+                                    installed_at: chrono::Utc::now(),
+                                    updated_at: None,
+                                    checksum: None,
+                                    metadata: serde_json::Value::Null,
+                                    previous_version: None,
+                                    previous_install_path: None,
+                                    dependencies: Vec::new(),
+                                    is_dependency: false,
+                                };
+                                state.add_installed(new_repo.clone());
+                                state.save()?;
+                                println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+                                
+                                // Check for updates immediately
+                                match fetch_latest_release(selected_repo, token).await {
+                                    Ok(release) => {
+                                        new_repo.version = release.tag_name.clone();
+                                        state.add_installed(new_repo);
+                                        state.save()?;
+                                        println!("  Latest version: {}", release.tag_name);
+                                    }
+                                    Err(e) => {
+                                        println!("  Could not fetch latest version: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+        return Ok(());
     }
 
-    // Also check unmanaged apps for updates if --all (try to find GitHub repo by name)
-    if args.all && !args.candidates && !skipped.is_empty() {
+    // Handle --all flag - interactive selection for unmanaged apps
+    if args.all && !skipped.is_empty() {
         println!("\nChecking unmanaged apps for GitHub repositories...");
         for name in &skipped {
             match find_candidate_repos(name, token).await {
                 Ok(candidates) if !candidates.is_empty() => {
-                    // Use first candidate to check for updates
-                    let candidate = &candidates[0];
-                    match fetch_latest_release(candidate, token).await {
-                        Ok(release) => {
-                            outdated.push((format!("{} (via {})", name, candidate), "unknown".to_string(), release.tag_name));
+                    // Show candidates and let user choose one or skip
+                    let mut items = candidates.clone();
+                    items.push("--- Skip ---".to_string());
+                    let choice = Select::with_theme(&ColorfulTheme::default())
+                        .with_prompt(format!("Choose repository for '{}' (or Skip)", name))
+                        .items(&items)
+                        .default(0)
+                        .interact_opt()?;
+
+                    if let Some(repo_idx) = choice {
+                        if repo_idx < candidates.len() {
+                            let selected_repo = &candidates[repo_idx];
+                            match fetch_latest_release(selected_repo, token).await {
+                                Ok(release) => {
+                                    outdated.push((format!("{} (via {})", name, selected_repo), "unknown".to_string(), release.tag_name));
+                                }
+                                Err(_) => {}
+                            }
                         }
-                        Err(_) => {}
                     }
                 }
                 _ => {}
@@ -156,8 +228,8 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &StateManag
         println!();
     }
 
-    // Show candidates if any
-    if !candidates_map.is_empty() {
+    // Show candidates if any (non-interactive mode)
+    if !candidates_map.is_empty() && !args.candidates {
         println!("Candidate repositories for unmanaged apps:");
         for (name, candidates) in candidates_map {
             println!("  {}:", name);
@@ -185,16 +257,16 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
     use std::collections::HashSet;
     use winreg::enums::*;
     use winreg::RegKey;
-    
+
     let mut results = Vec::new();
     let mut seen = HashSet::new();
-    
+
     // Check both 64-bit and 32-bit registry views
     for &root in &[HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
         for &view in &[KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
             let hklm = RegKey::predef(root);
             let uninstall_path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
-            
+
             if let Ok(uninstall_key) = hklm.open_subkey_with_flags(uninstall_path, KEY_READ | view) {
                 for subkey_name in uninstall_key.enum_keys().flatten() {
                     if let Ok(subkey) = uninstall_key.open_subkey_with_flags(&subkey_name, KEY_READ | view) {
@@ -202,14 +274,14 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
                         let display_version: Option<String> = subkey.get_value("DisplayVersion").ok();
                         let publisher: Option<String> = subkey.get_value("Publisher").ok();
                         let uninstall_string: Option<String> = subkey.get_value("UninstallString").ok();
-                        
+
                         // Skip system components (no DisplayName)
                         if let Some(name) = display_name {
                             // Skip our own entry
                             if name.contains("ObtainHub") {
                                 continue;
                             }
-                            
+
                             // Create a unique key to avoid duplicates
                             let key = format!("{}|{}", name, display_version.clone().unwrap_or_default());
                             if seen.insert(key) {
@@ -233,7 +305,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
             }
         }
     }
-    
+
     Ok(results)
 }
 
@@ -242,6 +314,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
     // Not implemented on non-Windows
     Ok(Vec::new())
 }
+
 /// Split enumerated Windows programs into ones ObtainHub actually manages and ones
 /// it does not. Only entries present in `state.json` have a known GitHub origin —
 /// a `DisplayName` like "NVIDIA Corporation" is not an `owner/repo` and would 404

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.14-rc1] - 2026-10-13
+### Added
+- Check command: `--all` now offers interactive selectable list for unmanaged apps
+- Check command: `--candidates` now offers interactive selection to add apps to management
+- Check command: After selecting app, immediately checks candidates and offers repository selection
+- Added `dialoguer` and `console` dependencies for interactive prompts
+
+### Fixed
+- Check command: `--candidates` works independently of `--all`
+- Check command: shows candidate repositories for unmanaged apps with GitHub search
+- Check command: self-update check when no specific repo specified
+- Check command: `--quiet` flag to suppress non-error output
+
 ## [v3.0.13-rc1] - 2026-10-13
 ### Fixed
 - Check command: `--all` now checks unmanaged apps by finding GitHub repos by name

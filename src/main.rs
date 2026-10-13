@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Search(args) => commands::search::execute(args, &config_manager, &state_manager, format).await,
         Commands::Install(args) => commands::install::execute(args, &config_manager, &mut state_manager).await,
-        Commands::Check(args) => commands::check::execute(args, &config_manager, &state_manager).await,
+        Commands::Check(args) => commands::check::execute(args, &config_manager, &mut state_manager).await,
         Commands::List(args) => commands::list::execute(args, &config_manager, &state_manager).await,
         Commands::Update(args) => commands::update::execute(args, &config_manager, &mut state_manager).await,
         Commands::Uninstall(args) => commands::uninstall::execute(args, &mut config_manager, &mut state_manager).await,
