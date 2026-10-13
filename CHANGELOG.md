@@ -2,7 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.0.6-rc1] - 2026-10-10
+## [v3.0.8-rc1] - 2026-10-12
+### Added
+- RC build for v3.0.8 with all v3.0.7 features
+### Changed
+- NSIS pinned to 3.11 with SourceForge fallback
+- Updated CHANGELOG for RC release
+
+## [v3.0.7-rc2] - 2026-10-11
 ### Fixed
 - The NSIS installer failed on Windows with "Installer corrupted: invalid
   opcode" before showing any dialog. v3.0.4 and v3.0.5 were both built with
