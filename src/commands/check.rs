@@ -12,7 +12,6 @@ use comfy_table::{Table, Cell};
 use urlencoding;
 use dialoguer::{Select, MultiSelect, Confirm, theme::ColorfulTheme};
 use indicatif::{ProgressBar, ProgressStyle};
-use console::style;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GitHubRelease {
@@ -39,7 +38,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     let token = config.get().github_token.as_deref();
     let retry_config = RetryConfig::from_config(config);
 
-    // Create a theme with green check marks and gray boxes for MultiSelect
+    // Create a theme with green check marks and default colors for everything else
     let theme = ColorfulTheme::default();
 
     // Get all installed software if --all or --candidates
@@ -47,11 +46,11 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()
-                .template("{spinner:.green} {msg}")
+                .template("{spinner} {msg}")
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        pb.set_message("Scanning installed programs...");
+        pb.set_message("Scanning Windows registry for installed programs...");
         pb.enable_steady_tick(Duration::from_millis(80));
 
         let all = enumerate_all_installed_software()?;
@@ -69,6 +68,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
     // Check for self-update if not checking specific repo
     if args.repo.is_none() && !args.candidates {
+        if !args.quiet {
+            println!("Checking ObtainHub self-update...");
+        }
         check_self_update(config, args.quiet, &retry_config).await?;
     }
 
@@ -78,11 +80,19 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     let mut candidates_map: HashMap<String, Vec<String>> = HashMap::new();
 
     // Process tracked (matched) repositories
+    if !args.quiet && !matched.is_empty() {
+        println!("Checking {} managed repositories for updates...", matched.len());
+    }
     for repo in matched {
         if let Some(ref target) = args.repo {
             if &repo.repo != target {
                 continue;
             }
+        }
+
+        // Skip self-update check here - it's done separately
+        if repo.repo.to_lowercase().contains("obtainhub") {
+            continue;
         }
 
         match fetch_latest_release(&repo.repo, token, &retry_config).await {
@@ -106,7 +116,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         let pb = ProgressBar::new(skipped.len() as u64);
         pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                .template("{spinner} [{bar:40}] {pos}/{len} {msg}")
                 .unwrap()
                 .progress_chars("█▉▊▋▌▍▎▏  "),
         );
@@ -195,7 +205,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                 let pb = ProgressBar::new_spinner();
                                 pb.set_style(
                                     ProgressStyle::default_spinner()
-                                        .template("{spinner:.green} {msg}")
+                                        .template("{spinner} {msg}")
                                         .unwrap()
                                         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
                                 );
@@ -444,7 +454,7 @@ async fn check_self_update(config: &ConfigManager, quiet: bool, retry_config: &R
         prerelease: false,
         force: false,
         json: false,
-        quiet,
+        quiet: true,
         skip_signature: false,
     };
     self_update_execute(args, &ConfigManager::new()?, &StateManager::new()?, retry_config).await

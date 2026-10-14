@@ -19,7 +19,7 @@
 !define APP_EXE "ohub.exe"
 !define PUBLISHER "DavoudTeimouri"
 !define URL "https://github.com/DavoudTeimouri/ObtainHub"
-!define VERSION "3.0.16"
+!define VERSION "3.0.17"
 
 ; Icon (before MUI pages)
 !define MUI_ICON "icon.ico"
@@ -68,9 +68,15 @@ x64_ok:
   ReadRegStr $0 HKLM "Software\ObtainHub" "PathInstalled"
   StrCmp $0 "" check_exe_installed msi_found
 msi_found:
+  ; Read installed version
+  ReadRegStr $2 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayVersion"
+  StrCmp $2 "" msi_no_version msi_has_version
+msi_no_version:
+  StrCpy $2 "unknown"
+msi_has_version:
   ; MSI found - offer uninstall/overwrite options
   IfSilent silent_msi_conflict check_exe_installed
-  MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is already installed via MSI (ObtainHub.msi).$\n$\nFound: $0$\n$\nChoose an option:$\n$\n  Yes = Uninstall MSI and continue with EXE install$\n  No  = Overwrite (keep MSI entry, replace files)$\n  Cancel = Abort install" /SD IDOK IDYES msi_uninstall IDNO msi_overwrite
+  MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is already installed via MSI (ObtainHub.msi).$\n$\nFound: $0 $\nVersion: $2 $\nCurrent installer: ${VERSION}$\n$\nChoose an option:$\n$\n  Yes = Uninstall MSI and continue with EXE install$\n  No  = Overwrite (keep MSI entry, replace files)$\n  Cancel = Abort install" /SD IDOK IDYES msi_uninstall IDNO msi_overwrite
   Abort
 msi_uninstall:
   ; Launch MSI uninstall silently
@@ -91,9 +97,11 @@ check_exe_installed:
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayName"
   StrCmp $0 "" done_check exe_found
 exe_found:
+  ; Read installed version
+  ReadRegStr $2 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}" "DisplayVersion"
   ; EXE found - offer upgrade/overwrite
   IfSilent silent_exe_conflict done_check
-  MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is already installed (EXE version).$\n$\nFound: $0$\n$\nChoose an option:$\n$\n  Yes = Uninstall existing and install fresh$\n  No  = Upgrade in place (replace files)$\n  Cancel = Abort install" /SD IDOK IDYES exe_uninstall IDNO exe_upgrade
+  MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is already installed (EXE version).$\n$\nFound: $0 $\nVersion: $2 $\nCurrent installer: ${VERSION}$\n$\nChoose an option:$\n$\n  Yes = Uninstall existing and install fresh$\n  No  = Upgrade in place (replace files)$\n  Cancel = Abort install" /SD IDOK IDYES exe_uninstall IDNO exe_upgrade
   Abort
 exe_uninstall:
   ; Launch existing uninstaller
@@ -280,4 +288,24 @@ SectionEnd
 
 ; ---------- Silent uninstall mutual refusal ----------
 Function un.onInit
+  ; Detect MSI install during uninstall
+  ReadRegStr $0 HKLM "Software\ObtainHub" "PathInstalled"
+  StrCmp $0 "" done_uninstall_check msi_found_uninstall
+msi_found_uninstall:
+  ; MSI found - offer uninstall options
+  IfSilent silent_msi_conflict_uninstall done_uninstall_check
+  MessageBox MB_ICONQUESTION|MB_YESNOCANCEL "$\n${APP_NAME} is also installed via MSI (ObtainHub.msi).$\n$\nFound: $0$\n$\nChoose an option:$\n$\n  Yes = Uninstall both MSI and EXE$\n  No  = Uninstall only EXE (keep MSI)$\n  Cancel = Abort uninstall" /SD IDOK IDYES msi_uninstall_both IDNO msi_keep
+  Abort
+msi_uninstall_both:
+  ExecWait 'msiexec /x ${PRODUCT_GUID} /qn'
+  Goto done_uninstall_check
+msi_keep:
+  ; Just remove EXE registry, keep MSI
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}"
+  DeleteRegKey HKLM "Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_GUID}"
+  Goto done_uninstall_check
+silent_msi_conflict_uninstall:
+  ExecWait 'msiexec /x ${PRODUCT_GUID} /qn'
+  Goto done_uninstall_check
+done_uninstall_check:
 FunctionEnd

@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.17-rc1] - 2026-10-13
+### Fixed
+- Self-update 404 - fixed GitHub API endpoint (ObtainHub repo name case)
+- Check command: `--all` no longer 404s on ObtainHub's own repo (skipped during check)
+- NSIS installer detects installed version and offers upgrade/uninstall options
+- Colors: Only green removed - uses terminal default colors everywhere
+
+### Added
+- More informative output - detailed progress/info messages for all operations
+- Check command: Shows "Checking ObtainHub self-update..." before self-update check
+- Check command: Shows "Checking N managed repositories for updates..."
+- Check command: Shows "Scanning Windows registry for installed programs..."
+- NSIS installer: Displays installed version vs new version in conflict dialogs
+- Uses terminal default colors - no custom color overrides
+
 ## [v3.0.16-rc1] - 2026-10-13
 ### Fixed
 - Self-update check 404 - fixed GitHub API endpoint and added retry logic

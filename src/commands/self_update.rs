@@ -8,13 +8,14 @@ use std::env;
 use std::fs;
 use std::path::Path;
 use tracing::info;
+use indicatif::{ProgressBar, ProgressStyle};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use ed25519_compact::PublicKey;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 
 const REPO_OWNER: &str = "DavoudTeimouri";
-const REPO_NAME: &str = "obtainhub";
+const REPO_NAME: &str = "ObtainHub";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Public key for verifying release signatures (base64 encoded Ed25519 public key)
@@ -102,6 +103,22 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
     let tmp_dir = env::temp_dir();
     let download_path = tmp_dir.join(asset_name);
     
+    // Progress bar for download
+    let download_pb = if !args.quiet {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} {msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        pb.set_message(format!("Downloading {}...", asset_name));
+        pb.enable_steady_tick(std::time::Duration::from_millis(80));
+        Some(pb)
+    } else {
+        None
+    };
+    
     let bytes = execute_with_retry(retry_config, || {
         let download_url = download_url.to_string();
         async move {
@@ -113,6 +130,11 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
             Ok(bytes)
         }
     }, "download_self_update_asset").await?;
+
+    // Finish download progress
+    if let Some(pb) = download_pb {
+        pb.finish_with_message("Download complete");
+    }
 
     fs::write(&download_path, &bytes).context("Failed to write download")?;
 
@@ -169,6 +191,22 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
         println!("Extracting...");
     }
 
+    // Extract zip with progress
+    let extract_pb = if !args.quiet {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} {msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        pb.set_message("Extracting...".to_string());
+        pb.enable_steady_tick(std::time::Duration::from_millis(80));
+        Some(pb)
+    } else {
+        None
+    };
+
     // Extract zip
     let extract_dir = tmp_dir.join("ohub-update");
     if extract_dir.exists() {
@@ -198,6 +236,11 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
     let binary_name = if cfg!(windows) { "ohub.exe" } else { "ohub" };
     let extracted_binary = find_binary(&extract_dir, binary_name)
         .context("Could not find binary in extracted release")?;
+
+    // Finish extraction progress
+    if let Some(pb) = extract_pb {
+        pb.finish_with_message("Extract complete");
+    }
 
     if !args.quiet {
         println!("Installing to current location...");
