@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.18-rc1] - 2026-10-13
+### Added
+- CLI message templates module for consistent output formatting
+- Version templates with build metadata (timestamp, rustc version, git info)
+- Build script emits vergen-compatible constants without external dependency
+- Error/Warning/Info/Success message templates
+- Progress/Status templates for long-running operations
+- Repository info, install result, update availability templates
+- Search result, list item, uninstall confirmation templates
+- Rollback info, config, dry run templates
+
+### Fixed
+- Version output uses standardized template
+- Build constants generated without vergen dependency (Rust 1.85 compatible)
+
 ## [v3.0.17-rc1] - 2026-10-13
 ### Fixed
 - Self-update 404 - fixed GitHub API endpoint (ObtainHub repo name case)

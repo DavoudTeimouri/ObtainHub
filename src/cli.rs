@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand, Args};
 use clap_complete::Shell;
 
+pub mod templates;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "ohub",

@@ -1,6 +1,6 @@
 [package]
 name = "obtainhub"
-version = "3.0.17-rc1"
+version = "3.0.18-rc1"
 edition = "2021"
 license = "MIT"
 description = "ObtainHub - GitHub repository search and management CLI"
@@ -109,7 +109,7 @@ predicates = "3.0"
 serial_test = "3.0"
 
 [build-dependencies]
-vergen = "8.0"
+chrono = "0.4"
 winres = "0.1"
 
 [[bin]]
