@@ -38,10 +38,8 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     let token = config.get().github_token.as_deref();
     let retry_config = RetryConfig::from_config(config);
 
-    // Create a theme with green check marks and default colors for everything else
     let theme = ColorfulTheme::default();
 
-    // Get all installed software if --all or --candidates
     let (matched, skipped) = if args.all || args.candidates {
         let pb = ProgressBar::new_spinner();
         pb.set_style(
@@ -66,7 +64,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         (state.list_installed().into_iter().cloned().collect(), Vec::new())
     };
 
-    // Check for self-update if not checking specific repo
     if args.repo.is_none() && !args.candidates {
         if !args.quiet {
             println!("Checking ObtainHub self-update...");
@@ -77,9 +74,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     let mut outdated = Vec::new();
     let mut current = Vec::new();
     let mut errors = Vec::new();
-    let mut candidates_map: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Process tracked (matched) repositories
     if !args.quiet && !matched.is_empty() {
         println!("Checking {} managed repositories for updates...", matched.len());
     }
@@ -89,12 +84,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                 continue;
             }
         }
-
-        // Skip self-update check here - it's done separately
         if repo.repo.to_lowercase().contains("obtainhub") {
             continue;
         }
-
         match fetch_latest_release(&repo.repo, token, &retry_config).await {
             Ok(Some(release)) => {
                 let latest_version = release.tag_name;
@@ -105,7 +97,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                 }
             }
             Ok(None) => {
-                // No releases found for this repo - skip silently or add to errors
                 if !args.quiet {
                     errors.push((repo.repo.clone(), "No releases found on GitHub".to_string()));
                 }
@@ -116,188 +107,180 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         }
     }
 
-    // Handle --candidates flag for unmanaged apps - interactive selection
     if args.candidates {
-        // Progress bar for finding candidates
-        let pb = ProgressBar::new(skipped.len() as u64);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner} [{bar:40}] {pos}/{len} {msg}")
-                .unwrap()
-                .progress_chars("█▉▊▋▌▍▎▏  "),
-        );
-        pb.set_message("Finding candidate repositories...");
+        if !skipped.is_empty() {
+            let mut sorted_skipped: Vec<&String> = skipped.iter().collect();
+            sorted_skipped.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
 
-        // Track all unmanaged apps with their candidates (including empty)
-        let mut all_candidates_map: HashMap<String, Vec<String>> = HashMap::new();
+            let pb = ProgressBar::new(sorted_skipped.len() as u64);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner} [{bar:40}] {pos}/{len} {msg}")
+                    .unwrap()
+                    .progress_chars("█▉▊▋▌▍▎▏  "),
+            );
+            pb.set_message("Finding candidate repositories...");
 
-        for name in &skipped {
-            match find_candidate_repos(name, token, &retry_config).await {
-                Ok(candidates) => {
-                    // Show all unmanaged apps, even those with no candidates
-                    all_candidates_map.insert(name.clone(), candidates);
-                }
-                Err(e) => {
-                    // On error, still show the app with empty candidates
-                    all_candidates_map.insert(name.clone(), Vec::new());
-                    if !args.quiet {
-                        eprintln!("Warning: Failed to find candidates for '{}': {}", name, e);
+            let mut all_candidates_map: HashMap<String, Vec<String>> = HashMap::new();
+
+            for name in &sorted_skipped {
+                match find_candidate_repos(name, token, &retry_config).await {
+                    Ok(candidates) => {
+                        all_candidates_map.insert(name.to_string(), candidates);
+                    }
+                    Err(e) => {
+                        all_candidates_map.insert(name.to_string(), Vec::new());
+                        if !args.quiet {
+                            eprintln!("Warning: Failed to find candidates for '{}': {}", name, e);
+                        }
                     }
                 }
+                pb.inc(1);
             }
-            pb.inc(1);
-        }
-        pb.finish_with_message("Candidate search complete.");
+            pb.finish_with_message("Candidate search complete.");
 
-        // Display all unmanaged apps with their candidates (including empty)
-        if !all_candidates_map.is_empty() {
-            println!("\nUnmanaged applications and candidate repositories:");
-            for (name, candidates) in &all_candidates_map {
-                if candidates.is_empty() {
-                    println!("  {} - no candidate repositories found", name);
-                } else {
-                    println!("  {}:", name);
-                    for candidate in candidates {
-                        println!("    - {}", candidate);
+            if !all_candidates_map.is_empty() {
+                println!("\nUnmanaged applications and candidate repositories:");
+                for (name, candidates) in &all_candidates_map {
+                    if candidates.is_empty() {
+                        println!("  {} - no candidate repositories found", name);
+                    } else {
+                        println!("  {}:", name);
+                        for candidate in candidates {
+                            println!("    - {}", candidate);
+                        }
                     }
                 }
-            }
 
-            // Interactive: let user select which apps to manage (all unmanaged apps)
-            let all_app_names: Vec<String> = all_candidates_map.keys().cloned().collect();
+                let all_app_names: Vec<String> = all_candidates_map.keys().cloned().collect();
 
-            if !all_app_names.is_empty() {
-                let selections = MultiSelect::with_theme(&theme)
-                    .with_prompt("Select apps to manage with ObtainHub (Space to select, Enter to confirm)")
-                    .items(&all_app_names)
-                    .interact_opt()?;
+                if !all_app_names.is_empty() {
+                    let selections = MultiSelect::with_theme(&theme)
+                        .with_prompt("Select apps to manage with ObtainHub (Space to select, Enter to confirm)")
+                        .items(&all_app_names)
+                        .interact_opt()?;
 
-                if let Some(selected_indices) = selections {
-                    for idx in selected_indices {
-                        let app_name = &all_app_names[idx];
-                        let candidates = all_candidates_map.get(app_name);
+                    if let Some(selected_indices) = selections {
+                        for idx in selected_indices {
+                            let app_name = &all_app_names[idx];
+                            let candidates = all_candidates_map.get(app_name);
 
-                        match candidates {
-                            Some(cands) if !cands.is_empty() => {
-                                // Show candidates for this app and let user choose one
-                                let choice = Select::with_theme(&theme)
-                                    .with_prompt(format!("Choose repository for '{}'", app_name))
-                                    .items(cands)
-                                    .default(0)
-                                    .interact_opt()?;
+                            match candidates {
+                                Some(cands) if !cands.is_empty() => {
+                                    let choice = Select::with_theme(&theme)
+                                        .with_prompt(format!("Choose repository for '{}'", app_name))
+                                        .items(cands)
+                                        .default(0)
+                                        .interact_opt()?;
 
-                                if let Some(repo_idx) = choice {
-                                    let selected_repo = &cands[repo_idx];
-                                    // Add to state.json
-                                    let mut new_repo = crate::core::state::InstalledRepo {
-                                        repo: selected_repo.clone(),
-                                        version: "unknown".to_string(),
-                                        install_path: std::path::PathBuf::new(),
-                                        installed_at: chrono::Utc::now(),
-                                        updated_at: None,
-                                        checksum: None,
-                                        metadata: serde_json::Value::Null,
-                                        previous_version: None,
-                                        previous_install_path: None,
-                                        dependencies: Vec::new(),
-                                        is_dependency: false,
-                                    };
-                                    state.add_installed(new_repo.clone());
-                                    state.save()?;
-                                    println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+                                    if let Some(repo_idx) = choice {
+                                        let selected_repo = &cands[repo_idx];
+                                        let selected_repo = selected_repo.clone();
+                                        let mut new_repo = crate::core::state::InstalledRepo {
+                                            repo: selected_repo.clone(),
+                                            version: "unknown".to_string(),
+                                            install_path: std::path::PathBuf::new(),
+                                            installed_at: chrono::Utc::now(),
+                                            updated_at: None,
+                                            checksum: None,
+                                            metadata: serde_json::Value::Null,
+                                            previous_version: None,
+                                            previous_install_path: None,
+                                            dependencies: Vec::new(),
+                                            is_dependency: false,
+                                        };
+                                        state.add_installed(new_repo.clone());
+                                        state.save()?;
+                                        println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
 
-                                    // Check for updates immediately
-                                    let pb = ProgressBar::new_spinner();
-                                    pb.set_style(
-                                        ProgressStyle::default_spinner()
-                                            .template("{spinner} {msg}")
-                                            .unwrap()
-                                            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-                                    );
-                                    pb.set_message(format!("Checking latest version for {}...", selected_repo));
-                                    pb.enable_steady_tick(Duration::from_millis(80));
+                                        let pb = ProgressBar::new_spinner();
+                                        pb.set_style(
+                                            ProgressStyle::default_spinner()
+                                                .template("{spinner} {msg}")
+                                                .unwrap()
+                                                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                                        );
+                                        pb.set_message(format!("Checking latest version for {}...", selected_repo));
+                                        pb.enable_steady_tick(Duration::from_millis(80));
 
-                                    match fetch_latest_release(selected_repo, token, &retry_config).await {
-                                        Ok(Some(release)) => {
-                                            new_repo.version = release.tag_name.clone();
-                                            state.add_installed(new_repo);
-                                            state.save()?;
-                                            pb.finish_with_message(format!("Latest version: {}", release.tag_name));
-                                        }
-                                        Ok(None) => {
-                                            pb.finish_with_message(format!("No releases found for {}", selected_repo));
-                                        }
-                                        Err(e) => {
-                                            pb.finish_with_message(format!("Could not fetch latest version: {}", e));
+                                        match fetch_latest_release(&selected_repo, token, &retry_config).await {
+                                            Ok(Some(release)) => {
+                                                new_repo.version = release.tag_name.clone();
+                                                state.add_installed(new_repo);
+                                                state.save()?;
+                                                pb.finish_with_message(format!("Latest version: {}", release.tag_name));
+                                            }
+                                            Ok(None) => {
+                                                pb.finish_with_message(format!("No releases found for {}", selected_repo));
+                                            }
+                                            Err(e) => {
+                                                pb.finish_with_message(format!("Could not fetch latest version: {}", e));
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            Some(_) => {
-                                // Has candidates key but empty list
-                                println!("No candidate repositories found for '{}'. Skipping.", app_name);
-                            }
-                            None => {
-                                // No candidates found at all - offer manual entry
-                                println!("\nNo candidate repositories found for '{}'.", app_name);
-                                let manual: Option<String> = match Input::<String>::new()
-                                    .with_prompt(format!("Enter GitHub owner/repo for '{}' (or leave empty to skip)", app_name))
-                                    .allow_empty(true)
-                                    .interact_text() {
-                                    Ok(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
-                                    _ => None,
-                                };
+                                Some(_) => {
+                                    println!("No candidate repositories found for '{}'. Skipping.", app_name);
+                                }
+                                None => {
+                                    println!("\nNo candidate repositories found for '{}'.", app_name);
+                                    let manual: Option<String> = match Input::<String>::new()
+                                        .with_prompt(format!("Enter GitHub owner/repo for '{}' (or leave empty to skip)", app_name))
+                                        .allow_empty(true)
+                                        .interact_text() {
+                                        Ok(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
+                                        _ => None,
+                                    };
 
-                                if let Some(repo_input) = manual {
-                                    let repo_input = repo_input.trim();
-                                    if !repo_input.is_empty() {
-                                        // Validate format owner/repo
-                                        if repo_input.contains('/') {
-                                            let selected_repo = repo_input.to_string();
-                                            let mut new_repo = crate::core::state::InstalledRepo {
-                                                repo: selected_repo.clone(),
-                                                version: "unknown".to_string(),
-                                                install_path: std::path::PathBuf::new(),
-                                                installed_at: chrono::Utc::now(),
-                                                updated_at: None,
-                                                checksum: None,
-                                                metadata: serde_json::Value::Null,
-                                                previous_version: None,
-                                                previous_install_path: None,
-                                                dependencies: Vec::new(),
-                                                is_dependency: false,
-                                            };
-                                            state.add_installed(new_repo.clone());
-                                            state.save()?;
-                                            println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+                                    if let Some(repo_input) = manual {
+                                        let repo_input = repo_input.trim();
+                                        if !repo_input.is_empty() {
+                                            if repo_input.contains('/') {
+                                                let selected_repo = repo_input.to_string();
+                                                let mut new_repo = crate::core::state::InstalledRepo {
+                                                    repo: selected_repo.clone(),
+                                                    version: "unknown".to_string(),
+                                                    install_path: std::path::PathBuf::new(),
+                                                    installed_at: chrono::Utc::now(),
+                                                    updated_at: None,
+                                                    checksum: None,
+                                                    metadata: serde_json::Value::Null,
+                                                    previous_version: None,
+                                                    previous_install_path: None,
+                                                    dependencies: Vec::new(),
+                                                    is_dependency: false,
+                                                };
+                                                state.add_installed(new_repo.clone());
+                                                state.save()?;
+                                                println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
 
-                                            // Check for updates immediately
-                                            let pb = ProgressBar::new_spinner();
-                                            pb.set_style(
-                                                ProgressStyle::default_spinner()
-                                                    .template("{spinner} {msg}")
-                                                    .unwrap()
-                                                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-                                            );
-                                            pb.set_message(format!("Checking latest version for {}...", selected_repo));
-                                            pb.enable_steady_tick(Duration::from_millis(80));
+                                                let pb = ProgressBar::new_spinner();
+                                                pb.set_style(
+                                                    ProgressStyle::default_spinner()
+                                                        .template("{spinner} {msg}")
+                                                        .unwrap()
+                                                        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                                                );
+                                                pb.set_message(format!("Checking latest version for {}...", selected_repo));
+                                                pb.enable_steady_tick(Duration::from_millis(80));
 
-                                            match fetch_latest_release(&selected_repo, token, &retry_config).await {
-                                                Ok(Some(release)) => {
-                                                    new_repo.version = release.tag_name.clone();
-                                                    state.add_installed(new_repo);
-                                                    state.save()?;
-                                                    pb.finish_with_message(format!("Latest version: {}", release.tag_name));
+                                                match fetch_latest_release(&selected_repo, token, &retry_config).await {
+                                                    Ok(Some(release)) => {
+                                                        new_repo.version = release.tag_name.clone();
+                                                        state.add_installed(new_repo);
+                                                        state.save()?;
+                                                        pb.finish_with_message(format!("Latest version: {}", release.tag_name));
+                                                    }
+                                                    Ok(None) => {
+                                                        pb.finish_with_message(format!("No releases found for {}", selected_repo));
+                                                    }
+                                                    Err(e) => {
+                                                        pb.finish_with_message(format!("Could not fetch latest version: {}", e));
+                                                    }
                                                 }
-                                                Ok(None) => {
-                                                    pb.finish_with_message(format!("No releases found for {}", selected_repo));
-                                                }
-                                                Err(e) => {
-                                                    pb.finish_with_message(format!("Could not fetch latest version: {}", e));
-                                                }
+                                            } else {
+                                                println!("Invalid format. Expected 'owner/repo'.");
                                             }
-                                        } else {
-                                            println!("Invalid format. Expected 'owner/repo'.");
                                         }
                                     }
                                 }
@@ -308,8 +291,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             }
         }
 
-        // After --candidates, fall through to show check results for newly added repos
-        // Re-fetch matched list to include newly added repos
         let tracked = state.list_installed();
         let matched = tracked.into_iter().cloned().collect::<Vec<_>>();
         if !args.quiet && !matched.is_empty() {
@@ -321,12 +302,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                     continue;
                 }
             }
-
-            // Skip self-update check here - it's done separately
             if repo.repo.to_lowercase().contains("obtainhub") {
                 continue;
             }
-
             match fetch_latest_release(&repo.repo, token, &retry_config).await {
                 Ok(Some(release)) => {
                     let latest_version = release.tag_name;
@@ -348,37 +326,181 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         }
     }
 
-    // Handle --all flag - interactive selection for unmanaged apps
     if args.all && !skipped.is_empty() {
-        println!("\nChecking unmanaged apps for GitHub repositories...");
-        for name in &skipped {
-            match find_candidate_repos(name, token, &retry_config).await {
-                Ok(candidates) if !candidates.is_empty() => {
-                    // Show candidates and let user choose one or skip
-                    let mut items = candidates.clone();
-                    items.push("--- Skip ---".to_string());
-                    let choice = Select::with_theme(&theme)
-                        .with_prompt(format!("Choose repository for '{}' (or Skip)", name))
-                        .items(&items)
-                        .default(0)
-                        .interact_opt()?;
+        let mut sorted_skipped: Vec<&String> = skipped.iter().collect();
+        sorted_skipped.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
 
-                    if let Some(repo_idx) = choice {
-                        if repo_idx < candidates.len() {
-                            let selected_repo = &candidates[repo_idx];
-                            match fetch_latest_release(selected_repo, token, &retry_config).await {
+        println!("\nUnmanaged applications found on this system:");
+        for (i, name) in sorted_skipped.iter().enumerate() {
+            println!("  {}. {}", i + 1, name);
+        }
+
+        let all_app_names: Vec<String> = sorted_skipped.into_iter().cloned().collect();
+        let selections = MultiSelect::with_theme(&theme)
+            .with_prompt("Select apps to manage with ObtainHub (Space to select, Enter to confirm)")
+            .items(&all_app_names)
+            .interact_opt()?;
+
+        if let Some(selected_indices) = selections {
+            for idx in selected_indices {
+                let app_name = &all_app_names[idx];
+
+                match find_candidate_repos(app_name, token, &retry_config).await {
+                    Ok(candidates) if !candidates.is_empty() => {
+                        let mut sorted_candidates: Vec<&String> = candidates.iter().collect();
+                        sorted_candidates.sort();
+
+                        let choice = Select::with_theme(&theme)
+                            .with_prompt(format!("Choose repository for '{}'", app_name))
+                            .items(&sorted_candidates)
+                            .default(0)
+                            .interact_opt()?;
+
+                        if let Some(repo_idx) = choice {
+                            let selected_repo = sorted_candidates[repo_idx].clone();
+                            let mut new_repo = crate::core::state::InstalledRepo {
+                                repo: selected_repo.clone(),
+                                version: "unknown".to_string(),
+                                install_path: std::path::PathBuf::new(),
+                                installed_at: chrono::Utc::now(),
+                                updated_at: None,
+                                checksum: None,
+                                metadata: serde_json::Value::Null,
+                                previous_version: None,
+                                previous_install_path: None,
+                                dependencies: Vec::new(),
+                                is_dependency: false,
+                            };
+                            state.add_installed(new_repo.clone());
+                            state.save()?;
+                            println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+
+                            let pb = ProgressBar::new_spinner();
+                            pb.set_style(
+                                ProgressStyle::default_spinner()
+                                    .template("{spinner} {msg}")
+                                    .unwrap()
+                                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                            );
+                            pb.set_message(format!("Checking latest version for {}...", selected_repo));
+                            pb.enable_steady_tick(Duration::from_millis(80));
+
+                            match fetch_latest_release(&selected_repo, token, &retry_config).await {
                                 Ok(Some(release)) => {
-                                    outdated.push((format!("{} (via {})", name, selected_repo), "unknown".to_string(), release.tag_name));
+                                    new_repo.version = release.tag_name.clone();
+                                    state.add_installed(new_repo);
+                                    state.save()?;
+                                    pb.finish_with_message(format!("Latest version: {}", release.tag_name));
                                 }
                                 Ok(None) => {
-                                    // No releases found - skip silently
+                                    pb.finish_with_message(format!("No releases found for {}", selected_repo));
                                 }
-                                Err(_) => {}
+                                Err(e) => {
+                                    pb.finish_with_message(format!("Could not fetch latest version: {}", e));
+                                }
                             }
                         }
                     }
+                    Ok(_) => {
+                        println!("\nNo candidate repositories found for '{}'.", app_name);
+                        let manual: Option<String> = match Input::<String>::new()
+                            .with_prompt(format!("Enter GitHub owner/repo for '{}' (or leave empty to skip)", app_name))
+                            .allow_empty(true)
+                            .interact_text() {
+                            Ok(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
+                            _ => None,
+                        };
+
+                        if let Some(repo_input) = manual {
+                            let repo_input = repo_input.trim();
+                            if !repo_input.is_empty() {
+                                if repo_input.contains('/') {
+                                    let selected_repo = repo_input.to_string();
+                                    let mut new_repo = crate::core::state::InstalledRepo {
+                                        repo: selected_repo.clone(),
+                                        version: "unknown".to_string(),
+                                        install_path: std::path::PathBuf::new(),
+                                        installed_at: chrono::Utc::now(),
+                                        updated_at: None,
+                                        checksum: None,
+                                        metadata: serde_json::Value::Null,
+                                        previous_version: None,
+                                        previous_install_path: None,
+                                        dependencies: Vec::new(),
+                                        is_dependency: false,
+                                    };
+                                    state.add_installed(new_repo.clone());
+                                    state.save()?;
+                                    println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+
+                                    let pb = ProgressBar::new_spinner();
+                                    pb.set_style(
+                                        ProgressStyle::default_spinner()
+                                            .template("{spinner} {msg}")
+                                            .unwrap()
+                                            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                                    );
+                                    pb.set_message(format!("Checking latest version for {}...", selected_repo));
+                                    pb.enable_steady_tick(Duration::from_millis(80));
+
+                                    match fetch_latest_release(&selected_repo, token, &retry_config).await {
+                                        Ok(Some(release)) => {
+                                            new_repo.version = release.tag_name.clone();
+                                            state.add_installed(new_repo);
+                                            state.save()?;
+                                            pb.finish_with_message(format!("Latest version: {}", release.tag_name));
+                                        }
+                                        Ok(None) => {
+                                            pb.finish_with_message(format!("No releases found for {}", selected_repo));
+                                        }
+                                        Err(e) => {
+                                            pb.finish_with_message(format!("Could not fetch latest version: {}", e));
+                                        }
+                                    }
+                                } else {
+                                    println!("Invalid format. Expected 'owner/repo'.");
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        println!("\nNo candidate repositories found for '{}'.", app_name);
+                    }
                 }
-                _ => {}
+            }
+        }
+
+        let tracked = state.list_installed();
+        let matched = tracked.into_iter().cloned().collect::<Vec<_>>();
+        if !args.quiet && !matched.is_empty() {
+            println!("\nChecking {} managed repositories for updates...", matched.len());
+        }
+        for repo in matched {
+            if let Some(ref target) = args.repo {
+                if &repo.repo != target {
+                    continue;
+                }
+            }
+            if repo.repo.to_lowercase().contains("obtainhub") {
+                continue;
+            }
+            match fetch_latest_release(&repo.repo, token, &retry_config).await {
+                Ok(Some(release)) => {
+                    let latest_version = release.tag_name;
+                    if latest_version != repo.version {
+                        outdated.push((repo.repo.clone(), repo.version.clone(), latest_version));
+                    } else {
+                        current.push(repo.repo.clone());
+                    }
+                }
+                Ok(None) => {
+                    if !args.quiet {
+                        errors.push((repo.repo.clone(), "No releases found on GitHub".to_string()));
+                    }
+                }
+                Err(e) => {
+                    errors.push((repo.repo.clone(), e.to_string()));
+                }
             }
         }
     }
@@ -397,7 +519,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         return Ok(());
     }
 
-    // Show all results
     if !outdated.is_empty() {
         println!("Outdated ({}):", outdated.len());
         let mut table = Table::new();
@@ -425,17 +546,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         println!();
     }
 
-    // Show candidates if any (non-interactive mode)
-    if !candidates_map.is_empty() && !args.candidates {
-        println!("Candidate repositories for unmanaged apps:");
-        for (name, candidates) in candidates_map {
-            println!("  {}:", name);
-            for candidate in candidates {
-                println!("    - {}", candidate);
-            }
-        }
-    }
-
     Ok(())
 }
 
@@ -454,7 +564,6 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
             let resp = req.send()?;
 
             if resp.status_code == 404 {
-                // No releases published - return None (not an error)
                 return Ok(None);
             }
 
@@ -479,7 +588,6 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
     let mut results = Vec::new();
     let mut seen = HashSet::new();
 
-    // Check both 64-bit and 32-bit registry views
     for &root in &[HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
         for &view in &[KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
             let hklm = RegKey::predef(root);
@@ -493,14 +601,11 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
                         let publisher: Option<String> = subkey.get_value("Publisher").ok();
                         let uninstall_string: Option<String> = subkey.get_value("UninstallString").ok();
 
-                        // Skip system components (no DisplayName)
                         if let Some(name) = display_name {
-                            // Skip our own entry
                             if name.contains("ObtainHub") {
                                 continue;
                             }
 
-                            // Create a unique key to avoid duplicates
                             let key = format!("{}|{}", name, display_version.clone().unwrap_or_default());
                             if seen.insert(key) {
                                 results.push(crate::core::state::InstalledRepo {
@@ -529,14 +634,9 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
 
 #[cfg(not(windows))]
 fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::InstalledRepo>> {
-    // Not implemented on non-Windows
     Ok(Vec::new())
 }
 
-/// Split enumerated Windows programs into ones ObtainHub actually manages and ones
-/// it does not. Only entries present in `state.json` have a known GitHub origin —
-/// a `DisplayName` like "NVIDIA Corporation" is not an `owner/repo` and would 404
-/// on every lookup while exhausting the GitHub API rate limit.
 fn partition_gitHub_managed(
     all: &[crate::core::state::InstalledRepo],
     tracked: &[&crate::core::state::InstalledRepo],
@@ -547,12 +647,10 @@ fn partition_gitHub_managed(
     for entry in all {
         let name = entry.repo.to_ascii_lowercase();
 
-        // ObtainingHub manages it.
         if name.contains("obtainhub") {
             continue;
         }
 
-        // Tracked in state -> we know its owner/repo.
         if let Some(tracked) = tracked.iter().find(|r| {
             let n = r.repo.to_ascii_lowercase();
             n == name || name.ends_with(&n) || n.ends_with(&name)
@@ -593,7 +691,6 @@ async fn check_self_update(config: &ConfigManager, quiet: bool, retry_config: &R
 }
 
 async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Vec<String>> {
-    // Clean the app name: strip version numbers and common suffixes for better GitHub search
     let cleaned = clean_app_name(name);
     let search_terms: Vec<&str> = if cleaned != name {
         vec![cleaned.as_str(), name]
@@ -652,22 +749,17 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
     Ok(all_candidates)
 }
 
-/// Clean app name by stripping version numbers and common suffixes for better GitHub search
 fn clean_app_name(name: &str) -> String {
     let mut cleaned = name.to_string();
 
-    // Remove version patterns like " V3 3.8.6", " v3.8.6", " 3.8.6", "-3.8.6"
     cleaned = cleaned.split(char::is_whitespace)
         .filter(|part| {
-            // Skip parts that look like version numbers
             let has_digit = part.chars().any(|c| c.is_ascii_digit());
             let has_dot = part.contains('.');
             let has_v_prefix = part.starts_with('v') || part.starts_with('V');
-            // It's a version part if it has digits and (dots or v-prefix) and is short
             if has_digit && (has_dot || has_v_prefix) && part.len() <= 10 {
                 return false;
             }
-            // Skip single "v" or "V" prefixes
             if part.len() == 1 && (*part == "v" || *part == "V") {
                 return false;
             }
@@ -678,7 +770,6 @@ fn clean_app_name(name: &str) -> String {
         .trim()
         .to_string();
 
-    // Remove common non-repo suffixes
     let suffixes = [" for windows", " for mac", " for linux", " portable", " installer", " setup"];
     for suffix in &suffixes {
         if cleaned.to_lowercase().ends_with(suffix) {

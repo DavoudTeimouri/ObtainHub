@@ -20,6 +20,7 @@ use std::io::{BufReader, BufWriter, Write};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GitHubRelease {
+    #[serde(default = "default_tag_name")]
     pub tag_name: String,
     pub name: Option<String>,
     pub prerelease: bool,
@@ -27,6 +28,10 @@ pub struct GitHubRelease {
     pub assets: Vec<GitHubAsset>,
     pub zipball_url: String,
     pub tarball_url: String,
+}
+
+fn default_tag_name() -> String {
+    "unknown".to_string()
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -96,12 +101,58 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     
     // Determine version to install
     let (release, version) = if let Some(version) = &args.version {
-        let release = registry.fetch_release_by_tag(package_name, version, token).await?;
-        (release, version.clone())
+        match registry.fetch_release_by_tag(package_name, version, token).await {
+            Ok(release) => (release, version.clone()),
+            Err(e) => {
+                // Fallback: use GitHub search to find candidates
+                if args.yes {
+                    return Err(e.context(format!("Failed to find release for '{}'", package_name)));
+                }
+                let candidates = search_github_repos(package_name, token, config).await?;
+                if candidates.is_empty() {
+                    return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
+                }
+                let theme = dialoguer::theme::ColorfulTheme::default();
+                let repo_names: Vec<String> = candidates.iter().map(|c| c.clone()).collect();
+                let choice = dialoguer::Select::with_theme(&theme)
+                    .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
+                    .items(&repo_names)
+                    .default(0)
+                    .interact()?;
+                let selected_repo = &repo_names[choice];
+                let release = registry.fetch_latest_release(selected_repo, token).await?;
+                let version = release.tag_name.clone();
+                (release, version)
+            }
+        }
     } else {
-        let release = registry.fetch_latest_release(package_name, token).await?;
-        let version = release.tag_name.clone();
-        (release, version)
+        match registry.fetch_latest_release(package_name, token).await {
+            Ok(release) => {
+                let version = release.tag_name.clone();
+                (release, version)
+            }
+            Err(e) => {
+                // Fallback: use GitHub search to find candidates
+                if args.yes {
+                    return Err(e.context(format!("Failed to find latest release for '{}'", package_name)));
+                }
+                let candidates = search_github_repos(package_name, token, config).await?;
+                if candidates.is_empty() {
+                    return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
+                }
+                let theme = dialoguer::theme::ColorfulTheme::default();
+                let repo_names: Vec<String> = candidates.iter().map(|c| c.clone()).collect();
+                let choice = dialoguer::Select::with_theme(&theme)
+                    .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
+                    .items(&repo_names)
+                    .default(0)
+                    .interact()?;
+                let selected_repo = &repo_names[choice];
+                let release = registry.fetch_latest_release(selected_repo, token).await?;
+                let version = release.tag_name.clone();
+                (release, version)
+            }
+        }
     };
     
     info!("Installing {}@{}", args.repo, version);
@@ -648,6 +699,27 @@ fn finalize_install(extracted_path: &Path, install_dir: &Path) -> Result<PathBuf
     
     Ok(install_dir.to_path_buf())
 }
+async fn search_github_repos(query: &str, token: Option<&str>, config: &ConfigManager) -> Result<Vec<String>> {
+    let encoded = urlencoding::encode(query);
+    let url = format!("https://api.github.com/search/repositories?q={}&per_page=10", encoded);
+    let token_clone = token.map(|s| s.to_string());
+
+    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+    if let Some(token) = token {
+        req = req.with_header("Authorization", &format!("Bearer {}", token));
+    }
+
+    let resp: serde_json::Value = req.with_timeout(config.get().timeout_seconds as u64).send()?.json()?;
+    let items = resp["items"].as_array().unwrap_or(&vec![]).to_vec();
+    let mut candidates = Vec::new();
+    for item in items {
+        if let Some(full_name) = item["full_name"].as_str() {
+            candidates.push(full_name.to_string());
+        }
+    }
+    Ok(candidates)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

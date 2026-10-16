@@ -7,6 +7,7 @@ use tracing::info;
 use urlencoding;
 use chrono;
 use comfy_table::{Table, Cell, Attribute};
+use dialoguer::{Select, MultiSelect, Confirm, theme::ColorfulTheme};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GitHubRepo {
@@ -25,7 +26,7 @@ struct SearchResponse {
     total_count: u32,
 }
 
-pub async fn execute(args: SearchArgs, config: &ConfigManager, _state: &StateManager, format: OutputFormat) -> Result<()> {
+pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut StateManager, format: OutputFormat) -> Result<()> {
     info!("Searching for: {}", args.query);
 
     let token = config.get().github_token.as_deref();
@@ -58,11 +59,15 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, _state: &StateMan
         .filter(|r| r.stargazers_count >= args.min_stars)
         .collect();
 
-    if args.case_insensitive {
-        // Already handled by GitHub API
+    results.truncate(args.limit);
+
+    if results.is_empty() {
+        println!("No repositories found for '{}'.", args.query);
+        return Ok(());
     }
 
-    // Output based on format
+    let theme = ColorfulTheme::default();
+
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&results)?);
@@ -72,6 +77,82 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, _state: &StateMan
         }
         OutputFormat::Table => {
             print_table(&results);
+
+            let repo_names: Vec<String> = results.iter().map(|r| r.full_name.clone()).collect();
+
+            let selections = MultiSelect::with_theme(&theme)
+                .with_prompt(format!("Select repositories from search results (Space to select, Enter to confirm)"))
+                .items(&repo_names)
+                .interact_opt()?;
+
+            if let Some(selected_indices) = selections {
+                if selected_indices.is_empty() {
+                    println!("No repositories selected.");
+                    return Ok(());
+                }
+
+                println!("\nSelected {} repository(-ies).", selected_indices.len());
+
+                let add = Confirm::with_theme(&theme)
+                    .with_prompt("Add selected repositories to managed list?")
+                    .default(true)
+                    .interact()?;
+
+                if add {
+                    for idx in &selected_indices {
+                        let repo = &results[*idx].full_name;
+                        let mut new_repo = crate::core::state::InstalledRepo {
+                            repo: repo.clone(),
+                            version: "unknown".to_string(),
+                            install_path: std::path::PathBuf::new(),
+                            installed_at: chrono::Utc::now(),
+                            updated_at: None,
+                            checksum: None,
+                            metadata: serde_json::Value::Null,
+                            previous_version: None,
+                            previous_install_path: None,
+                            dependencies: Vec::new(),
+                            is_dependency: false,
+                        };
+                        state.add_installed(new_repo.clone());
+                        state.save()?;
+                        println!("Added '{}' to managed repositories.", repo);
+                    }
+                }
+
+                let install = Confirm::with_theme(&theme)
+                    .with_prompt("Install selected repositories now?")
+                    .default(false)
+                    .interact()?;
+
+                if install {
+                    for idx in &selected_indices {
+                        let repo = &results[*idx].full_name;
+                        println!("Installing '{}'...", repo);
+                        let install_args = crate::cli::InstallArgs {
+                            repo: repo.clone(),
+                            version: None,
+                            tag: None,
+                            prerelease: false,
+                            force: false,
+                            download_only: false,
+                            skip_deps: false,
+                            arch: crate::cli::Arch::Auto,
+                            yes: false,
+                            reset: false,
+                            interactive: false,
+                            dry_run: false,
+                            file: None,
+                            url: None,
+                            dependencies: Vec::new(),
+                        };
+                        let retry_config = crate::utils::retry::RetryConfig::from_config(config);
+                        if let Err(e) = crate::commands::install::execute(install_args, config, state, &retry_config).await {
+                            eprintln!("Failed to install '{}': {}", repo, e);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -81,7 +162,7 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, _state: &StateMan
 fn print_table(repos: &[GitHubRepo]) {
     let mut table = Table::new();
     table.set_header(vec!["Repository", "Stars", "Language", "Updated", "Description"]);
-    
+
     for repo in repos {
         table.add_row(vec![
             Cell::new(&repo.full_name).add_attribute(Attribute::Bold),
@@ -91,6 +172,6 @@ fn print_table(repos: &[GitHubRepo]) {
             Cell::new(repo.description.as_deref().unwrap_or("-")),
         ]);
     }
-    
+
     println!("{}", table);
 }

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.25-rc1] - 2026-10-13
+### Added
+- `ohub search` now shows interactive selection - select repos from search results, then add to managed list or install immediately
+- `ohub install` falls back to GitHub search when exact repo not found, offers interactive selection of candidates
+- `ohub update` auto-detects unmanaged apps on the system and offers to add them as managed repositories before updating
+- `ohub check --all` shows sorted list of unmanaged apps, then after confirming selections offers candidate repositories for each
+
+### Fixed
+- `ohub install` no longer fails with "missing field tag_name" when registry API omits tag_name - now defaults to "unknown"
+- `ohub self-update` lists available assets with manual download URL when no platform-specific zip found
+
 ## [v3.0.24-rc1] - 2026-10-13
 ### Fixed
 - `ohub self-update` no longer bails with "No suitable release asset found" when no platform-specific zip exists - now lists available assets and provides manual download URL

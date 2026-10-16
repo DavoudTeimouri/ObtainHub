@@ -8,6 +8,7 @@ use tracing::{debug, info};
 /// Registry release information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegistryRelease {
+    #[serde(default = "default_tag_name")]
     pub tag_name: String,
     pub name: Option<String>,
     pub prerelease: bool,
@@ -15,6 +16,10 @@ pub struct RegistryRelease {
     pub assets: Vec<RegistryAsset>,
     pub zipball_url: String,
     pub tarball_url: String,
+}
+
+fn default_tag_name() -> String {
+    "unknown".to_string()
 }
 
 /// Registry asset
