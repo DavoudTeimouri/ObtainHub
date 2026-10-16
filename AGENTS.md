@@ -41,7 +41,7 @@ snapshot.
 Do not claim success from a self-report. Run it:
 
 ```bash
-cargo test                      # 13 tests expected green
+cargo test                      # 22 tests expected green
 cargo check                     # zero errors
 makensis installer/ObtainHub.nsi # must emit zero warnings
 ```
