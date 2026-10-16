@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.23-rc1] - 2026-10-13
+### Fixed
+- `ohub check --candidates` now shows ALL unmanaged apps with candidate repositories found via GitHub search
+- `ohub check --candidates` cleans app names (strips version numbers like " V3 3.8.6") for better GitHub search results
+- `ohub check --candidates` allows manual `owner/repo` entry when no candidates found
+- `ohub check --candidates` falls through to show check results for newly added repos
+
 ## [v3.0.22-rc1] - 2026-10-13
 ### Fixed
 - `ohub check --all` 404 - `fetch_latest_release` returns `Option<GitHubRelease>`, skips repos without releases gracefully
