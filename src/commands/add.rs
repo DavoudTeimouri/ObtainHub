@@ -5,6 +5,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::PathBuf;
 use tracing::info;
+use walkdir::WalkDir;
 
 pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Adding {} to management (type: {:?})", args.repo, args.add_type);
@@ -78,12 +79,126 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
             println!("ZIP archive mode: not yet implemented. Use 'ohub install' with --file for zip installs.");
         }
         AddType::Folder => {
-            println!("Local folder mode: not yet implemented. Path: {:?}", args.repo);
-            if args.recursive {
-                println!("Recursive scan: enabled");
+            let folder_path = PathBuf::from(&args.repo);
+
+            if !folder_path.exists() {
+                anyhow::bail!("Folder '{}' does not exist.", args.repo);
             }
-            if let Some(repo_link) = args.repo_arg {
-                println!("Linked GitHub repo for updates: {}", repo_link);
+
+            if !folder_path.is_dir() {
+                anyhow::bail!("'{}' is not a directory.", args.repo);
+            }
+
+            let shim_dir = &config.get().shim_dir;
+            fs::create_dir_all(shim_dir)?;
+
+            // Determine walk depth: recursive or top-level only
+            let walker = if args.recursive {
+                WalkDir::new(&folder_path).into_iter()
+            } else {
+                WalkDir::new(&folder_path).max_depth(1).into_iter()
+            };
+
+            let mut added_repos: Vec<crate::core::state::InstalledRepo> = Vec::new();
+            let mut found_count = 0;
+
+            for entry in walker.filter_map(|e| e.ok()) {
+                let path = entry.path();
+
+                if !path.is_file() {
+                    continue;
+                }
+
+                let is_executable = if cfg!(windows) {
+                    path.extension().map(|e| e == "exe").unwrap_or(false)
+                } else {
+                    use std::os::unix::fs::MetadataExt;
+                    match fs::metadata(path) {
+                        Ok(metadata) => metadata.mode() & 0o111 != 0,
+                        Err(_) => false,
+                    }
+                };
+
+                if !is_executable {
+                    continue;
+                }
+
+                let exe_name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let shim_name = exe_name.clone();
+
+                // Create shim
+                #[cfg(windows)]
+                {
+                    let bat_path = shim_dir.join(format!("{}.bat", shim_name));
+                    let bat_content = format!("@echo off\n\"{}\" %*\n", path.display());
+                    fs::write(&bat_path, bat_content)?;
+                    println!("Created shim: {} -> {}", bat_path.display(), path.display());
+                }
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let sh_path = shim_dir.join(&shim_name);
+                    let sh_content = format!("#!/bin/sh\n\"{}\" \"$@\"\n", path.display());
+                    fs::write(&sh_path, &sh_content)?;
+                    let mut perms = fs::metadata(&sh_path)?.permissions();
+                    perms.set_mode(0o755);
+                    fs::set_permissions(&sh_path, perms)?;
+                    println!("Created shim: {} -> {}", sh_path.display(), path.display());
+                }
+
+                // Build metadata for linked repo / folder info
+                let metadata = if let Some(repo_link) = &args.repo_arg {
+                    serde_json::json!({
+                        "linked_repo": repo_link,
+                        "folder_path": folder_path.display().to_string(),
+                        "exe_path": path.display().to_string(),
+                        "app_type": "portable_folder"
+                    })
+                } else {
+                    serde_json::json!({
+                        "folder_path": folder_path.display().to_string(),
+                        "exe_path": path.display().to_string(),
+                        "app_type": "portable_folder"
+                    })
+                };
+
+                added_repos.push(crate::core::state::InstalledRepo {
+                    repo: format!("folder/{}", exe_name),
+                    version: "unknown".to_string(),
+                    install_path: path.to_path_buf(),
+                    installed_at: chrono::Utc::now(),
+                    updated_at: None,
+                    checksum: None,
+                    metadata,
+                    previous_version: None,
+                    previous_install_path: None,
+                    dependencies: Vec::new(),
+                    is_dependency: false,
+                });
+
+                println!("Added '{}' to management.", exe_name);
+                found_count += 1;
+            }
+
+            // Save state once for all added repos
+            for repo_entry in added_repos {
+                state.add_installed(repo_entry);
+            }
+            state.save()?;
+
+            if found_count == 0 {
+                println!("No executable files found in '{}'.", args.repo);
+            } else {
+                println!(
+                    "Found {} executable(s). Add {} to your PATH to use them from anywhere.",
+                    found_count,
+                    shim_dir.display()
+                );
             }
         }
     }
