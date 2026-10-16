@@ -28,6 +28,7 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
     let current_version = Version::parse(CURRENT_VERSION)?;
 
     // Fetch latest release from GitHub with retry
+    // Try releases/latest first; if 404 (no releases published), fall back to listing releases
     let url = format!("https://api.github.com/repos/{}/{}/releases/latest", REPO_OWNER, REPO_NAME);
     let release = execute_with_retry(retry_config, || {
         let url = url.clone();
@@ -38,12 +39,58 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
                 .send()
                 .context("Failed to fetch latest release")?;
 
-            if !(resp.status_code >= 200 && resp.status_code < 300) {
-                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
-            }
+            if resp.status_code == 404 {
+                // No releases published yet - fall back to listing all releases
+                let releases_url = format!("https://api.github.com/repos/{}/{}/releases", REPO_OWNER, REPO_NAME);
+                let releases_resp = minreq::get(&releases_url)
+                    .with_header("User-Agent", "ohub")
+                    .with_header("Accept", "application/vnd.github.v3+json")
+                    .send()
+                    .context("Failed to fetch releases list")?;
 
-            let release: serde_json::Value = resp.json()?;
-            Ok(release)
+                if !(releases_resp.status_code >= 200 && releases_resp.status_code < 300) {
+                    return Err(anyhow::anyhow!("GitHub API error: {}", releases_resp.status_code));
+                }
+
+                let releases: serde_json::Value = releases_resp.json()?;
+                let releases_array = releases.as_array().context("No releases array")?;
+
+                if releases_array.is_empty() {
+                    // No releases at all - try tags instead
+                    let tags_url = format!("https://api.github.com/repos/{}/{}/tags", REPO_OWNER, REPO_NAME);
+                    let tags_resp = minreq::get(&tags_url)
+                        .with_header("User-Agent", "ohub")
+                        .send()
+                        .context("Failed to fetch tags")?;
+
+                    if !(tags_resp.status_code >= 200 && tags_resp.status_code < 300) {
+                        return Err(anyhow::anyhow!("GitHub API error: {}", tags_resp.status_code));
+                    }
+
+                    let tags: serde_json::Value = tags_resp.json()?;
+                    let tags_array = tags.as_array().context("No tags array")?;
+
+                    if tags_array.is_empty() {
+                        // No releases or tags at all - return empty release
+                        return Ok(serde_json::json!({"tag_name": CURRENT_VERSION, "assets": []}));
+                    }
+
+                    // Use the first tag as the latest
+                    let latest_tag = tags_array[0]["name"].as_str().context("No tag name")?;
+                    let release_json = serde_json::json!({
+                        "tag_name": latest_tag,
+                        "assets": [],
+                    });
+                    Ok(release_json)
+                } else {
+                    Ok(releases_array[0].clone())
+                }
+            } else if !(resp.status_code >= 200 && resp.status_code < 300) {
+                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+            } else {
+                let release: serde_json::Value = resp.json()?;
+                Ok(release)
+            }
         }
     }, "fetch_self_update_release").await?;
 
@@ -81,16 +128,23 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
     }
 
     // Find appropriate asset
-    let assets = release["assets"].as_array().context("No assets in release")?;
+    let assets = release["assets"].as_array().unwrap_or(&vec![]).to_vec();
     let target = get_target_triple();
-    
-    let asset = assets.iter().find(|a| {
-        let name = a["name"].as_str().unwrap_or("");
-        name.contains(&target) && name.ends_with(".zip")
-    }).or_else(|| {
-        // Fallback: any zip
-        assets.iter().find(|a| a["name"].as_str().unwrap_or("").ends_with(".zip"))
-    }).context("No suitable release asset found for current platform")?;
+
+    let asset = if assets.is_empty() {
+        if !args.quiet {
+            println!("No downloadable assets found for {}/{}. Cannot auto-update.", REPO_OWNER, REPO_NAME);
+        }
+        return Ok(());
+    } else {
+        assets.iter().find(|a| {
+            let name = a["name"].as_str().unwrap_or("");
+            name.contains(&target) && name.ends_with(".zip")
+        }).or_else(|| {
+            // Fallback: any zip
+            assets.iter().find(|a| a["name"].as_str().unwrap_or("").ends_with(".zip"))
+        }).context("No suitable release asset found for current platform")?
+    };
 
     let download_url = asset["browser_download_url"].as_str().context("No download URL")?;
     let asset_name = asset["name"].as_str().context("No asset name")?;

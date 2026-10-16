@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.19-rc1] - 2026-10-13
+### Fixed
+- Self-update 404 - falls back to releases list, then tags when no releases published
+- Check command: `fetch_latest_release` returns `Option<GitHubRelease>` - no longer errors on 404, skips repos without releases gracefully
+- Check command: `--candidates` shows ALL unmanaged apps (not just those with candidates), lets user choose both software AND candidate repository
+- Add command: verifies GitHub repository exists before adding to management
+
+### Added
+- Retry logic for `ohub add` repository availability check
+- Configurable retry via `http_retries`, `http_retry_delay_ms`, `http_retry_backoff` in config
+
 ## [v3.0.18-rc1] - 2026-10-13
 ### Added
 - CLI message templates module for consistent output formatting
