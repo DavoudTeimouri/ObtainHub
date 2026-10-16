@@ -191,6 +191,12 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
     Ok(all_candidates)
 }
 
+fn normalize_version(v: &str) -> String {
+    let v = v.trim();
+    let v = v.strip_prefix('v').or_else(|| v.strip_prefix('V')).unwrap_or(v);
+    v.to_string()
+}
+
 fn clean_app_name(name: &str) -> String {
     let mut cleaned = name.to_string();
 
@@ -226,78 +232,6 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     info!("Updating repositories");
 
     let token = config.get().github_token.as_deref();
-
-    // Auto-detect unmanaged apps and offer to add them
-    if !args.skip_auto_detect {
-        let all = enumerate_all_installed_software()?;
-        let tracked: Vec<&crate::core::state::InstalledRepo> = state.list_installed().into_iter().collect();
-        let unmanaged: Vec<&crate::core::state::InstalledRepo> = all.iter()
-            .filter(|entry| {
-                let name = entry.repo.to_ascii_lowercase();
-                if name.contains("obtainhub") {
-                    return false;
-                }
-                !tracked.iter().any(|r| {
-                    let n = r.repo.to_ascii_lowercase();
-                    n == name || name.ends_with(&n) || n.ends_with(&name)
-                })
-            })
-            .collect();
-
-        if !unmanaged.is_empty() {
-            // Sort by name
-            let mut sorted: Vec<&crate::core::state::InstalledRepo> = unmanaged;
-            sorted.sort_by(|a, b| a.repo.to_lowercase().cmp(&b.repo.to_lowercase()));
-
-            println!("\nUnmanaged applications found on this system:");
-            for (i, entry) in sorted.iter().enumerate() {
-                println!("  {}. {}", i + 1, entry.repo);
-            }
-
-            let theme = ColorfulTheme::default();
-            let names: Vec<String> = sorted.iter().map(|e| e.repo.clone()).collect();
-            let selections = MultiSelect::with_theme(&theme)
-                .with_prompt("Add unmanaged apps to ObtainHub? (Space to select, Enter to confirm)")
-                .items(&names)
-                .interact_opt()?;
-
-            if let Some(selected_indices) = selections {
-                for idx in selected_indices {
-                    let app_name = &names[idx];
-
-                    let candidates = find_candidate_repos(app_name, token, retry_config).await.unwrap_or_default();
-                    if !candidates.is_empty() {
-                        let choice = Select::with_theme(&theme)
-                            .with_prompt(format!("Choose repository for '{}'", app_name))
-                            .items(&candidates)
-                            .default(0)
-                            .interact_opt()?;
-                        if let Some(repo_idx) = choice {
-                            let selected_repo = &candidates[repo_idx];
-                            let mut new_repo = crate::core::state::InstalledRepo {
-                                repo: selected_repo.clone(),
-                                version: "unknown".to_string(),
-                                install_path: PathBuf::new(),
-                                installed_at: chrono::Utc::now(),
-                                updated_at: None,
-                                checksum: None,
-                                metadata: serde_json::Value::Null,
-                                previous_version: None,
-                                previous_install_path: None,
-                                dependencies: Vec::new(),
-                                is_dependency: false,
-                            };
-                            state.add_installed(new_repo.clone());
-                            state.save()?;
-                            println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
-                        }
-                    } else {
-                        println!("No candidate repositories found for '{}'.", app_name);
-                    }
-                }
-            }
-        }
-    }
 
     let installed = state.list_installed();
 
@@ -359,7 +293,9 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
         match fetch_latest_release(repo_name, token, retry_config).await {
             Ok(Some(release)) => {
                 let latest_version = release.tag_name.clone();
-                if latest_version != *current_version {
+                let latest_norm = normalize_version(&latest_version);
+                let current_norm = normalize_version(current_version);
+                if latest_norm != current_norm {
                     println!("  Update available: {} -> {}", current_version, latest_version);
 
                     if args.dry_run {

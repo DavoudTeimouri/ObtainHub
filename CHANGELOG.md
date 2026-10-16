@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.26-rc1] - 2026-10-13
+### Fixed
+- `ohub self-update` no longer tries to extract `.exe`/`.msi` installer assets as zip - now runs MSI (`msiexec /i /qn /norestart`) and NSIS EXE (`/S`) installers silently instead
+- `ohub update` defaults to checking only managed repositories (from state.json) - no longer scans all installed software by default
+- Version comparison now strips `v`/`V` prefix (e.g. `v3.0.25` == `3.0.25`) so `ohub check`/`ohub update` correctly detects outdated repos
+
 ## [v3.0.25-rc1] - 2026-10-13
 ### Added
 - `ohub search` now shows interactive selection - select repos from search results, then add to managed list or install immediately

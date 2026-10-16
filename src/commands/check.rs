@@ -90,7 +90,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         match fetch_latest_release(&repo.repo, token, &retry_config).await {
             Ok(Some(release)) => {
                 let latest_version = release.tag_name;
-                if latest_version != repo.version {
+                if normalize_version(&latest_version) != normalize_version(&repo.version) {
                     outdated.push((repo.repo.clone(), repo.version.clone(), latest_version));
                 } else {
                     current.push(repo.repo.clone());
@@ -747,6 +747,12 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
     }
 
     Ok(all_candidates)
+}
+
+fn normalize_version(v: &str) -> String {
+    let v = v.trim();
+    let v = v.strip_prefix('v').or_else(|| v.strip_prefix('V')).unwrap_or(v);
+    v.to_string()
 }
 
 fn clean_app_name(name: &str) -> String {

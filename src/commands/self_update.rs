@@ -258,6 +258,39 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
         );
     }
 
+    // Handle installer assets (.exe, .msi) vs portable zip
+    let is_installer = asset_name.ends_with(".exe") || asset_name.ends_with(".msi");
+
+    if is_installer {
+        if !args.quiet {
+            println!("Installing via installer...");
+        }
+        if asset_name.ends_with(".msi") {
+            let status = std::process::Command::new("msiexec")
+                .args(&["/i", &download_path.to_string_lossy(), "/qn", "/norestart"])
+                .status()
+                .context("Failed to launch MSI installer")?;
+            if !status.success() {
+                anyhow::bail!("MSI installer exited with error code {:?}", status.code());
+            }
+        } else {
+            let status = std::process::Command::new(&download_path)
+                .arg("/S")
+                .status()
+                .context("Failed to launch EXE installer")?;
+            if !status.success() {
+                anyhow::bail!("EXE installer exited with error code {:?}", status.code());
+            }
+        }
+
+        if !args.quiet {
+            println!("Self-update complete. Please restart ObtainHub.");
+        }
+
+        let _ = fs::remove_file(&download_path);
+        return Ok(());
+    }
+
     if !args.quiet {
         println!("Extracting...");
     }

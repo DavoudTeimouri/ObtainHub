@@ -337,10 +337,6 @@ pub struct UpdateArgs {
     #[arg(long)]
     pub skip_deps: bool,
 
-    /// Skip auto-detect of unmanaged apps
-    #[arg(long)]
-    pub skip_auto_detect: bool,
-
     /// Architecture to select
     #[arg(long, value_enum, default_value = "auto")]
     pub arch: Arch,
