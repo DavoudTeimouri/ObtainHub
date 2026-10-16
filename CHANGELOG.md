@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.24-rc1] - 2026-10-13
+### Fixed
+- `ohub self-update` no longer bails with "No suitable release asset found" when no platform-specific zip exists - now lists available assets and provides manual download URL
+- `ohub self-update` falls back to any asset when no platform-specific zip found
+
 ## [v3.0.23-rc1] - 2026-10-13
 ### Fixed
 - `ohub check --candidates` now shows ALL unmanaged apps with candidate repositories found via GitHub search

@@ -137,13 +137,30 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
         }
         return Ok(());
     } else {
+        // Try to find platform-specific zip first
         assets.iter().find(|a| {
             let name = a["name"].as_str().unwrap_or("");
             name.contains(&target) && name.ends_with(".zip")
         }).or_else(|| {
             // Fallback: any zip
             assets.iter().find(|a| a["name"].as_str().unwrap_or("").ends_with(".zip"))
-        }).context("No suitable release asset found for current platform")?
+        }).or_else(|| {
+            // Last resort: any asset
+            assets.first()
+        }).cloned().ok_or_else(|| {
+            // List all available assets for the user
+            let asset_list: Vec<String> = assets.iter()
+                .filter_map(|a| a["name"].as_str().map(|s| s.to_string()))
+                .collect();
+            anyhow::anyhow!(
+                "No suitable release asset found for current platform ({}).\n\
+                 Available assets: {}\n\
+                 Download manually from: https://github.com/{}/{}/releases/latest",
+                target,
+                asset_list.join(", "),
+                REPO_OWNER, REPO_NAME
+            )
+        })?
     };
 
     let download_url = asset["browser_download_url"].as_str().context("No download URL")?;
