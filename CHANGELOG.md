@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.21-rc1] - 2026-10-13
+### Added
+- `ohub add --type folder` - manage portable applications from local folders
+- Folder mode scans for executables (.exe on Windows, executable permission on Unix)
+- `--recursive` flag for subdirectory scanning
+- `--repo-arg` to link folder app to a GitHub repo for updates
+- Creates shims in shim_dir for each executable found
+- Adds each executable to state.json for tracking
+- Shows PATH instructions for using apps from anywhere
+
 ## [v3.0.20-rc1] - 2026-10-13
 ### Added
 - `ohub add --type folder` - manage portable applications from local folders

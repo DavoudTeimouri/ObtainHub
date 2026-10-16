@@ -109,15 +109,20 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
                     continue;
                 }
 
-                let is_executable = if cfg!(windows) {
-                    path.extension().map(|e| e == "exe").unwrap_or(false)
-                } else {
-                    use std::os::unix::fs::MetadataExt;
-                    match fs::metadata(path) {
-                        Ok(metadata) => metadata.mode() & 0o111 != 0,
-                        Err(_) => false,
-                    }
-                };
+                let is_executable: bool = {
+        #[cfg(windows)]
+        {
+            path.extension().map(|e| e == "exe").unwrap_or(false)
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            match fs::metadata(path) {
+                Ok(metadata) => metadata.mode() & 0o111 != 0,
+                Err(_) => false,
+            }
+        }
+    };
 
                 if !is_executable {
                     continue;
