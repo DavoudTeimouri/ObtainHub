@@ -1,6 +1,6 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::UpdateArgs;
-use crate::utils::retry::RetryConfig;
+use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
@@ -74,8 +74,8 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
             for dep in &deps {
                 println!("  Checking dependency {}...", dep);
                 if let Some(dep_entry) = state.get_installed(dep) {
-                    match fetch_latest_release(dep, token).await {
-                        Ok(dep_release) => {
+                    match fetch_latest_release(dep, token, retry_config).await {
+                        Ok(Some(dep_release)) => {
                             let dep_latest = dep_release.tag_name.clone();
                             if dep_latest != dep_entry.version {
                                 println!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest);
@@ -87,14 +87,17 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                                 }
                             }
                         }
+                        Ok(None) => {
+                            // No releases found for dependency
+                        }
                         Err(e) => eprintln!("    Error checking dependency {}: {}", dep, e),
                     }
                 }
             }
         }
         
-        match fetch_latest_release(repo_name, token).await {
-            Ok(release) => {
+        match fetch_latest_release(repo_name, token, retry_config).await {
+            Ok(Some(release)) => {
                 let latest_version = release.tag_name.clone();
                 if latest_version != *current_version {
                     println!("  Update available: {} -> {}", current_version, latest_version);
@@ -119,6 +122,10 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                     already_current.push(repo_name.clone());
                     println!("  Already at latest version");
                 }
+            }
+            Ok(None) => {
+                // No releases found for this repo
+                println!("  No releases found on GitHub");
             }
             Err(e) => {
                 errors.push((repo_name.clone(), e.to_string()));
@@ -153,14 +160,34 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     Ok(())
 }
 
-async fn fetch_latest_release(repo: &str, token: Option<&str>) -> Result<GitHubRelease> {
+async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Option<GitHubRelease>> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
-    }
-    let resp: GitHubRelease = req.send()?.json()?;
-    Ok(resp)
+    let token_clone = token.map(|s| s.to_string());
+
+    let result = execute_with_retry(retry_config, || {
+        let url = url.clone();
+        let token = token_clone.clone();
+        async move {
+            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            if let Some(token) = token {
+                req = req.with_header("Authorization", &format!("Bearer {}", token));
+            }
+            let resp = req.send()?;
+
+            if resp.status_code == 404 {
+                return Ok(None);
+            }
+
+            if !(resp.status_code >= 200 && resp.status_code < 300) {
+                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+            }
+
+            let release: GitHubRelease = resp.json()?;
+            Ok(Some(release))
+        }
+    }, "fetch_latest_release").await?;
+
+    Ok(result)
 }
 
 async fn install_release(

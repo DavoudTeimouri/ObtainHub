@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.22-rc1] - 2026-10-13
+### Fixed
+- `ohub check --all` 404 - `fetch_latest_release` returns `Option<GitHubRelease>`, skips repos without releases gracefully
+- `ohub check --candidates` no longer returns early - falls through to show check results for newly added repos
+- `ohub update` 404 - same `Option<GitHubRelease>` handling with retry logic
+- `ohub tui` now fetches latest versions from GitHub, shows Current/Update/Unknown/Unmanaged status
+- `ohub tui` 'r' key actually refreshes app list from GitHub
+
+### Added
+- Retry logic for `ohub update` (configurable via http_retries, http_retry_delay_ms, http_retry_backoff)
+
 ## [v3.0.21-rc1] - 2026-10-13
 ### Added
 - `ohub add --type folder` - manage portable applications from local folders

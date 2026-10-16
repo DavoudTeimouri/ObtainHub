@@ -1,6 +1,8 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::TuiArgs;
+use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
+use minreq;
 use ratatui;
 use ratatui::{
     backend::CrosstermBackend,
@@ -16,7 +18,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use serde::{Deserialize, Serialize};
 use std::io;
+use std::time::Duration;
 use tracing::info;
 
 pub async fn execute(args: TuiArgs, config: &ConfigManager, state: &StateManager) -> Result<()> {
@@ -65,6 +69,7 @@ struct App {
     should_quit: bool,
     status_message: String,
     show_help: bool,
+    retry_config: RetryConfig,
 }
 
 #[derive(Clone)]
@@ -75,6 +80,41 @@ struct AppInfo {
     latest_version: String,
     status: String,
     repo: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct GitHubRelease {
+    tag_name: String,
+}
+
+async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Option<String>> {
+    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+    let token_clone = token.map(|s| s.to_string());
+
+    let result = execute_with_retry(retry_config, || {
+        let url = url.clone();
+        let token = token_clone.clone();
+        async move {
+            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            if let Some(token) = token {
+                req = req.with_header("Authorization", &format!("Bearer {}", token));
+            }
+            let resp = req.send()?;
+
+            if resp.status_code == 404 {
+                return Ok(None);
+            }
+
+            if !(resp.status_code >= 200 && resp.status_code < 300) {
+                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+            }
+
+            let release: GitHubRelease = resp.json()?;
+            Ok(Some(release.tag_name))
+        }
+    }, "fetch_latest_release").await?;
+
+    Ok(result)
 }
 
 async fn run_app<B: ratatui::backend::Backend>(
@@ -89,10 +129,12 @@ async fn run_app<B: ratatui::backend::Backend>(
         should_quit: false,
         status_message: "Loading...".to_string(),
         show_help: false,
+        retry_config: RetryConfig::from_config(config),
     };
 
     // Load initial data
-    app.load_apps(config, state).await;
+    let retry_config_clone = app.retry_config.clone();
+    app.load_apps(config, state, &retry_config_clone).await;
 
     while !app.should_quit {
         terminal.draw(|f| ui::<B>(f, &mut app))?;
@@ -108,14 +150,14 @@ async fn run_app<B: ratatui::backend::Backend>(
 }
 
 impl App {
-    async fn load_apps(&mut self, config: &ConfigManager, state: &StateManager) {
+    async fn load_apps(&mut self, config: &ConfigManager, state: &StateManager, retry_config: &RetryConfig) {
         self.status_message = "Loading apps...".to_string();
-        
+
         let apps = state.get_all_apps();
-        let config_data = config.get();
-        
+        let token = config.get().github_token.as_deref();
+
         let mut app_infos = Vec::new();
-        
+
         for app in apps {
             let repo_id = app.repo.clone();
             let (owner, repo) = if let Some(idx) = repo_id.find('/') {
@@ -123,11 +165,29 @@ impl App {
             } else {
                 ("", "")
             };
-            
+
             let current_version = app.version.clone();
-            let latest_version = "?".to_string();
-            let status = if current_version.is_empty() { "Unmanaged" } else { "Unknown" }.to_string();
-            
+
+            // Fetch latest version from GitHub
+            let latest_version = if repo_id.contains('/') && !repo_id.starts_with("folder/") {
+                match fetch_latest_release(&repo_id, token, retry_config).await {
+                    Ok(Some(latest)) => latest,
+                    _ => "?".to_string(),
+                }
+            } else {
+                "?".to_string()
+            };
+
+            let status = if current_version.is_empty() || current_version == "unknown" {
+                "Unmanaged".to_string()
+            } else if latest_version == "?" {
+                "Unknown".to_string()
+            } else if latest_version == current_version {
+                "Current".to_string()
+            } else {
+                "Update".to_string()
+            };
+
             app_infos.push(AppInfo {
                 id: repo_id.clone(),
                 name: repo.to_string(),
@@ -137,7 +197,7 @@ impl App {
                 repo: repo_id,
             });
         }
-        
+
         self.apps = app_infos;
         self.list_state.select(Some(0));
         self.selected_index = Some(0);
@@ -148,8 +208,8 @@ impl App {
 async fn handle_key_event(
     key: KeyCode,
     app: &mut App,
-    _config: &ConfigManager,
-    _state: &StateManager,
+    config: &ConfigManager,
+    state: &StateManager,
 ) -> Result<()> {
     match key {
         KeyCode::Char('q') | KeyCode::Esc => {
@@ -180,8 +240,9 @@ async fn handle_key_event(
         }
         KeyCode::Char('r') => {
             app.status_message = "Refreshing...".to_string();
-            // In a real implementation, we'd reload the apps here
-            app.status_message = "Refreshed".to_string();
+            let retry_config_clone = app.retry_config.clone();
+            app.load_apps(config, state, &retry_config_clone).await;
+            app.status_message = format!("Refreshed {} apps", app.apps.len());
         }
         _ => {}
     }
