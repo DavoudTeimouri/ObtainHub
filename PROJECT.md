@@ -7,7 +7,7 @@ file disagree, the code is the bug.
 **Start at `AGENTS.md`** — it is the entry point and points here.
 This file also owns the **changelog template** (§0).
 
-Last verified against: `main` @ `674bb48` (v3.0.6-rc1).
+Last verified against: `main` @ `9972ce7` (v3.0.26-rc1).
 
 ---
 
@@ -209,7 +209,13 @@ Keep it that way; a truncated state file bricks every command.
 Zero-valued numeric settings are reset to defaults on load and on save
 (`ConfigManager::sanitize`, `src/core/config.rs`). Guarded fields:
 `parallel_downloads`, `timeout_seconds`, `update_check_interval_hours`,
-`schedule.interval_hours`. A hand-edited config cannot set these to 0.
+`schedule.interval_hours`, `http_retries`, `http_retry_delay_ms`,
+`http_retry_backoff`. A hand-edited config cannot set guarded numerics to 0.
+
+HTTP retry configuration (configurable per-command via `RetryConfig` from config):
+`http_retries` (default 3), `http_retry_delay_ms` (default 1000),
+`http_retry_backoff` (default 2.0 exponential). Applied to GitHub API calls in
+`check`, `search`, `install`, `update`, and `self-update`.
 
 `github_token` is stored in plain config. It is **not** in the Windows keyring —
 `keyring` is a declared dependency but unwired. Treat the token as a secret that
@@ -227,11 +233,11 @@ A command needs `&mut` only when it writes config.
 
 | Command | Notes |
 |---|---|
-| `search` | GitHub search; `--min-stars`, `--active-only`, `--sort-stars`, `--language`, `--case-insensitive`, `--dry-run` |
-| `install` | `--file` local archive, `--url` direct download, `--dry-run` |
-| `check` | `--all` enumerates installed Windows software and skips ObtainHub itself |
+| `search` | GitHub search; `--min-stars`, `--active-only`, `--sort-stars`, `--language`, `--case-insensitive`, `--dry-run`. After the table, offers to add selected repos to managed list or install them immediately. |
+| `install` | `--file` local archive, `--url` direct download, `--dry-run`. Falls back to GitHub search candidates when exact repo not found. |
+| `check` | `--all` enumerates installed Windows software and skips ObtainHub itself. `--candidates` offers candidate repos for unmanaged apps. Version comparison strips `v`/`V` prefix. |
 | `list` | `--format json` |
-| `update` | `--dry-run`, `--force`, one repo or all |
+| `update` | `--dry-run`, `--force`, one repo or all. Defaults to managed repositories only (from state.json). Version comparison strips `v`/`V` prefix. |
 | `uninstall` | `--yes`, `--purge` (drops state metadata + group membership) |
 | `remove` | untrack, keep files |
 | `add` | track without installing |
@@ -245,7 +251,7 @@ A command needs `&mut` only when it writes config.
 | `tui` | ratatui + crossterm; keybindings shown in the header |
 | `config` | get / set / list |
 | `backup`, `restore` | backup and restore |
-| `self-update` | updates ohub; **no signature verification** |
+| `self-update` | updates ohub; downloads installer (`.exe`/`.msi`) or portable `.zip`. Runs MSI/EXE silently, extracts zip. Checksum verified against release `SHA256SUMS`. Ed25519 signature if present (`--skip-signature` to bypass). |
 | `completion` | bash, elvish, fish, powershell, zsh |
 | `doctor` | environment diagnostics |
 | `info` | repo metadata |

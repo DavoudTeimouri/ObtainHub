@@ -23,9 +23,10 @@ ohub <COMMAND>
 ```
 
 ### Commands
+
 | Command | Description |
 |---------|-------------|
-| `search` | Search GitHub repositories |
+| `search` | Search GitHub repositories; select results to add or install |
 | `install` | Install a repository (supports `--file` for local archives, `--url` for direct downloads) |
 | `check` | Check for updates to installed repositories |
 | `list` | List installed repositories |
@@ -50,16 +51,22 @@ ohub <COMMAND>
 | `self-uninstall` | Completely remove ohub |
 
 ### Examples
+
 ```bash
 # Search for repositories
 ohub search ripgrep --min-stars 100
 ohub search rust --language Rust --sort-stars --limit 10
-ohub search cli --page 1 --per-page 30 --timeout 60
+ohub search cli --page 1 --per-page 30
+
+# Search results offer to add/install
+# After the table, you can select repos to add to managed list,
+# then choose whether to install them right away.
 
 # Install from GitHub
 ohub install BurntSushi/ripgrep
 ohub install BurntSushi/ripgrep --dry-run
 ohub install BurntSushi/ripgrep --version 14.1.0 --arch x64
+ohub install unknown/repo   # falls back to GitHub search candidates if exact repo not found
 
 # Install from local archive
 ohub install --file ./myapp.zip
@@ -68,20 +75,29 @@ ohub install --file ./myapp.zip
 ohub install --url https://example.com/app.tar.gz
 
 # Check for updates
-ohub check
-ohub check --all                  # every installed Windows program, skips ohub itself
+ohub check                                # managed repositories only
+ohub check --all                          # every installed Windows program; offers to add unmanaged ones
+ohub check --candidates                   # unmanaged apps with candidate repos; select to manage
 ohub check --outdated-only
-ohub check --force                # bypass recent check cache
+ohub check --force                        # bypass recent check cache
+
+# Version comparison strips v/V prefix (v3.0.26 == 3.0.26)
 
 # Update
-ohub update                        # all installed repos
-ohub update BurntSushi/ripgrep     # one repo
-ohub update --dry-run              # show what would change
-ohub update --force                # reinstall even if current
+ohub update                               # all managed repositories
+ohub update BurntSushi/ripgrep            # one repo
+ohub update --dry-run                     # show what would change
+ohub update --force                       # reinstall even if current
 
 # Rollback
 ohub rollback BurntSushi/ripgrep   # revert to previous version
 ohub rollback BurntSushi/ripgrep --yes  # skip confirmation
+
+# Self-update
+ohub self-update                 # check + install latest release
+ohub self-update --prerelease    # include prerelease releases
+ohub self-update --skip-signature   # bypass signature check
+ohub self-update --check-only    # just report available version
 
 # Manage installed repos
 ohub list
@@ -125,19 +141,50 @@ ohub config get key       # Get value
 ohub config set key value # Set value
 ```
 
-Key configuration options:
-- `install_dir` - Where to install repositories (default: `%APPDATA%\ObtainHub\repos`)
-- `download_dir` - Where to cache downloads (default: `%APPDATA%\ObtainHub\downloads`)
-- `parallel_downloads` - Max concurrent downloads (default: 4, max: 32)
-- `timeout_seconds` - GitHub API request timeout (default: 30, max: 3600)
-- `update_check_interval_hours` - Scheduled check interval (default: 24, max: 8760)
-- `download_bandwidth_limit` - Bandwidth limit in bytes/sec (default: unlimited)
-- `verify_checksums` - Verify SHA256 checksums (default: true)
-- `auto_cleanup` - Auto-cleanup temp files (default: true)
+### Config parameters
 
-Zero-valued `parallel_downloads`, `timeout_seconds`, and
-`update_check_interval_hours` are reset to their defaults on load — a hand-edited
-config can never set them to 0.
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `github_token` | `string` | *(none)* | GitHub personal access token for authenticated API requests |
+| `install_dir` | `path` | `%APPDATA%\ObtainHub\repos` | Where installed repositories live |
+| `download_dir` | `path` | `%APPDATA%\ObtainHub\downloads` | Where downloads are cached |
+| `shim_dir` | `path` | `%USERPROFILE%\bin\obtainhub` | Where portable shims are created |
+| `parallel_downloads` | `u32` | 4 | Max concurrent downloads (1–32) |
+| `timeout_seconds` | `u64` | 30 | GitHub API request timeout in seconds (1–3600) |
+| `update_check_interval_hours` | `u64` | 24 | Scheduled background check interval in hours (1–8760) |
+| `download_bandwidth_limit` | `u64?` | *(none)* | Bandwidth limit in bytes/sec; unset = unlimited |
+| `verify_checksums` | `bool` | true | Verify SHA256 checksums on install |
+| `auto_cleanup` | `bool` | true | Auto-cleanup temp files after install/update |
+| `proxy` | `string?` | *(none)* | HTTP proxy URL for outbound requests |
+| `http_retries` | `u32` | 3 | Number of HTTP retry attempts on failure |
+| `http_retry_delay_ms` | `u64` | 1000 | Initial retry delay in milliseconds |
+| `http_retry_backoff` | `f64` | 2.0 | Exponential backoff multiplier for retries |
+
+#### Schedule config (nested under `[schedule]`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | `bool` | false | Run scheduled background checks |
+| `interval_hours` | `u64` | 24 | Interval between scheduled checks |
+| `notify_on_update` | `bool` | true | Notify when an update is found |
+| `run_on_startup` | `bool` | false | Run a check on startup |
+
+Zero-valued `parallel_downloads`, `timeout_seconds`, `update_check_interval_hours`, and `schedule.interval_hours` are reset to their defaults on load — a hand-edited config can never set them to 0.
+
+`github_token` is stored in plain text in `config.toml`. `ohub config get github_token` returns `[stored]`, never the value, to avoid leaking it into shell history or logs.
+
+## Self-update assets
+
+ObtainHub ships MSI + NSIS EXE installers only (no standalone `ohub.exe` asset).
+`ohub self-update` will:
+1. Download the matching release asset (`.exe`/`.msi` installer, or `.zip` portable).
+2. Verify checksum against the release's `SHA256SUMS`.
+3. Verify Ed25519 signature if present (use `--skip-signature` to bypass).
+4. Run MSI silently (`msiexec /i /qn /norestart`) or EXE silently (`/S`), or extract `.zip` and replace the running binary.
+
+## Release process
+
+Each release tag (`vX.Y.Z-rc1`) must have its own `## [vX.Y.Z]` section in `CHANGELOG.md`. Only `ObtainHub.msi`, `ObtainHub-Setup.exe`, and `SHA256SUMS` are published as assets. See `CONTRIBUTING.md` for build and release steps.
 
 ## License
 
