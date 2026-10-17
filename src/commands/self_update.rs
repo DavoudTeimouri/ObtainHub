@@ -52,7 +52,11 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
                     return Err(anyhow::anyhow!("GitHub API error: {}", releases_resp.status_code));
                 }
 
-                let releases: serde_json::Value = releases_resp.json()?;
+                let body = releases_resp.as_bytes().to_vec();
+                if body.is_empty() {
+                    return Err(anyhow::anyhow!("GitHub API returned empty body for releases list"));
+                }
+                let releases: serde_json::Value = serde_json::from_slice(&body)?;
                 let releases_array = releases.as_array().context("No releases array")?;
 
                 if releases_array.is_empty() {
@@ -67,7 +71,11 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
                         return Err(anyhow::anyhow!("GitHub API error: {}", tags_resp.status_code));
                     }
 
-                    let tags: serde_json::Value = tags_resp.json()?;
+                    let body = tags_resp.as_bytes().to_vec();
+                    if body.is_empty() {
+                        return Err(anyhow::anyhow!("GitHub API returned empty body for tags"));
+                    }
+                    let tags: serde_json::Value = serde_json::from_slice(&body)?;
                     let tags_array = tags.as_array().context("No tags array")?;
 
                     if tags_array.is_empty() {
@@ -88,7 +96,11 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
             } else if !(resp.status_code >= 200 && resp.status_code < 300) {
                 return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
             } else {
-                let release: serde_json::Value = resp.json()?;
+                let body = resp.as_bytes().to_vec();
+                if body.is_empty() {
+                    return Err(anyhow::anyhow!("GitHub API returned empty body"));
+                }
+                let release: serde_json::Value = serde_json::from_slice(&body)?;
                 Ok(release)
             }
         }

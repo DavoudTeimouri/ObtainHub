@@ -739,7 +739,18 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
                 if let Some(token) = token {
                     req = req.with_header("Authorization", &format!("Bearer {}", token));
                 }
-                let resp: serde_json::Value = req.send()?.json()?;
+                let resp = req.send()?;
+
+                // Non-2xx means rate limit, auth error, etc. - return empty candidates
+                if !(resp.status_code >= 200 && resp.status_code < 300) {
+                    return Ok(Vec::new());
+                }
+
+                let body = resp.as_bytes().to_vec();
+                if body.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let resp: serde_json::Value = serde_json::from_slice(&body)?;
                 let items = resp["items"].as_array().unwrap_or(&vec![]).to_vec();
                 let mut candidates = Vec::new();
                 for item in items {

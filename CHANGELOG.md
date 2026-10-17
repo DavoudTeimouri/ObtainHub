@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.28-rc1] - 2026-10-13
+### Fixed
+- `ohub self-update` no longer crashes with "unexpected end of file" when GitHub API returns empty body - now checks status code and body length before parsing JSON
+- `ohub check --candidates` and `ohub update` no longer crash with "unexpected end of file" on GitHub API errors or empty responses - non-2xx status codes return empty candidate list instead of erroring
+- All GitHub API JSON parsing now reads raw bytes first and validates non-empty body before deserializing
+
 ## [v3.0.27-rc1] - 2026-10-13
 ### Fixed
 - `ohub check --candidates` and `ohub update` now strip noise words (`version`, `edition`, `x64`, `x86`, `64-bit`, `32-bit`, etc.) from app names so "OnionHop V3 version 3.8.6" cleans to "OnionHop"
