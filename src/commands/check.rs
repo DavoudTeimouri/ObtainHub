@@ -207,8 +207,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
                                         match fetch_latest_release(&selected_repo, token, &retry_config).await {
                                             Ok(Some(release)) => {
-                                                new_repo.version = release.tag_name.clone();
-                                                state.add_installed(new_repo);
+                                                // Keep the installed version from registry scan;
+                                                // do NOT overwrite with latest release tag
+                                                state.add_installed(new_repo.clone());
                                                 state.save()?;
                                                 pb.finish_with_message(format!("Latest version: {}", release.tag_name));
                                             }
@@ -265,8 +266,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
                                                 match fetch_latest_release(&selected_repo, token, &retry_config).await {
                                                     Ok(Some(release)) => {
-                                                        new_repo.version = release.tag_name.clone();
-                                                        state.add_installed(new_repo);
+                                                        // Keep the installed version from registry scan;
+                                                        // do NOT overwrite with latest release tag
+                                                        state.add_installed(new_repo.clone());
                                                         state.save()?;
                                                         pb.finish_with_message(format!("Latest version: {}", release.tag_name));
                                                     }
@@ -311,7 +313,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             match fetch_latest_release(&repo.repo, token, &retry_config).await {
                 Ok(Some(release)) => {
                     let latest_version = release.tag_name;
-                    if latest_version != repo.version {
+                    if normalize_version(&latest_version) != normalize_version(&repo.version) {
                         outdated.push((repo.repo.clone(), repo.version.clone(), latest_version));
                     } else {
                         current.push(repo.repo.clone());
@@ -394,8 +396,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
                             match fetch_latest_release(&selected_repo, token, &retry_config).await {
                                 Ok(Some(release)) => {
-                                    new_repo.version = release.tag_name.clone();
-                                    state.add_installed(new_repo);
+                                    // Keep the installed version from registry scan;
+                                    // do NOT overwrite with latest release tag
+                                    state.add_installed(new_repo.clone());
                                     state.save()?;
                                     pb.finish_with_message(format!("Latest version: {}", release.tag_name));
                                 }
@@ -453,8 +456,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
                                     match fetch_latest_release(&selected_repo, token, &retry_config).await {
                                         Ok(Some(release)) => {
-                                            new_repo.version = release.tag_name.clone();
-                                            state.add_installed(new_repo);
+                                            // Keep the installed version from registry scan;
+                                            // do NOT overwrite with latest release tag
+                                            state.add_installed(new_repo.clone());
                                             state.save()?;
                                             pb.finish_with_message(format!("Latest version: {}", release.tag_name));
                                         }
@@ -500,7 +504,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             match fetch_latest_release(&repo.repo, token, &retry_config).await {
                 Ok(Some(release)) => {
                     let latest_version = release.tag_name;
-                    if latest_version != repo.version {
+                    if normalize_version(&latest_version) != normalize_version(&repo.version) {
                         outdated.push((repo.repo.clone(), repo.version.clone(), latest_version));
                     } else {
                         current.push(repo.repo.clone());
