@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.27-rc1] - 2026-10-13
+### Fixed
+- `ohub check --candidates` and `ohub update` now strip noise words (`version`, `edition`, `x64`, `x86`, `64-bit`, `32-bit`, etc.) from app names so "OnionHop V3 version 3.8.6" cleans to "OnionHop"
+- `find_candidate_repos` tries multiple search term variations: cleaned name, first word of cleaned name, original with digits/dots stripped, then original name — maximizing hit rate for apps with public GitHub repos
+
 ## [v3.0.26-rc1] - 2026-10-13
 ### Fixed
 - `ohub self-update` no longer tries to extract `.exe`/`.msi` installer assets as zip - now runs MSI (`msiexec /i /qn /norestart`) and NSIS EXE (`/S`) installers silently instead

@@ -134,11 +134,33 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
 
 async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Vec<String>> {
     let cleaned = clean_app_name(name);
-    let search_terms: Vec<&str> = if cleaned != name {
-        vec![cleaned.as_str(), name]
-    } else {
-        vec![name]
-    };
+
+    // Build multiple search term candidates to maximize hit rate
+    let mut search_terms: Vec<&str> = Vec::new();
+
+    // 1. Full cleaned name
+    if !cleaned.is_empty() {
+        search_terms.push(cleaned.as_str());
+    }
+
+    // 2. First word of cleaned name (e.g. "OnionHop version" -> "OnionHop")
+    if let Some(first) = cleaned.split_whitespace().next() {
+        if !search_terms.iter().any(|&t| t == first) {
+            search_terms.push(first);
+        }
+    }
+
+    // 3. Original name with digits/dots removed
+    let stripped: String = name.chars().filter(|c| !c.is_ascii_digit() && *c != '.').collect();
+    let stripped = stripped.trim();
+    if !stripped.is_empty() && !search_terms.iter().any(|&t| t == stripped) {
+        search_terms.push(stripped);
+    }
+
+    // 4. Original name (last resort)
+    if !search_terms.iter().any(|&t| t == name) {
+        search_terms.push(name);
+    }
 
     let mut all_candidates: Vec<String> = Vec::new();
     let mut seen = HashMap::new();
@@ -180,6 +202,7 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
                 }
             }
             Err(e) => {
+                // Only propagate error if this was the last term tried
                 if !term.eq(name) {
                     continue;
                 }
@@ -200,8 +223,16 @@ fn normalize_version(v: &str) -> String {
 fn clean_app_name(name: &str) -> String {
     let mut cleaned = name.to_string();
 
+    // Remove version-like tokens and common noise words
+    let noise_words = ["version", "edition", "x64", "x86", "64bit", "32bit", "64-bit", "32-bit"];
+
     cleaned = cleaned.split(char::is_whitespace)
         .filter(|part| {
+            let lower = part.to_lowercase();
+            // Skip common noise words
+            if noise_words.iter().any(|&w| lower == w) {
+                return false;
+            }
             let has_digit = part.chars().any(|c| c.is_ascii_digit());
             let has_dot = part.contains('.');
             let has_v_prefix = part.starts_with('v') || part.starts_with('V');
