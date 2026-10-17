@@ -109,8 +109,8 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
     if args.candidates {
         if !skipped.is_empty() {
-            let mut sorted_skipped: Vec<&String> = skipped.iter().collect();
-            sorted_skipped.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            let mut sorted_skipped: Vec<&crate::core::state::InstalledRepo> = skipped.iter().collect();
+            sorted_skipped.sort_by(|a, b| a.repo.to_lowercase().cmp(&b.repo.to_lowercase()));
 
             let pb = ProgressBar::new(sorted_skipped.len() as u64);
             pb.set_style(
@@ -121,15 +121,16 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             );
             pb.set_message("Finding candidate repositories...");
 
-            let mut all_candidates_map: HashMap<String, Vec<String>> = HashMap::new();
+            let mut all_candidates_map: HashMap<String, (Vec<String>, crate::core::state::InstalledRepo)> = HashMap::new();
 
-            for name in &sorted_skipped {
-                match find_candidate_repos(name, token, &retry_config).await {
+            for entry in &sorted_skipped {
+                let name = entry.repo.clone();
+                match find_candidate_repos(&name, token, &retry_config).await {
                     Ok(candidates) => {
-                        all_candidates_map.insert(name.to_string(), candidates);
+                        all_candidates_map.insert(name.clone(), (candidates, (**entry).clone()));
                     }
                     Err(e) => {
-                        all_candidates_map.insert(name.to_string(), Vec::new());
+                        all_candidates_map.insert(name.clone(), (Vec::new(), (**entry).clone()));
                         if !args.quiet {
                             eprintln!("Warning: Failed to find candidates for '{}': {}", name, e);
                         }
@@ -141,7 +142,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
             if !all_candidates_map.is_empty() {
                 println!("\nUnmanaged applications and candidate repositories:");
-                for (name, candidates) in &all_candidates_map {
+                for (name, (candidates, _)) in &all_candidates_map {
                     if candidates.is_empty() {
                         println!("  {} - no candidate repositories found", name);
                     } else {
@@ -163,10 +164,10 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                     if let Some(selected_indices) = selections {
                         for idx in selected_indices {
                             let app_name = &all_app_names[idx];
-                            let candidates = all_candidates_map.get(app_name);
+                            let (candidates, skipped_entry) = all_candidates_map.get(app_name).unwrap();
 
-                            match candidates {
-                                Some(cands) if !cands.is_empty() => {
+                            match candidates.as_slice() {
+                                cands if !cands.is_empty() => {
                                     let choice = Select::with_theme(&theme)
                                         .with_prompt(format!("Choose repository for '{}'", app_name))
                                         .items(cands)
@@ -176,10 +177,11 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                     if let Some(repo_idx) = choice {
                                         let selected_repo = &cands[repo_idx];
                                         let selected_repo = selected_repo.clone();
+                                        // Use real install_path and version from the skipped entry if available
                                         let mut new_repo = crate::core::state::InstalledRepo {
                                             repo: selected_repo.clone(),
-                                            version: "unknown".to_string(),
-                                            install_path: std::path::PathBuf::new(),
+                                            version: skipped_entry.version.clone(),
+                                            install_path: skipped_entry.install_path.clone(),
                                             installed_at: chrono::Utc::now(),
                                             updated_at: None,
                                             checksum: None,
@@ -219,10 +221,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                         }
                                     }
                                 }
-                                Some(_) => {
-                                    println!("No candidate repositories found for '{}'. Skipping.", app_name);
-                                }
-                                None => {
+                                _ => {
                                     println!("\nNo candidate repositories found for '{}'.", app_name);
                                     let manual: Option<String> = match Input::<String>::new()
                                         .with_prompt(format!("Enter GitHub owner/repo for '{}' (or leave empty to skip)", app_name))
@@ -239,8 +238,8 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                                 let selected_repo = repo_input.to_string();
                                                 let mut new_repo = crate::core::state::InstalledRepo {
                                                     repo: selected_repo.clone(),
-                                                    version: "unknown".to_string(),
-                                                    install_path: std::path::PathBuf::new(),
+                                                    version: skipped_entry.version.clone(),
+                                                    install_path: skipped_entry.install_path.clone(),
                                                     installed_at: chrono::Utc::now(),
                                                     updated_at: None,
                                                     checksum: None,
@@ -289,13 +288,13 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                     }
                 }
             }
-        }
 
         let tracked = state.list_installed();
         let matched = tracked.into_iter().cloned().collect::<Vec<_>>();
         if !args.quiet && !matched.is_empty() {
             println!("\nChecking {} managed repositories for updates...", matched.len());
         }
+        let mut already_checked: std::collections::HashSet<String> = std::collections::HashSet::new();
         for repo in matched {
             if let Some(ref target) = args.repo {
                 if &repo.repo != target {
@@ -305,6 +304,10 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             if repo.repo.to_lowercase().contains("obtainhub") {
                 continue;
             }
+            if already_checked.contains(&repo.repo) {
+                continue;
+            }
+            already_checked.insert(repo.repo.clone());
             match fetch_latest_release(&repo.repo, token, &retry_config).await {
                 Ok(Some(release)) => {
                     let latest_version = release.tag_name;
@@ -327,15 +330,18 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     }
 
     if args.all && !skipped.is_empty() {
-        let mut sorted_skipped: Vec<&String> = skipped.iter().collect();
-        sorted_skipped.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        let mut sorted_skipped: Vec<&crate::core::state::InstalledRepo> = skipped.iter().collect();
+        sorted_skipped.sort_by(|a, b| a.repo.to_lowercase().cmp(&b.repo.to_lowercase()));
 
         println!("\nUnmanaged applications found on this system:");
-        for (i, name) in sorted_skipped.iter().enumerate() {
-            println!("  {}. {}", i + 1, name);
+        for (i, entry) in sorted_skipped.iter().enumerate() {
+            println!("  {}. {}", i + 1, entry.repo);
         }
 
-        let all_app_names: Vec<String> = sorted_skipped.into_iter().cloned().collect();
+        let all_app_names: Vec<String> = sorted_skipped.iter().map(|e| e.repo.clone()).collect();
+        let skipped_by_name: HashMap<String, crate::core::state::InstalledRepo> = sorted_skipped.iter()
+            .map(|e| (e.repo.clone(), (**e).clone()))
+            .collect();
         let selections = MultiSelect::with_theme(&theme)
             .with_prompt("Select apps to manage with ObtainHub (Space to select, Enter to confirm)")
             .items(&all_app_names)
@@ -358,10 +364,11 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
                         if let Some(repo_idx) = choice {
                             let selected_repo = sorted_candidates[repo_idx].clone();
+                            let skipped_entry = skipped_by_name.get(app_name);
                             let mut new_repo = crate::core::state::InstalledRepo {
                                 repo: selected_repo.clone(),
-                                version: "unknown".to_string(),
-                                install_path: std::path::PathBuf::new(),
+                                version: skipped_entry.map(|e| e.version.clone()).unwrap_or_else(|| "unknown".to_string()),
+                                install_path: skipped_entry.map(|e| e.install_path.clone()).unwrap_or_default(),
                                 installed_at: chrono::Utc::now(),
                                 updated_at: None,
                                 checksum: None,
@@ -403,6 +410,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                     }
                     Ok(_) => {
                         println!("\nNo candidate repositories found for '{}'.", app_name);
+                        let skipped_entry = skipped_by_name.get(app_name);
                         let manual: Option<String> = match Input::<String>::new()
                             .with_prompt(format!("Enter GitHub owner/repo for '{}' (or leave empty to skip)", app_name))
                             .allow_empty(true)
@@ -418,8 +426,8 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                     let selected_repo = repo_input.to_string();
                                     let mut new_repo = crate::core::state::InstalledRepo {
                                         repo: selected_repo.clone(),
-                                        version: "unknown".to_string(),
-                                        install_path: std::path::PathBuf::new(),
+                                        version: skipped_entry.map(|e| e.version.clone()).unwrap_or_else(|| "unknown".to_string()),
+                                        install_path: skipped_entry.map(|e| e.install_path.clone()).unwrap_or_default(),
                                         installed_at: chrono::Utc::now(),
                                         updated_at: None,
                                         checksum: None,
@@ -475,6 +483,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         if !args.quiet && !matched.is_empty() {
             println!("\nChecking {} managed repositories for updates...", matched.len());
         }
+        let mut already_checked: std::collections::HashSet<String> = std::collections::HashSet::new();
         for repo in matched {
             if let Some(ref target) = args.repo {
                 if &repo.repo != target {
@@ -484,6 +493,10 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             if repo.repo.to_lowercase().contains("obtainhub") {
                 continue;
             }
+            if already_checked.contains(&repo.repo) {
+                continue;
+            }
+            already_checked.insert(repo.repo.clone());
             match fetch_latest_release(&repo.repo, token, &retry_config).await {
                 Ok(Some(release)) => {
                     let latest_version = release.tag_name;
@@ -504,6 +517,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             }
         }
     }
+}
 
     if args.outdated_only {
         if outdated.is_empty() {
@@ -557,11 +571,19 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         let url = url.clone();
         let token = token_clone.clone();
         async move {
+            let has_token = token.is_some();
             let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
             if let Some(token) = token {
                 req = req.with_header("Authorization", &format!("Bearer {}", token));
             }
             let resp = req.send()?;
+
+            if resp.status_code == 403 {
+                if !has_token {
+                    return Err(anyhow::anyhow!("Rate limited or access denied. Set GitHub token with 'ohub config set github_token <token>'"));
+                }
+                return Err(anyhow::anyhow!("GitHub API rate limited or access denied. Check your GitHub token."));
+            }
 
             if resp.status_code == 404 {
                 return Ok(None);
@@ -640,7 +662,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
 fn partition_gitHub_managed(
     all: &[crate::core::state::InstalledRepo],
     tracked: &[&crate::core::state::InstalledRepo],
-) -> (Vec<crate::core::state::InstalledRepo>, Vec<String>) {
+) -> (Vec<crate::core::state::InstalledRepo>, Vec<crate::core::state::InstalledRepo>) {
     let mut matched = Vec::new();
     let mut skipped = Vec::new();
 
@@ -669,7 +691,7 @@ fn partition_gitHub_managed(
                 is_dependency: tracked.is_dependency,
             });
         } else {
-            skipped.push(entry.repo.clone());
+            skipped.push(entry.clone());
         }
     }
 
@@ -861,7 +883,7 @@ mod tests {
         let (matched, skipped) = partition_gitHub_managed(&all, &tracked_refs);
         assert!(matched.is_empty(), "nothing should match an empty state");
         assert_eq!(skipped.len(), 2, "NVIDIA + 7-Zip are not managed");
-        assert!(!skipped.contains(&"ObtainHub 3.0.1".to_string()), "self must not be listed as skipped");
+        assert!(!skipped.iter().any(|e| e.repo == "ObtainHub 3.0.1"), "self must not be listed as skipped");
     }
 
     #[test]
@@ -872,7 +894,8 @@ mod tests {
         let (matched, skipped) = partition_gitHub_managed(&all, &tracked_refs);
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].repo, "BurntSushi/ripgrep");
-        assert_eq!(skipped, vec!["7-Zip".to_string()]);
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].repo, "7-Zip");
     }
 
     #[test]
