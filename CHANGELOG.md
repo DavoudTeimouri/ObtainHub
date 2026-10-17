@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.29-rc1] - 2026-10-13
+### Fixed
+- `ohub self-update` now launches MSI/EXE installers elevated via PowerShell `Start-Process -Verb RunAs` — fixes "The requested operation requires elevation" (os error 740) on Windows
+
 ## [v3.0.28-rc1] - 2026-10-13
 ### Fixed
 - `ohub self-update` no longer crashes with "unexpected end of file" when GitHub API returns empty body - now checks status code and body length before parsing JSON

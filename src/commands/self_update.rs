@@ -278,20 +278,38 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
             println!("Installing via installer...");
         }
         if asset_name.ends_with(".msi") {
-            let status = std::process::Command::new("msiexec")
-                .args(&["/i", &download_path.to_string_lossy(), "/qn", "/norestart"])
+            // MSI installer requires elevation to write to Program Files.
+            // Use PowerShell Start-Process with -Verb RunAs to trigger UAC prompt.
+            let msi_path = download_path.to_string_lossy().to_string();
+            let status = std::process::Command::new("powershell")
+                .args(&[
+                    "-Command",
+                    &format!(
+                        "Start-Process 'msiexec' -ArgumentList '/i {} /qn /norestart' -Verb RunAs -Wait",
+                        msi_path
+                    ),
+                ])
                 .status()
-                .context("Failed to launch MSI installer")?;
+                .context("Failed to launch elevated MSI installer")?;
             if !status.success() {
-                anyhow::bail!("MSI installer exited with error code {:?}", status.code());
+                anyhow::bail!("Elevated MSI installer exited with error code {:?}", status.code());
             }
         } else {
-            let status = std::process::Command::new(&download_path)
-                .arg("/S")
+            // NSIS EXE installer requires elevation (admin) to write to Program Files.
+            // Use PowerShell Start-Process with -Verb RunAs to trigger UAC prompt.
+            let exe_path = download_path.to_string_lossy().to_string();
+            let status = std::process::Command::new("powershell")
+                .args(&[
+                    "-Command",
+                    &format!(
+                        "Start-Process '{}' -ArgumentList '/S' -Verb RunAs -Wait",
+                        exe_path
+                    ),
+                ])
                 .status()
-                .context("Failed to launch EXE installer")?;
+                .context("Failed to launch elevated EXE installer")?;
             if !status.success() {
-                anyhow::bail!("EXE installer exited with error code {:?}", status.code());
+                anyhow::bail!("Elevated EXE installer exited with error code {:?}", status.code());
             }
         }
 
