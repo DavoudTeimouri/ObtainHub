@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.31-rc1] - 2026-10-13
+### Fixed
+- `ohub check --candidates` / `ohub check --all` no longer overwrites installed `version` with GitHub's latest tag when adding repos - `ohub list` now shows correct installed version and `ohub update` correctly detects outdated repos
+- Version comparison in `--candidates`/`--all` fall-through now strips `v`/`V` prefix (`normalize_version`) so `v3.9` vs `3.9` matches correctly
+
 ## [v3.0.30-rc1] - 2026-10-13
 ### Fixed
 - `ohub check --candidates` / `ohub check --all` no longer lists duplicate managed repos (dedup via `already_checked` set)
