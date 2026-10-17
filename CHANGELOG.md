@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.30-rc1] - 2026-10-13
+### Fixed
+- `ohub check --candidates` / `ohub check --all` no longer lists duplicate managed repos (dedup via `already_checked` set)
+- Added repos keep their real `install_path` and `version` from Windows registry scan instead of `unknown` / empty PathBuf
+- `ohub list` now shows correct installed version and path (populated from registry scan at add time)
+- `ohub update` correctly detects outdated repos (version normalization strips `v`/`V` prefix; installed version no longer overwritten by GitHub tag)
+- `ohub self-update` / `ohub check` / `ohub update` no longer crash with "unexpected end of file" on empty GitHub API responses — validates body before JSON parsing
+- `ohub self-update` launches MSI/EXE installers elevated via PowerShell `Start-Process -Verb RunAs` — fixes "The requested operation requires elevation" (os error 740)
+- `ohub check`/`ohub self-update` give clear 403 error: "Rate limited or access denied. Set GitHub token with 'ohub config set github_token <token>'"
+
 ## [v3.0.29-rc1] - 2026-10-13
 ### Fixed
 - `ohub self-update` now launches MSI/EXE installers elevated via PowerShell `Start-Process -Verb RunAs` — fixes "The requested operation requires elevation" (os error 740) on Windows
