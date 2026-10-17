@@ -313,7 +313,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                     match fetch_latest_release(dep, token, retry_config).await {
                         Ok(Some(dep_release)) => {
                             let dep_latest = dep_release.tag_name.clone();
-                            if dep_latest != dep_entry.version {
+                            if normalize_version(&dep_latest) != normalize_version(&dep_entry.version) {
                                 println!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest);
                                 if !args.dry_run {
                                     match install_release(dep, &dep_latest, &dep_release, token, config, state, args.force, true).await {

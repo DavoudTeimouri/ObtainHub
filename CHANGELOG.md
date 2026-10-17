@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.32-rc1] - 2026-10-13
+### Fixed
+- `ohub check --all` now reads installed version from Windows registry scan (`DisplayVersion`) instead of stale `state.json` version from previous runs — `ohub list` shows correct installed version
+- `ohub check --all` syncs corrected versions back to `state.json` when registry scan differs from stored version
+- `ohub update` dependency version comparison now uses `normalize_version` (strips `v`/`V` prefix)
+- `ohub check` fall-through version comparison uses `normalize_version` so `v3.9` vs `3.9` matches correctly
+
 ## [v3.0.31-rc1] - 2026-10-13
 ### Fixed
 - `ohub check --candidates` / `ohub check --all` no longer overwrites installed `version` with GitHub's latest tag when adding repos - `ohub list` now shows correct installed version and `ohub update` correctly detects outdated repos

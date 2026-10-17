@@ -64,6 +64,21 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         (state.list_installed().into_iter().cloned().collect(), Vec::new())
     };
 
+    // Sync state.json versions with actual registry scan versions for managed repos
+    // (fixes stale versions from previous runs that overwrote with GitHub tags)
+    if args.all || args.candidates {
+        for m in &matched {
+            if let Some(tracked) = state.get_installed(&m.repo) {
+                if tracked.version != m.version {
+                    let mut corrected = tracked.clone();
+                    corrected.version = m.version.clone();
+                    state.add_installed(corrected.clone());
+                    state.save()?;
+                }
+            }
+        }
+    }
+
     if args.repo.is_none() && !args.candidates {
         if !args.quiet {
             println!("Checking ObtainHub self-update...");
@@ -683,7 +698,9 @@ fn partition_gitHub_managed(
         }) {
             matched.push(crate::core::state::InstalledRepo {
                 repo: tracked.repo.clone(),
-                version: tracked.version.clone(),
+                // Use the registry scan version (actual installed version from Windows),
+                // not potentially stale state.json version from previous runs
+                version: entry.version.clone(),
                 install_path: entry.install_path.clone(),
                 installed_at: entry.installed_at,
                 updated_at: entry.updated_at,
