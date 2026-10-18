@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.36-rc1] - 2026-10-13
+### Fixed
+- RC build for self-update test: verifies elevated EXE/MSI installer launch via `find_powershell()` path resolution
+
 ## [v3.0.35-rc1] - 2026-10-13
 ### Fixed
 - `ohub self-update` EXE/MSI elevation: `powershell` not found → "program not found". Now resolves `powershell.exe` from explicit paths (`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, `C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe`) then falls back to PATH.
