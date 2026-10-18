@@ -281,7 +281,8 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
             // MSI installer requires elevation to write to Program Files.
             // Use PowerShell Start-Process with -Verb RunAs to trigger UAC prompt.
             let msi_path = download_path.to_string_lossy().to_string();
-            let status = std::process::Command::new("powershell")
+            let powershell = find_powershell();
+            let status = std::process::Command::new(&powershell)
                 .args(&[
                     "-Command",
                     &format!(
@@ -298,7 +299,8 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
             // NSIS EXE installer requires elevation (admin) to write to Program Files.
             // Use PowerShell Start-Process with -Verb RunAs to trigger UAC prompt.
             let exe_path = download_path.to_string_lossy().to_string();
-            let status = std::process::Command::new("powershell")
+            let powershell = find_powershell();
+            let status = std::process::Command::new(&powershell)
                 .args(&[
                     "-Command",
                     &format!(
@@ -446,6 +448,28 @@ fn find_binary(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
         }
     }
     None
+}
+
+/// Resolve powershell.exe on Windows. Try explicit common paths first,
+/// then fall back to PATH lookup so elevated installer launch works
+/// even when System32 is not in PATH.
+#[cfg(windows)]
+fn find_powershell() -> String {
+    let candidates = [
+        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        r"C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe",
+    ];
+    for c in candidates {
+        if std::path::Path::new(c).exists() {
+            return c.to_string();
+        }
+    }
+    "powershell.exe".to_string()
+}
+
+#[cfg(not(windows))]
+fn find_powershell() -> String {
+    "powershell".to_string()
 }
 
 /// Look for the asset's digest among the release's other assets: a per-asset
