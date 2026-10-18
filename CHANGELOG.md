@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.34-rc1] - 2026-10-13
+### Fixed
+- `src/commands/check.rs`: added missing `use std::path::PathBuf;` import — CI compile error `E0433: cannot find type PathBuf in this scope`
+
 ## [v3.0.33-rc1] - 2026-10-13
 ### Fixed
 - `ohub list` Path column now shows install folder (from Windows `InstallLocation` or `UninstallString` directory), not `uninstall.exe` path

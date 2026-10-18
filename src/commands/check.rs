@@ -623,6 +623,7 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
 #[cfg(windows)]
 fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::InstalledRepo>> {
     use std::collections::HashSet;
+    use std::path::PathBuf;
     use winreg::enums::*;
     use winreg::RegKey;
 
