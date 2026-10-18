@@ -273,7 +273,24 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
     // Handle installer assets (.exe, .msi) vs portable zip
     let is_installer = asset_name.ends_with(".exe") || asset_name.ends_with(".msi");
 
-    if is_installer {
+    // Rename running ohub.exe so the installer can replace it (Windows locks running EXEs).
+    // Renaming frees the name; installer creates a fresh ohub.exe.
+    let current_exe = std::env::current_exe().context("Failed to get current exe path")?;
+    let backup_exe = current_exe.with_extension("exe.old");
+    let exe_renamed = if current_exe.exists() {
+        match std::fs::rename(&current_exe, &backup_exe) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("Warning: could not rename running ohub.exe: {}. Installer may fail to replace it.", e);
+                false
+            }
+        }
+    } else {
+        false
+    };
+
+    let installer_result: Result<()> = {
+        if is_installer {
         if !args.quiet {
             println!("Installing via installer...");
         }
@@ -313,13 +330,31 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
             if !status.success() {
                 anyhow::bail!("Elevated EXE installer exited with error code {:?}", status.code());
             }
-        }
+        }     // close else (NSIS EXE branch)
+    }     // close `if is_installer {`
 
-        if !args.quiet {
-            println!("Self-update complete. Please restart ObtainHub.");
-        }
+    Ok(())   // close block
+};
 
-        let _ = fs::remove_file(&download_path);
+    if let Err(e) = installer_result {
+        // Restore backup if installer failed
+        if exe_renamed && backup_exe.exists() {
+            let _ = std::fs::rename(&backup_exe, &current_exe);
+        }
+        return Err(e);
+    }
+
+    // Clean up backup on success
+    if exe_renamed && backup_exe.exists() {
+        let _ = std::fs::remove_file(&backup_exe);
+    }
+
+    if !args.quiet {
+        println!("Self-update complete. Please restart ObtainHub.");
+    }
+
+    let _ = fs::remove_file(&download_path);
+    if is_installer {
         return Ok(());
     }
 

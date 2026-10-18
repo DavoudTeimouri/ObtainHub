@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.37-rc1] - 2026-10-13
+### Fixed
+- `ohub self-update` EXE/MSI installer now replaces running `ohub.exe` correctly. Renames running exe to `ohub.exe.old` before launching installer, restores on failure, deletes on success. Fixes "ohub.exe not replaced — Control Panel shows new version but file is old".
+
 ## [v3.0.36-rc1] - 2026-10-13
 ### Fixed
 - RC build for self-update test: verifies elevated EXE/MSI installer launch via `find_powershell()` path resolution
