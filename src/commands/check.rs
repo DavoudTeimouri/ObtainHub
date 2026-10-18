@@ -642,17 +642,31 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
                         let publisher: Option<String> = subkey.get_value("Publisher").ok();
                         let uninstall_string: Option<String> = subkey.get_value("UninstallString").ok();
 
+                        let install_location: Option<String> = subkey.get_value("InstallLocation").ok();
+
                         if let Some(name) = display_name {
                             if name.contains("ObtainHub") {
                                 continue;
                             }
+
+                            // Best source: InstallLocation (folder path, often set by MSI)
+                            // Fall back: extract directory from UninstallString
+                            let install_path = install_location
+                                .map(PathBuf::from)
+                                .or_else(|| {
+                                    uninstall_string.as_deref().and_then(|s| {
+                                        let s = s.trim().trim_matches('"');
+                                        PathBuf::from(s).parent().map(|p| p.to_path_buf())
+                                    })
+                                })
+                                .unwrap_or_default();
 
                             let key = format!("{}|{}", name, display_version.clone().unwrap_or_default());
                             if seen.insert(key) {
                                 results.push(crate::core::state::InstalledRepo {
                                     repo: name.clone(),
                                     version: display_version.unwrap_or_else(|| "unknown".to_string()),
-                                    install_path: std::path::PathBuf::from(uninstall_string.unwrap_or_default()),
+                                    install_path,
                                     installed_at: chrono::Utc::now(),
                                     updated_at: None,
                                     checksum: None,

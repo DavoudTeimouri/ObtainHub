@@ -76,12 +76,12 @@ ohub install --url https://example.com/app.tar.gz
 
 # Check for updates
 ohub check                                # managed repositories only
-ohub check --all                          # every installed Windows program; offers to add unmanaged ones
+ohub check --all                          # scan ALL installed Windows programs; select unmanaged ones to add; offers candidate GitHub repos for each; then checks for updates
 ohub check --candidates                   # unmanaged apps with candidate repos; select to manage
 ohub check --outdated-only
 ohub check --force                        # bypass recent check cache
 
-# Version comparison strips v/V prefix (v3.0.26 == 3.0.26)
+# Version comparison strips v/V prefix (v3.0.32 == 3.0.32)
 
 # Update
 ohub update                               # all managed repositories

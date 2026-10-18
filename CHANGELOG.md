@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.33-rc1] - 2026-10-13
+### Fixed
+- `ohub list` Path column now shows install folder (from Windows `InstallLocation` or `UninstallString` directory), not `uninstall.exe` path
+- `ohub check --all` documented: scans ALL installed Windows programs, lets user select unmanaged ones to add, offers candidate GitHub repos for each, then checks for updates
+
 ## [v3.0.32-rc1] - 2026-10-13
 ### Fixed
 - `ohub check --all` now reads installed version from Windows registry scan (`DisplayVersion`) instead of stale `state.json` version from previous runs — `ohub list` shows correct installed version
