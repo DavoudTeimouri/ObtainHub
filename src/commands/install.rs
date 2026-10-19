@@ -279,9 +279,9 @@ pub fn select_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
     for asset in &release.assets {
         let name = asset.name.to_lowercase();
         if (target_os == "windows" && (name.ends_with(".zip") || name.ends_with(".exe"))) ||
-           (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage"))) ||
+           (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage"))) || 
            (target_os == "macos" && (name.ends_with(".tar.gz") || name.ends_with(".dmg") || name.ends_with(".zip"))) {
-            if name.contains(target_arch) || name.contains("x86_64") || name.contains("amd64") || name.contains("aarch64") || name.contains("arm64") {
+            if name.contains(target_arch) || name.contains("x86_64") || name.contains("x64") || name.contains("amd64") || name.contains("64-bit") || name.contains("64bit") || name.contains("aarch64") || name.contains("arm64") {
                 return Ok(asset.clone());
             }
         }

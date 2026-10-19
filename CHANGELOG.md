@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.40-rc1] - 2026-10-13
+### Fixed
+- `ohub update` arch detection now matches `x64`, `64-bit`, `64bit` tokens in addition to `x86_64`, `amd64`, `aarch64`, `arm64` — Windows assets named `Setup-x64.exe` / `Setup-64bit.msi` are now detected
+- Same arch tokens added to `install.rs` `select_asset` for consistency
+
 ## [v3.0.39-rc1] - 2026-10-13
 ### Added
 - `ohub update` interactive asset selection: Select dialog lists only `.exe` (setup) and `.msi` installer assets matching current architecture. `.msi` preferred over `.exe` (sorted first, default selection). Other file types (.zip, .tar.gz, etc.) hidden.

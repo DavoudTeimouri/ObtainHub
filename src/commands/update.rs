@@ -415,7 +415,10 @@ fn select_installer_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
             let is_installer = name.ends_with(".exe") || name.ends_with(".msi");
             let arch_match = name.contains(target_arch)
                 || name.contains("x86_64")
+                || name.contains("x64")
                 || name.contains("amd64")
+                || name.contains("64-bit")
+                || name.contains("64bit")
                 || name.contains("aarch64")
                 || name.contains("arm64");
             is_installer && arch_match
