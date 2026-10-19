@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.38-rc1] - 2026-10-13
+### Added
+- `ohub check --candidates` vendor exclusion: MultiSelect before GitHub search lets user exclude vendors (Microsoft, Adobe, Oracle, Apple, Intel, NVIDIA, AMD pre-selected) to keep candidate search efficient
+- README command reference: detailed descriptions for every command, `--all`/`--candidates` flows, version comparison rules
+
+### Fixed
+- `src/commands/check.rs`: removed duplicate managed-repo checking code that was accidentally inside `--candidates` block
+- `src/commands/check.rs`: added `extract_vendor()` helper for vendor name detection from installed program names
+
 ## [v3.0.37-rc1] - 2026-10-13
 ### Fixed
 - `ohub self-update` EXE/MSI installer now replaces running `ohub.exe` correctly. Renames running exe to `ohub.exe.old` before launching installer, restores on failure, deletes on success. Fixes "ohub.exe not replaced — Control Panel shows new version but file is old".

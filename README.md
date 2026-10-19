@@ -141,6 +141,45 @@ ohub config get key       # Get value
 ohub config set key value # Set value
 ```
 
+## Command reference
+
+| Command | Purpose |
+|---------|---------|
+| `ohub search <query>` | Search GitHub repositories by keyword, language, stars. Results offer to add or install. |
+| `ohub install <owner/repo>` | Install an app from a GitHub release. Supports `--version`, `--arch`, `--file` (local archive), `--url` (direct download), `--dry-run`. |
+| `ohub check` | Check all managed repositories for updates. Compares installed version (from state.json) against latest GitHub release tag. |
+| `ohub check --all` | **Discovery mode.** Scans ALL installed Windows programs (registry `Uninstall` keys), separates managed vs unmanaged, offers to add unmanaged ones with GitHub candidate repos, then checks all managed repos for updates. Existing `state.json` versions are synced with actual registry `DisplayVersion` values. |
+| `ohub check --candidates` | **Candidate mode.** Shows unmanaged installed apps sorted by name. First presents a vendor exclusion list (Microsoft, Adobe, Oracle, etc. pre-selected) so GitHub search stays efficient. Then searches GitHub for candidate repos for each remaining app, lets you select which to manage, and offers manual `owner/repo` entry if no candidates found. |
+| `ohub update <owner/repo>` | Update a managed repository to its latest version. Without args, updates all managed repos. Supports `--dry-run`, `--force`. |
+| `ohub list` | Show installed repositories with version, install path, and install date. Path comes from Windows `InstallLocation` or `UninstallString` directory. |
+| `ohub uninstall <owner/repo>` | Uninstall an app using its registered uninstaller. Use `--yes` to skip confirmation, `--purge` to also remove metadata. |
+| `ohub remove <owner/repo>` | Stop tracking an app in ObtainHub (keep files on disk). |
+| `ohub add <owner/repo>` | Add an existing install to management without re-installing. |
+| `ohub self-update` | Check for and install a new ohub release. Renames running `ohub.exe` before launching installer so the file can be replaced. Launches MSI/EXE installers elevated via PowerShell `Start-Process -Verb RunAs`. Use `--skip-signature` to bypass signature check, `--prerelease` for release candidates. |
+| `ohub config` | Get/set configuration keys (github_token, install_dir, etc.). |
+| `ohub doctor` | Diagnose installation issues. |
+| `ohub tui` | Launch Textual User Interface. |
+
+### Version comparison
+Version strings are normalized before comparison: the `v`/`V` prefix is stripped, so `v3.0.32` matches `3.0.32`.
+
+### `ohub check --all` flow
+1. Scan Windows registry for all installed programs
+2. Skip ObtainHub itself
+3. Partition into managed (in state.json) vs unmanaged
+4. Sync `state.json` versions with actual registry `DisplayVersion` (fixes stale versions from previous runs)
+5. Check all managed repos for updates against GitHub latest release
+
+### `ohub check --candidates` flow
+1. Scan Windows registry for all installed programs
+2. Partition into managed vs unmanaged
+3. Show vendor exclusion MultiSelect (common non-GitHub vendors pre-checked: Microsoft, Adobe, Oracle, Apple, Intel, NVIDIA, AMD)
+4. Filter out apps from excluded vendors
+5. Search GitHub for candidate repos for each remaining app
+6. MultiSelect: pick apps to manage
+7. For each selected app: Select candidate repo, or enter `owner/repo` manually
+8. Newly added repos get correct installed version from registry scan
+
 ### Config parameters
 
 | Key | Type | Default | Description |

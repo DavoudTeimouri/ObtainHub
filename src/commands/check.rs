@@ -127,14 +127,53 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             let mut sorted_skipped: Vec<&crate::core::state::InstalledRepo> = skipped.iter().collect();
             sorted_skipped.sort_by(|a, b| a.repo.to_lowercase().cmp(&b.repo.to_lowercase()));
 
-            let pb = ProgressBar::new(sorted_skipped.len() as u64);
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner} [{bar:40}] {pos}/{len} {msg}")
-                    .unwrap()
-                    .progress_chars("█▉▊▋▌▍▎▏  "),
-            );
-            pb.set_message("Finding candidate repositories...");
+            // ---- Vendor exclusion: let user skip known non-GitHub vendors ----
+            let mut vendors: Vec<String> = Vec::new();
+            for entry in &sorted_skipped {
+                let v = extract_vendor(&entry.repo);
+                if !vendors.iter().any(|x| x == &v) {
+                    vendors.push(v);
+                }
+            }
+            vendors.sort();
+            let default_excluded: Vec<bool> = vendors
+                .iter()
+                .map(|v| {
+                    matches!(
+                        v.as_str(),
+                        "Microsoft" | "Adobe" | "Oracle" | "Apple" | "Intel" | "NVIDIA" | "AMD"
+                    )
+                })
+                .collect();
+            let excluded_vendors: Vec<String> = if !vendors.is_empty() {
+                let selections = MultiSelect::with_theme(&theme)
+                    .with_prompt("Exclude vendors from GitHub candidate search (Space to select, Enter to confirm)")
+                    .items(&vendors)
+                    .defaults(&default_excluded)
+                    .interact_opt()?;
+                match selections {
+                    Some(idx) => idx.iter().map(|i| vendors[*i].clone()).collect(),
+                    None => Vec::new(),
+                }
+            } else {
+                Vec::new()
+            };
+            let excluded_set: std::collections::HashSet<String> = excluded_vendors.iter().cloned().collect();
+
+            // Filter out apps from excluded vendors
+            sorted_skipped.retain(|entry| !excluded_set.contains(&extract_vendor(&entry.repo)));
+
+            if sorted_skipped.is_empty() {
+                println!("All unmanaged apps are from excluded vendors. Nothing to search.");
+            } else {
+                let pb = ProgressBar::new(sorted_skipped.len() as u64);
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template("{spinner} [{bar:40}] {pos}/{len} {msg}")
+                        .unwrap()
+                        .progress_chars("█▉▊▋▌▍▎▏  "),
+                );
+                pb.set_message("Finding candidate repositories...");
 
             let mut all_candidates_map: HashMap<String, (Vec<String>, crate::core::state::InstalledRepo)> = HashMap::new();
 
@@ -303,44 +342,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                             }
                         }
                     }
-                }
-            }
-
-        let tracked = state.list_installed();
-        let matched = tracked.into_iter().cloned().collect::<Vec<_>>();
-        if !args.quiet && !matched.is_empty() {
-            println!("\nChecking {} managed repositories for updates...", matched.len());
-        }
-        let mut already_checked: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for repo in matched {
-            if let Some(ref target) = args.repo {
-                if &repo.repo != target {
-                    continue;
-                }
-            }
-            if repo.repo.to_lowercase().contains("obtainhub") {
-                continue;
-            }
-            if already_checked.contains(&repo.repo) {
-                continue;
-            }
-            already_checked.insert(repo.repo.clone());
-            match fetch_latest_release(&repo.repo, token, &retry_config).await {
-                Ok(Some(release)) => {
-                    let latest_version = release.tag_name;
-                    if normalize_version(&latest_version) != normalize_version(&repo.version) {
-                        outdated.push((repo.repo.clone(), repo.version.clone(), latest_version));
-                    } else {
-                        current.push(repo.repo.clone());
-                    }
-                }
-                Ok(None) => {
-                    if !args.quiet {
-                        errors.push((repo.repo.clone(), "No releases found on GitHub".to_string()));
-                    }
-                }
-                Err(e) => {
-                    errors.push((repo.repo.clone(), e.to_string()));
                 }
             }
         }
@@ -884,6 +885,28 @@ fn clean_app_name(name: &str) -> String {
     }
 
     cleaned.trim().to_string()
+}
+
+/// Extract vendor name from an installed program's display name.
+/// Uses known vendor keyword matching, falls back to the first word.
+fn extract_vendor(name: &str) -> String {
+    let known_vendors = [
+        "Microsoft", "Adobe", "Oracle", "JetBrains", "Mozilla", "Google",
+        "Apple", "Valve", "NVIDIA", "AMD", "Intel", "Epic Games", "Bethesda",
+        "Ubisoft", "Electronic Arts", "EA", "Symantec", "McAfee", "VMware",
+        "Corel", "CyberLink", "Nero", "WinRAR", "7-Zip", "VLC", "VideoLAN",
+    ];
+    let lower = name.to_lowercase();
+    for v in &known_vendors {
+        if lower.contains(&v.to_lowercase()) {
+            return v.to_string();
+        }
+    }
+    // Fall back to first word
+    name.split(char::is_whitespace)
+        .next()
+        .unwrap_or(name)
+        .to_string()
 }
 
 #[cfg(test)]
