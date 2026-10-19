@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.42-rc1] - 2026-10-13
+### Fixed
+- CI: NSIS install robustness — multiple SourceForge mirrors, `-UseBasicParsing`, file size validation; accepts NSIS 3.10.1 or 3.11 (prevents corrupted-download build failures)
+
 ## [v3.0.41-rc1] - 2026-10-13
 ### Fixed
 - `ohub update` asset detection: if no arch-specific installer (.exe/.msi matching `x64`, `win64`, `windows`, etc.) is found, falls back to ALL `.exe`/`.msi` assets. Asset naming varies across repos — some use `Setup.exe` with no arch token — fallback ensures installers are never missed.
