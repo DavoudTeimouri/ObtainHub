@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.41-rc1] - 2026-10-13
+### Fixed
+- `ohub update` asset detection: if no arch-specific installer (.exe/.msi matching `x64`, `win64`, `windows`, etc.) is found, falls back to ALL `.exe`/`.msi` assets. Asset naming varies across repos — some use `Setup.exe` with no arch token — fallback ensures installers are never missed.
+
 ## [v3.0.40-rc1] - 2026-10-13
 ### Fixed
 - `ohub update` arch detection now matches `x64`, `64-bit`, `64bit` tokens in addition to `x86_64`, `amd64`, `aarch64`, `arm64` — Windows assets named `Setup-x64.exe` / `Setup-64bit.msi` are now detected

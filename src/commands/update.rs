@@ -402,33 +402,47 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
 
 /// Interactive asset selection for update: only .exe (setup) and .msi files,
 /// matched to current architecture. MSI preferred over EXE. Other file types
-/// (.zip, .tar.gz, etc.) are hidden.
+/// (.zip, .tar.gz, etc.) are hidden. Falls back to all installers if no
+/// arch-specific match is found (asset naming varies across repos).
 fn select_installer_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
     let target_arch = std::env::consts::ARCH;
 
     // Filter: only .exe and .msi files, matching current architecture
-    let installer_assets: Vec<&GitHubAsset> = release
+    let arch_tokens = [
+        target_arch,
+        "x86_64", "x64", "amd64", "64-bit", "64bit",
+        "aarch64", "arm64",
+        "win64", "windows", "win-x64",
+    ];
+
+    let arch_matching: Vec<&GitHubAsset> = release
         .assets
         .iter()
         .filter(|a| {
             let name = a.name.to_lowercase();
             let is_installer = name.ends_with(".exe") || name.ends_with(".msi");
-            let arch_match = name.contains(target_arch)
-                || name.contains("x86_64")
-                || name.contains("x64")
-                || name.contains("amd64")
-                || name.contains("64-bit")
-                || name.contains("64bit")
-                || name.contains("aarch64")
-                || name.contains("arm64");
+            let arch_match = arch_tokens.iter().any(|t| name.contains(t));
             is_installer && arch_match
         })
         .collect();
 
+    // Fallback: all .exe/.msi installers if no arch-specific match found
+    let installer_assets: Vec<&GitHubAsset> = if arch_matching.is_empty() {
+        release
+            .assets
+            .iter()
+            .filter(|a| {
+                let name = a.name.to_lowercase();
+                name.ends_with(".exe") || name.ends_with(".msi")
+            })
+            .collect()
+    } else {
+        arch_matching
+    };
+
     if installer_assets.is_empty() {
         anyhow::bail!(
-            "No installer assets (.exe/.msi) found for architecture {} in release {}",
-            target_arch,
+            "No installer assets (.exe/.msi) found in release {}",
             release.tag_name
         );
     }
