@@ -163,36 +163,55 @@ jobs:
       - name: Install NSIS
         shell: powershell
         run: |
-          # Pinned to 3.11 on purpose. winget installed 3.13 for the v3.0.4/v3.0.5
-          # builds, and the resulting installer failed on Windows with
-          # "Installer corrupted: invalid opcode" before any dialog appeared.
-          # The generated file was structurally valid (MZ header + NullsoftInst
-          # magic + sizes matching CI), so the fault is in how 3.13 emitted it,
-          # not in the download.
+          # Pinned to 3.11 on purpose. NSIS 3.13 produces "Invalid opcode" installers.
+          # SourceForge is unreliable (returns HTML error pages instead of binaries).
+          # Use GitHub releases + winget + choco as reliable sources.
           #
-          # Chocolatey 3.10.1 not in community feed. Using 3.11 (last known good).
-          # If 3.11 fails, fall back to direct download from SourceForge mirrors.
-          choco install nsis --version=3.11 -y --no-progress --allow-downgrade
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Chocolatey install failed, trying direct download..."
+          $nsisVersions = @("3.11", "3.10.1")
+          $installed = $false
 
-            $urls = @(
-              "https://sourceforge.net/projects/nsis/files/NSIS%203.11/nsis-3.11-setup.exe/download",
-              "https://downloads.sourceforge.net/project/nsis/NSIS%203.11/nsis-3.11-setup.exe",
-              "https://sourceforge.net/projects/nsis/files/NSIS%203.10.1/nsis-3.10.1-setup.exe/download",
-              "https://downloads.sourceforge.net/project/nsis/NSIS%203.10.1/nsis-3.10.1-setup.exe"
-            )
+          # 1. Try winget first (built into Windows images)
+          foreach ($v in $nsisVersions) {
+            Write-Host "Trying winget NSIS $v..."
+            $result = winget install NSIS.NSIS --version $v --accept-source-agreements --accept-package-agreements --silent 2>&1
+            if ($LASTEXITCODE -eq 0 -or ($result -match "already installed")) {
+              $installed = $true
+              break
+            }
+            Write-Host "winget NSIS $v failed or not available"
+          }
+
+          # 2. Try Chocolatey
+          if (-not $installed) {
+            foreach ($v in $nsisVersions) {
+              Write-Host "Trying Chocolatey NSIS $v..."
+              choco install nsis --version=$v -y --no-progress --allow-downgrade 2>&1
+              if ($LASTEXITCODE -eq 0) {
+                $installed = $true
+                break
+              }
+              Write-Host "Chocolatey NSIS $v failed"
+            }
+          }
+
+          # 3. Direct download from GitHub releases (more reliable than SourceForge)
+          if (-not $installed) {
+            Write-Host "Package managers failed, trying GitHub releases download..."
+            $urls = @()
+            foreach ($v in $nsisVersions) {
+              $urls += "https://github.com/nsis-maint/nsis/releases/download/nsis-$v/nsis-$v-setup.exe"
+            }
 
             $installerPath = "$env:TEMP\nsic-setup.exe"
             $downloaded = $false
             foreach ($url in $urls) {
               try {
                 Write-Host "Trying: $url"
-                Invoke-WebRequest -Uri $url -OutFile $installerPath -UseBasicParsing -TimeoutSec 60
+                Invoke-WebRequest -Uri $url -OutFile $installerPath -UseBasicParsing -TimeoutSec 120
                 if (Test-Path $installerPath -PathType Leaf) {
                   $size = (Get-Item $installerPath).Length
                   Write-Host "Downloaded $size bytes"
-                  if ($size -gt 1000000) {
+                  if ($size -gt 2000000) {
                     $downloaded = $true
                     break
                   }
@@ -212,7 +231,9 @@ jobs:
               Write-Host "Direct download install failed: $LASTEXITCODE"
               exit $LASTEXITCODE
             }
+            $installed = $true
           }
+
           $makensisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
           if (-not (Test-Path $makensisPath)) {
             $makensisPath = "C:\Program Files\NSIS\makensis.exe"

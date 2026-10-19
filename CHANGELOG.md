@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.43-rc1] - 2026-10-13
+### Fixed
+- CI: NSIS install uses winget → Chocolatey → GitHub releases (SourceForge returned HTML error pages instead of binaries). Size validation raised to 2MB. Accepts NSIS 3.10.1 or 3.11.
+
 ## [v3.0.42-rc1] - 2026-10-13
 ### Fixed
 - CI: NSIS install robustness — multiple SourceForge mirrors, `-UseBasicParsing`, file size validation; accepts NSIS 3.10.1 or 3.11 (prevents corrupted-download build failures)
