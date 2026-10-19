@@ -37,7 +37,7 @@ fn default_tag_name() -> String {
     "unknown".to_string()
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct GitHubAsset {
     name: String,
     browser_download_url: String,
@@ -316,7 +316,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                             if normalize_version(&dep_latest) != normalize_version(&dep_entry.version) {
                                 println!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest);
                                 if !args.dry_run {
-                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, args.force, true).await {
+                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, args.force, true, None).await {
                                         Ok(_) => println!("    Updated dependency {} to {}", dep, dep_latest),
                                         Err(e) => eprintln!("    Failed to update dependency {}: {}", dep, e),
                                     }
@@ -346,7 +346,9 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                     }
 
                     // Perform update (reinstall with new version)
-                    match install_release(repo_name, &latest_version, &release, token, config, state, args.force, args.skip_deps).await {
+                    // Interactive asset selection: only .exe (setup) and .msi, correct architecture
+                    let selected_asset = select_installer_asset(&release)?;
+                    match install_release(repo_name, &latest_version, &release, token, config, state, args.force, args.skip_deps, Some(selected_asset)).await {
                         Ok(_) => {
                             updated.push((repo_name.clone(), current_version.clone(), latest_version.clone()));
                             println!("  Updated to {}", latest_version);
@@ -398,6 +400,68 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     Ok(())
 }
 
+/// Interactive asset selection for update: only .exe (setup) and .msi files,
+/// matched to current architecture. MSI preferred over EXE. Other file types
+/// (.zip, .tar.gz, etc.) are hidden.
+fn select_installer_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
+    let target_arch = std::env::consts::ARCH;
+
+    // Filter: only .exe and .msi files, matching current architecture
+    let installer_assets: Vec<&GitHubAsset> = release
+        .assets
+        .iter()
+        .filter(|a| {
+            let name = a.name.to_lowercase();
+            let is_installer = name.ends_with(".exe") || name.ends_with(".msi");
+            let arch_match = name.contains(target_arch)
+                || name.contains("x86_64")
+                || name.contains("amd64")
+                || name.contains("aarch64")
+                || name.contains("arm64");
+            is_installer && arch_match
+        })
+        .collect();
+
+    if installer_assets.is_empty() {
+        anyhow::bail!(
+            "No installer assets (.exe/.msi) found for architecture {} in release {}",
+            target_arch,
+            release.tag_name
+        );
+    }
+
+    // Sort: .msi first (preferred), then .exe, then alphabetical
+    let mut sorted: Vec<&GitHubAsset> = installer_assets;
+    sorted.sort_by(|a, b| {
+        let a_msi = a.name.to_lowercase().ends_with(".msi");
+        let b_msi = b.name.to_lowercase().ends_with(".msi");
+        match b_msi.cmp(&a_msi) {
+            std::cmp::Ordering::Equal => a.name.cmp(&b.name),
+            other => other,
+        }
+    });
+
+    let theme = ColorfulTheme::default();
+    let items: Vec<String> = sorted
+        .iter()
+        .map(|a| format!("{} ({} bytes)", a.name, a.size))
+        .collect();
+
+    let choice = Select::with_theme(&theme)
+        .with_prompt(format!(
+            "Select installer asset for {} (arch: {})",
+            release.tag_name, target_arch
+        ))
+        .items(&items)
+        .default(0)
+        .interact_opt()?;
+
+    match choice {
+        Some(idx) => Ok(sorted[idx].clone()),
+        None => anyhow::bail!("No asset selected for update"),
+    }
+}
+
 async fn install_release(
     repo: &str,
     version: &str,
@@ -407,24 +471,36 @@ async fn install_release(
     state: &mut StateManager,
     force: bool,
     _skip_deps: bool,
+    selected_asset: Option<GitHubAsset>,
 ) -> Result<()> {
-    // Find suitable asset using install command's logic (considers architecture)
-    let install_release = &InstallGitHubRelease {
-        tag_name: release.tag_name.clone(),
-        name: release.name.clone(),
-        prerelease: release.prerelease,
-        draft: release.draft,
-        assets: release.assets.iter().map(|a| InstallGitHubAsset {
-            name: a.name.clone(),
-            browser_download_url: a.browser_download_url.clone(),
-            size: a.size,
-            content_type: a.content_type.clone(),
-        }).collect(),
-        zipball_url: release.zipball_url.clone(),
-        tarball_url: release.tarball_url.clone(),
+    // Use interactively selected asset, or fall back to auto-select
+    let asset = match selected_asset {
+        Some(a) => a,
+        None => {
+            // Auto-select: convert to install types and use install_select_asset
+            let install_rel = &InstallGitHubRelease {
+                tag_name: release.tag_name.clone(),
+                name: release.name.clone(),
+                prerelease: release.prerelease,
+                draft: release.draft,
+                assets: release.assets.iter().map(|a| InstallGitHubAsset {
+                    name: a.name.clone(),
+                    browser_download_url: a.browser_download_url.clone(),
+                    size: a.size,
+                    content_type: a.content_type.clone(),
+                }).collect(),
+                zipball_url: release.zipball_url.clone(),
+                tarball_url: release.tarball_url.clone(),
+            };
+            let selected = install_select_asset(install_rel)?;
+            GitHubAsset {
+                name: selected.name,
+                browser_download_url: selected.browser_download_url,
+                size: selected.size,
+                content_type: selected.content_type,
+            }
+        }
     };
-
-    let asset = install_select_asset(install_release)?;
 
     println!("  Downloading {}...", asset.name);
 
@@ -438,7 +514,23 @@ async fn install_release(
     let response = req.send()?;
     let bytes = response.as_bytes();
 
-    if let Some(expected) = fetch_published_checksum(install_release, &asset.name, token).await? {
+    if let Some(expected) = {
+        let install_rel_for_checksum = &InstallGitHubRelease {
+            tag_name: release.tag_name.clone(),
+            name: release.name.clone(),
+            prerelease: release.prerelease,
+            draft: release.draft,
+            assets: release.assets.iter().map(|a| InstallGitHubAsset {
+                name: a.name.clone(),
+                browser_download_url: a.browser_download_url.clone(),
+                size: a.size,
+                content_type: a.content_type.clone(),
+            }).collect(),
+            zipball_url: release.zipball_url.clone(),
+            tarball_url: release.tarball_url.clone(),
+        };
+        fetch_published_checksum(install_rel_for_checksum, &asset.name, token).await?
+    } {
         let actual = calculate_sha256_bytes(bytes);
         if !expected.eq_ignore_ascii_case(&actual) {
             return Err(anyhow::anyhow!("Checksum mismatch for {}", asset.name));

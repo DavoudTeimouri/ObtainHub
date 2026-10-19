@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.39-rc1] - 2026-10-13
+### Added
+- `ohub update` interactive asset selection: Select dialog lists only `.exe` (setup) and `.msi` installer assets matching current architecture. `.msi` preferred over `.exe` (sorted first, default selection). Other file types (.zip, .tar.gz, etc.) hidden.
+- `GitHubAsset` in update.rs now derives `Clone`
+
+### Fixed
+- `ohub update` dependency update call passes new `selected_asset` parameter
+- `fetch_published_checksum` call uses local `InstallGitHubRelease` conversion
+
 ## [v3.0.38-rc1] - 2026-10-13
 ### Added
 - `ohub check --candidates` vendor exclusion: MultiSelect before GitHub search lets user exclude vendors (Microsoft, Adobe, Oracle, Apple, Intel, NVIDIA, AMD pre-selected) to keep candidate search efficient
