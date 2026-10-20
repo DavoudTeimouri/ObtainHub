@@ -243,30 +243,78 @@ async fn fetch_repo_info(repo: &str, token: Option<&str>) -> Result<GitHubRepoIn
     let url = format!("https://api.github.com/repos/{}", repo);
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
+        req = req.with_header("Authorization", &format!("Bearer {token}"));
     }
-    let resp: GitHubRepoInfo = req.send()?.json()?;
-    Ok(resp)
+    let resp = req.send()?;
+
+    if resp.status_code == 403 {
+        return Err(anyhow::anyhow!(
+            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+        ));
+    }
+
+    if resp.status_code == 404 {
+        return Err(anyhow::anyhow!("Repository not found: {repo}"));
+    }
+
+    if !(resp.status_code >= 200 && resp.status_code < 300) {
+        return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+    }
+
+    let repo: GitHubRepoInfo = resp.json()?;
+    Ok(repo)
 }
 
 async fn fetch_latest_release(repo: &str, token: Option<&str>) -> Result<GitHubRelease> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
+        req = req.with_header("Authorization", &format!("Bearer {token}"));
     }
-    let resp: GitHubRelease = req.send()?.json()?;
-    Ok(resp)
+    let resp = req.send()?;
+
+    if resp.status_code == 403 {
+        return Err(anyhow::anyhow!(
+            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+        ));
+    }
+
+    if resp.status_code == 404 {
+        return Err(anyhow::anyhow!("No releases found for {repo}"));
+    }
+
+    if !(resp.status_code >= 200 && resp.status_code < 300) {
+        return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+    }
+
+    let release: GitHubRelease = resp.json()?;
+    Ok(release)
 }
 
 async fn fetch_release_by_tag(repo: &str, tag: &str, token: Option<&str>) -> Result<GitHubRelease> {
     let url = format!("https://api.github.com/repos/{}/releases/tags/{}", repo, tag);
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
+        req = req.with_header("Authorization", &format!("Bearer {token}"));
     }
-    let resp: GitHubRelease = req.send()?.json()?;
-    Ok(resp)
+    let resp = req.send()?;
+
+    if resp.status_code == 403 {
+        return Err(anyhow::anyhow!(
+            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+        ));
+    }
+
+    if resp.status_code == 404 {
+        return Err(anyhow::anyhow!("Release tag '{tag}' not found in {repo}"));
+    }
+
+    if !(resp.status_code >= 200 && resp.status_code < 300) {
+        return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+    }
+
+    let release: GitHubRelease = resp.json()?;
+    Ok(release)
 }
 
 /// Select the best asset for the current platform
@@ -706,11 +754,19 @@ async fn search_github_repos(query: &str, token: Option<&str>, config: &ConfigMa
 
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
+        req = req.with_header("Authorization", &format!("Bearer {token}"));
     }
 
-    let resp: serde_json::Value = req.with_timeout(config.get().timeout_seconds as u64).send()?.json()?;
-    let items = resp["items"].as_array().unwrap_or(&vec![]).to_vec();
+    let resp = req.with_timeout(config.get().timeout_seconds as u64).send()?;
+
+    if resp.status_code == 403 {
+        return Err(anyhow::anyhow!(
+            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+        ));
+    }
+
+    let release: serde_json::Value = resp.json()?;
+    let items = release["items"].as_array().unwrap_or(&vec![]).to_vec();
     let mut candidates = Vec::new();
     for item in items {
         if let Some(full_name) = item["full_name"].as_str() {

@@ -39,6 +39,12 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
                 .send()
                 .context("Failed to fetch latest release")?;
 
+            if resp.status_code == 403 {
+                return Err(anyhow::anyhow!(
+                    "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                ));
+            }
+
             if resp.status_code == 404 {
                 // No releases published yet - fall back to listing all releases
                 let releases_url = format!("https://api.github.com/repos/{}/{}/releases", REPO_OWNER, REPO_NAME);
@@ -49,6 +55,11 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
                     .context("Failed to fetch releases list")?;
 
                 if !(releases_resp.status_code >= 200 && releases_resp.status_code < 300) {
+                    if releases_resp.status_code == 403 {
+                        return Err(anyhow::anyhow!(
+                            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                        ));
+                    }
                     return Err(anyhow::anyhow!("GitHub API error: {}", releases_resp.status_code));
                 }
 
@@ -68,6 +79,11 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
                         .context("Failed to fetch tags")?;
 
                     if !(tags_resp.status_code >= 200 && tags_resp.status_code < 300) {
+                        if tags_resp.status_code == 403 {
+                            return Err(anyhow::anyhow!(
+                                "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                            ));
+                        }
                         return Err(anyhow::anyhow!("GitHub API error: {}", tags_resp.status_code));
                     }
 

@@ -39,7 +39,13 @@ pub async fn execute(args: SourceArgs, config: &mut ConfigManager, _state: &Stat
                 .map_err(|e| anyhow::anyhow!("Failed to fetch: {}", e))?;
 
             if resp.status_code == 404 {
-                return Err(anyhow::anyhow!("GitHub repository not found: {}", url));
+                return Err(anyhow::anyhow!("GitHub repository not found: {url}"));
+            }
+
+            if resp.status_code == 403 {
+                return Err(anyhow::anyhow!(
+                    "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                ));
             }
 
             if !(200..300).contains(&resp.status_code) {

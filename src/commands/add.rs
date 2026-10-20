@@ -29,6 +29,13 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
                         req = req.with_header("Authorization", &format!("Bearer {}", token));
                     }
                     let resp = req.send()?;
+
+                    if resp.status_code == 403 {
+                        return Err(anyhow::anyhow!(
+                            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                        ));
+                    }
+
                     Ok(resp.status_code >= 200 && resp.status_code < 300)
                 }
             }, "check_repo").await?;

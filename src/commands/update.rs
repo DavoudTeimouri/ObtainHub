@@ -189,6 +189,12 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
                 }
                 let resp = req.send()?;
 
+                if resp.status_code == 403 {
+                    return Err(anyhow::anyhow!(
+                        "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                    ));
+                }
+
                 // Non-2xx means rate limit, auth error, etc. - return empty candidates
                 if !(resp.status_code >= 200 && resp.status_code < 300) {
                     return Ok(Vec::new());

@@ -105,6 +105,12 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
                 return Ok(None);
             }
 
+            if resp.status_code == 403 {
+                return Err(anyhow::anyhow!(
+                    "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                ));
+            }
+
             if !(resp.status_code >= 200 && resp.status_code < 300) {
                 return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
             }

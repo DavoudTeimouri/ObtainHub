@@ -591,7 +591,6 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         let url = url.clone();
         let token = token_clone.clone();
         async move {
-            let has_token = token.is_some();
             let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
             if let Some(token) = token {
                 req = req.with_header("Authorization", &format!("Bearer {}", token));
@@ -599,10 +598,9 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
             let resp = req.send()?;
 
             if resp.status_code == 403 {
-                if !has_token {
-                    return Err(anyhow::anyhow!("Rate limited or access denied. Set GitHub token with 'ohub config set github_token <token>'"));
-                }
-                return Err(anyhow::anyhow!("GitHub API rate limited or access denied. Check your GitHub token."));
+                return Err(anyhow::anyhow!(
+                    "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                ));
             }
 
             if resp.status_code == 404 {
@@ -799,6 +797,12 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
                     req = req.with_header("Authorization", &format!("Bearer {}", token));
                 }
                 let resp = req.send()?;
+
+                if resp.status_code == 403 {
+                    return Err(anyhow::anyhow!(
+                        "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                    ));
+                }
 
                 // Non-2xx means rate limit, auth error, etc. - return empty candidates
                 if !(resp.status_code >= 200 && resp.status_code < 300) {

@@ -52,7 +52,7 @@ pub async fn execute(args: InfoArgs, config: &ConfigManager, _state: &StateManag
     }
     
     if resp.status_code == 403 {
-        anyhow::bail!("Rate limited or access denied. Set GitHub token with 'ohub config set github_token <token>'");
+        anyhow::bail!("GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>");
     }
     
     if resp.status_code < 200 || resp.status_code >= 300 {

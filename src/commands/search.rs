@@ -50,10 +50,18 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
 
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
+        req = req.with_header("Authorization", &format!("Bearer {token}"));
     }
 
-    let resp: SearchResponse = req.with_timeout(config.get().timeout_seconds as u64).send()?.json()?;
+    let resp = req.with_timeout(config.get().timeout_seconds as u64).send()?;
+
+    if resp.status_code == 403 {
+        return Err(anyhow::anyhow!(
+            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+        ));
+    }
+
+    let resp: SearchResponse = resp.json()?;
 
     let mut results: Vec<_> = resp.items.into_iter()
         .filter(|r| r.stargazers_count >= args.min_stars)

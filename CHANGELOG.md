@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.47-rc1] - 2026-10-13
+### Fixed
+- Consistent 403 error message across ALL commands: "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+  - check (check.rs, find_candidate_repos)
+  - update (update.rs, find_candidate_repos)
+  - self_update (self_update.rs - releases/latest, releases list, tags)
+  - install (install.rs - fetch_repo_info, fetch_latest_release, fetch_release_by_tag, search_github_repos)
+  - info (info.rs)
+  - source (source.rs)
+  - tui (tui.rs)
+  - add (add.rs)
+  - search (search.rs)
+
 ## [v3.0.46-rc1] - 2026-10-13
 ### Added
 - `ohub update` skip download if file already exists with matching size + SHA256 checksum (prevents redownload)
