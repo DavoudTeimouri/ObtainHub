@@ -726,7 +726,7 @@ async fn install_release(
     let mut new_repo = crate::core::state::InstalledRepo {
         repo: repo.to_string(),
         version: version.to_string(),
-        install_path: asset_path,
+        install_path: install_dir.clone(),
         installed_at: chrono::Utc::now(),
         updated_at: Some(chrono::Utc::now()),
         checksum: None,
