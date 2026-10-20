@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.49-rc1] - 2026-10-13
+### Added
+- TUI: Interactive update (`u`) - updates selected app with update available
+- TUI: Remove from management (`x`) - removes selected app from tracked list
+- TUI: Filter apps (`/`) - filter by name, repo, or status with live filtering
+- TUI: Clear filter (`c`) - clears active filter
+- TUI: App details (`Enter`) - shows full app info including install path
+- TUI: Shows available version arrow (→ v3.9) next to outdated apps
+- TUI: Filter bar shows active filter text
+- TUI: Updated key bindings in help screen
+
 ## [v3.0.48-rc1] - 2026-10-13
 ### Fixed
 - `ohub update` sets `install_path` to install directory (`repos\owner\repo\`) instead of downloaded setup file (`repos\owner\repo\OnionHop-Setup-v3.exe`). `ohub list` Path column now shows the install folder, not the downloaded .exe/.msi file.
