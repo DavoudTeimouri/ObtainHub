@@ -6,7 +6,7 @@ use minreq;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
 use urlencoding;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -280,8 +280,15 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     info!("Updating repositories");
 
     let token = config.get().github_token.as_deref();
+    let install_dir = config.get().install_dir.clone();
     let download_dir = config.get().download_dir.clone();
+    println!("Install directory: {}", install_dir.display());
     println!("Download directory: {}", download_dir.display());
+
+    // Cleanup download folder: remove old duplicate downloads
+    if let Err(e) = cleanup_download_folder(&download_dir) {
+        eprintln!("Warning: download cleanup failed: {e}");
+    }
 
     let installed = state.list_installed();
 
@@ -587,30 +594,16 @@ async fn install_release(
         }
     };
 
-    // Download with progress bar
     let download_url = &asset.browser_download_url;
-    let mut req = minreq::get(download_url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {token}"));
-    }
 
-    let response = req.send()?;
-    let total_size = response
-        .as_bytes()
-        .len() as u64;
-    let bytes = response.as_bytes().to_vec();
+    // Install using install command's logic
+    let install_dir = config.get().install_dir.join(repo);
+    std::fs::create_dir_all(&install_dir)?;
+    let asset_path = install_dir.join(&asset.name);
 
-    let pb = ProgressBar::new(total_size);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-            .unwrap()
-            .progress_chars("#>-"),
-    );
-    pb.set_message(format!("Downloading {}", asset.name));
-    pb.finish_with_message(format!("Downloaded {} ({} bytes)", asset.name, total_size));
-
-    if let Some(expected) = {
+    // Get expected size from GitHub API for skip-check
+    let mut total_size: u64 = 0;
+    let expected_hash = {
         let install_rel_for_checksum = &InstallGitHubRelease {
             tag_name: release.tag_name.clone(),
             name: release.name.clone(),
@@ -626,18 +619,63 @@ async fn install_release(
             tarball_url: release.tarball_url.clone(),
         };
         fetch_published_checksum(install_rel_for_checksum, &asset.name, token).await?
-    } {
-        let actual = calculate_sha256_bytes(&bytes);
-        if !expected.eq_ignore_ascii_case(&actual) {
-            return Err(anyhow::anyhow!("Checksum mismatch for {}", asset.name));
+    };
+
+    // Skip download if file already exists with matching size AND checksum
+    let mut goto_skip_download = false;
+    if asset_path.exists() {
+        let existing_size = std::fs::metadata(&asset_path)?.len();
+        if existing_size > 0 {
+            total_size = existing_size;
+            let existing_bytes = std::fs::read(&asset_path)?;
+            let existing_hash = calculate_sha256_bytes(&existing_bytes);
+            if let Some(expected) = &expected_hash {
+                if expected.eq_ignore_ascii_case(&existing_hash) {
+                    println!("  Already downloaded: {} ({} bytes)", asset.name, existing_size);
+                    goto_skip_download = true;
+                }
+            }
         }
     }
 
-    // Install using install command's logic
-    let install_dir = config.get().install_dir.join(repo);
-    std::fs::create_dir_all(&install_dir)?;
-    let asset_path = install_dir.join(&asset.name);
-    std::fs::write(&asset_path, &bytes)?;
+    if !goto_skip_download {
+        // Remove old file with same name before writing new one
+        if asset_path.exists() {
+            std::fs::remove_file(&asset_path)?;
+        }
+
+        // Download with progress bar
+        let mut req = minreq::get(download_url).with_header("User-Agent", "ObtainHub/3.0.0");
+        if let Some(token) = token {
+            req = req.with_header("Authorization", &format!("Bearer {token}"));
+        }
+
+        let response = req.send()?;
+        total_size = response
+            .as_bytes()
+            .len() as u64;
+        let bytes = response.as_bytes().to_vec();
+
+        let pb = ProgressBar::new(total_size);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+        pb.set_message(format!("Downloading {}", asset.name));
+        pb.finish_with_message(format!("Downloaded {} ({} bytes)", asset.name, total_size));
+
+        if let Some(expected) = expected_hash {
+            let actual = calculate_sha256_bytes(&bytes);
+            if !expected.eq_ignore_ascii_case(&actual) {
+                return Err(anyhow::anyhow!("Checksum mismatch for {}", asset.name));
+            }
+        }
+
+        // Write file
+        std::fs::write(&asset_path, &bytes)?;
+    }
 
     // Verify file was actually written (catches locked-file / permission failures)
     if !asset_path.exists() {
@@ -694,6 +732,51 @@ async fn install_release(
     };
     state.add_installed(new_repo.clone());
     state.save()?;
+
+    Ok(())
+}
+
+/// Cleanup download folder: for each base filename, keep only the latest
+/// versioned file, remove older duplicates. Prevents download folder from
+/// growing unboundedly across repeated updates.
+fn cleanup_download_folder(download_dir: &std::path::Path) -> Result<()> {
+    if !download_dir.exists() {
+        return Ok(());
+    }
+
+    // Group files by base name (strip version-like suffixes)
+    let mut groups: std::collections::HashMap<String, Vec<std::path::PathBuf>> =
+        std::collections::HashMap::new();
+
+    for entry in std::fs::read_dir(download_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        // Base name = strip everything after first version-like token (digits/dots)
+        let base = file_name
+            .split(|c: char| c.is_ascii_digit() || c == '.' || c == '-')
+            .next()
+            .unwrap_or(&file_name)
+            .trim_end_matches(|c: char| c == '_' || c == ' ')
+            .to_string();
+        groups.entry(base).or_default().push(path);
+    }
+
+    // For each group, keep the file with the most recent modification time
+    for (_, mut files) in groups {
+        files.sort_by(|a, b| {
+            let ma = a.metadata().and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
+            let mb = b.metadata().and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
+            mb.cmp(&ma) // newest first
+        });
+        // Remove all but the newest
+        for path in files.into_iter().skip(1) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 
     Ok(())
 }

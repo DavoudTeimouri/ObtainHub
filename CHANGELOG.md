@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.46-rc1] - 2026-10-13
+### Added
+- `ohub update` skip download if file already exists with matching size + SHA256 checksum (prevents redownload)
+- `ohub update` removes old file with same name before writing new one
+- `ohub update` shows both Install directory and Download directory at start
+- `ohub update` download folder cleanup: keeps only latest versioned file per base name, removes older duplicates
+
+### Fixed
+- `ohub update` showed wrong directory (download_dir instead of install_dir where files are actually stored)
+
 ## [v3.0.45-rc1] - 2026-10-13
 ### Fixed
 - CI compile error E0716: `format!()` temporary dropped before `Command::args()` used it in `run_installer` (update.rs) and self-update elevation (self_update.rs). Now binds `format!()` result to a named variable before passing its reference to `.args()`.
