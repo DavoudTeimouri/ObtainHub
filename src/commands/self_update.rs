@@ -299,14 +299,12 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
             // Use PowerShell Start-Process with -Verb RunAs to trigger UAC prompt.
             let msi_path = download_path.to_string_lossy().to_string();
             let powershell = find_powershell();
+            let powershell_cmd = format!(
+                "Start-Process 'msiexec' -ArgumentList '/i {} /qn /norestart' -Verb RunAs -Wait",
+                msi_path
+            );
             let status = std::process::Command::new(&powershell)
-                .args(&[
-                    "-Command",
-                    &format!(
-                        "Start-Process 'msiexec' -ArgumentList '/i {} /qn /norestart' -Verb RunAs -Wait",
-                        msi_path
-                    ),
-                ])
+                .args(&["-Command", powershell_cmd.as_str()])
                 .status()
                 .context("Failed to launch elevated MSI installer")?;
             if !status.success() {
@@ -317,14 +315,12 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
             // Use PowerShell Start-Process with -Verb RunAs to trigger UAC prompt.
             let exe_path = download_path.to_string_lossy().to_string();
             let powershell = find_powershell();
+            let powershell_cmd = format!(
+                "Start-Process '{}' -ArgumentList '/S' -Verb RunAs -Wait",
+                exe_path
+            );
             let status = std::process::Command::new(&powershell)
-                .args(&[
-                    "-Command",
-                    &format!(
-                        "Start-Process '{}' -ArgumentList '/S' -Verb RunAs -Wait",
-                        exe_path
-                    ),
-                ])
+                .args(&["-Command", powershell_cmd.as_str()])
                 .status()
                 .context("Failed to launch elevated EXE installer")?;
             if !status.success() {

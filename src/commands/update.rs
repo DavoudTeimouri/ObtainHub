@@ -514,18 +514,17 @@ fn find_powershell() -> String {
 fn run_installer(installer_path: &std::path::Path) -> Result<()> {
     let path_str = installer_path.to_string_lossy().to_string();
     let powershell = find_powershell();
+    let powershell_cmd = if installer_path.extension().and_then(|s| s.to_str()) == Some("msi") {
+        format!(
+            "Start-Process 'msiexec' -ArgumentList '/i {} /qn /norestart' -Verb RunAs -Wait",
+            path_str
+        )
+    } else {
+        format!("Start-Process '{}' -ArgumentList '/S' -Verb RunAs -Wait", path_str)
+    };
+
     let status = std::process::Command::new(&powershell)
-        .args(&[
-            "-Command",
-            if installer_path.extension().and_then(|s| s.to_str()) == Some("msi") {
-                &format!(
-                    "Start-Process 'msiexec' -ArgumentList '/i {} /qn /norestart' -Verb RunAs -Wait",
-                    path_str
-                )
-            } else {
-                &format!("Start-Process '{}' -ArgumentList '/S' -Verb RunAs -Wait", path_str)
-            },
-        ])
+        .args(&["-Command", powershell_cmd.as_str()])
         .status()
         .context("Failed to launch elevated installer")?;
     if !status.success() {

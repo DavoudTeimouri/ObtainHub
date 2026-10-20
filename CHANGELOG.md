@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.45-rc1] - 2026-10-13
+### Fixed
+- CI compile error E0716: `format!()` temporary dropped before `Command::args()` used it in `run_installer` (update.rs) and self-update elevation (self_update.rs). Now binds `format!()` result to a named variable before passing its reference to `.args()`.
+
 ## [v3.0.44-rc1] - 2026-10-13
 ### Added
 - `ohub update` progress bar on download (indicatif)
