@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.44-rc1] - 2026-10-13
+### Added
+- `ohub update` progress bar on download (indicatif)
+- `ohub update` shows download directory at start
+- `ohub update` verifies installation succeeded (file exists, non-zero, correct size)
+- `ohub update` runs .exe/.msi installer after download with elevation
+
+### Fixed
+- `ohub update` 403 error now says "rate limited or access denied" with token hint
+- `ohub update` runs installer for .exe/.msi assets (was only saving to disk)
+
 ## [v3.0.43-rc1] - 2026-10-13
 ### Fixed
 - CI: NSIS install uses winget → Chocolatey → GitHub releases (SourceForge returned HTML error pages instead of binaries). Size validation raised to 2MB. Accepts NSIS 3.10.1 or 3.11.

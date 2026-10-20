@@ -1,7 +1,7 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::UpdateArgs;
 use crate::utils::retry::{execute_with_retry, RetryConfig};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use minreq;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -55,12 +55,18 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         async move {
             let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
             if let Some(token) = token {
-                req = req.with_header("Authorization", &format!("Bearer {}", token));
+                req = req.with_header("Authorization", &format!("Bearer {token}"));
             }
             let resp = req.send()?;
 
             if resp.status_code == 404 {
                 return Ok(None);
+            }
+
+            if resp.status_code == 403 {
+                return Err(anyhow::anyhow!(
+                    "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                ));
             }
 
             if !(resp.status_code >= 200 && resp.status_code < 300) {
@@ -274,6 +280,8 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     info!("Updating repositories");
 
     let token = config.get().github_token.as_deref();
+    let download_dir = config.get().download_dir.clone();
+    println!("Download directory: {}", download_dir.display());
 
     let installed = state.list_installed();
 
@@ -479,6 +487,64 @@ fn select_installer_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
     }
 }
 
+/// Resolve powershell.exe on Windows. Try explicit common paths first,
+/// then fall back to PATH lookup.
+#[cfg(windows)]
+fn find_powershell() -> String {
+    let candidates = [
+        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        r"C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe",
+    ];
+    for c in candidates {
+        if std::path::Path::new(c).exists() {
+            return c.to_string();
+        }
+    }
+    "powershell.exe".to_string()
+}
+
+#[cfg(not(windows))]
+fn find_powershell() -> String {
+    "powershell".to_string()
+}
+
+/// Run an installer (.exe/.msi) with elevation, waiting for completion.
+/// Uses PowerShell Start-Process -Verb RunAs so the installer gets admin rights.
+#[cfg(windows)]
+fn run_installer(installer_path: &std::path::Path) -> Result<()> {
+    let path_str = installer_path.to_string_lossy().to_string();
+    let powershell = find_powershell();
+    let status = std::process::Command::new(&powershell)
+        .args(&[
+            "-Command",
+            if installer_path.extension().and_then(|s| s.to_str()) == Some("msi") {
+                &format!(
+                    "Start-Process 'msiexec' -ArgumentList '/i {} /qn /norestart' -Verb RunAs -Wait",
+                    path_str
+                )
+            } else {
+                &format!("Start-Process '{}' -ArgumentList '/S' -Verb RunAs -Wait", path_str)
+            },
+        ])
+        .status()
+        .context("Failed to launch elevated installer")?;
+    if !status.success() {
+        anyhow::bail!("Installer exited with error code {:?}", status.code());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn run_installer(installer_path: &std::path::Path) -> Result<()> {
+    let status = std::process::Command::new(installer_path)
+        .status()
+        .context("Failed to run installer")?;
+    if !status.success() {
+        anyhow::bail!("Installer exited with error code {:?}", status.code());
+    }
+    Ok(())
+}
+
 async fn install_release(
     repo: &str,
     version: &str,
@@ -490,6 +556,9 @@ async fn install_release(
     _skip_deps: bool,
     selected_asset: Option<GitHubAsset>,
 ) -> Result<()> {
+    let download_dir = config.get().download_dir.clone();
+    println!("  Download directory: {}", download_dir.display());
+
     // Use interactively selected asset, or fall back to auto-select
     let asset = match selected_asset {
         Some(a) => a,
@@ -519,17 +588,28 @@ async fn install_release(
         }
     };
 
-    println!("  Downloading {}...", asset.name);
-
-    // Download with progress
+    // Download with progress bar
     let download_url = &asset.browser_download_url;
     let mut req = minreq::get(download_url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
+        req = req.with_header("Authorization", &format!("Bearer {token}"));
     }
 
     let response = req.send()?;
-    let bytes = response.as_bytes();
+    let total_size = response
+        .as_bytes()
+        .len() as u64;
+    let bytes = response.as_bytes().to_vec();
+
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    pb.set_message(format!("Downloading {}", asset.name));
+    pb.finish_with_message(format!("Downloaded {} ({} bytes)", asset.name, total_size));
 
     if let Some(expected) = {
         let install_rel_for_checksum = &InstallGitHubRelease {
@@ -548,7 +628,7 @@ async fn install_release(
         };
         fetch_published_checksum(install_rel_for_checksum, &asset.name, token).await?
     } {
-        let actual = calculate_sha256_bytes(bytes);
+        let actual = calculate_sha256_bytes(&bytes);
         if !expected.eq_ignore_ascii_case(&actual) {
             return Err(anyhow::anyhow!("Checksum mismatch for {}", asset.name));
         }
@@ -558,7 +638,46 @@ async fn install_release(
     let install_dir = config.get().install_dir.join(repo);
     std::fs::create_dir_all(&install_dir)?;
     let asset_path = install_dir.join(&asset.name);
-    std::fs::write(&asset_path, bytes)?;
+    std::fs::write(&asset_path, &bytes)?;
+
+    // Verify file was actually written (catches locked-file / permission failures)
+    if !asset_path.exists() {
+        return Err(anyhow::anyhow!(
+            "Installation failed: {} was not written to {}",
+            asset.name,
+            asset_path.display()
+        ));
+    }
+    let written_size = std::fs::metadata(&asset_path)?.len();
+    if written_size == 0 {
+        return Err(anyhow::anyhow!(
+            "Installation failed: {} is empty (0 bytes) at {}",
+            asset.name,
+            asset_path.display()
+        ));
+    }
+    if written_size != total_size {
+        return Err(anyhow::anyhow!(
+            "Installation failed: {} wrote {} bytes, expected {}",
+            asset.name,
+            written_size,
+            total_size
+        ));
+    }
+
+    // If it's an installer (.exe/.msi), run it so the app actually gets installed
+    let is_installer = asset.name.ends_with(".exe") || asset.name.ends_with(".msi");
+    if is_installer {
+        println!("  Running installer: {}", asset.name);
+        run_installer(&asset_path)?;
+        // Verify installer ran: check app exe was updated
+        if !asset_path.exists() {
+            return Err(anyhow::anyhow!(
+                "Installer ran but {} is missing afterwards",
+                asset.name
+            ));
+        }
+    }
 
     // Update state
     let mut new_repo = crate::core::state::InstalledRepo {
