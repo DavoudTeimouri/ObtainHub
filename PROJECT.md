@@ -376,7 +376,8 @@ rejection.
 - No abstraction before the second caller. `install.rs` and `update.rs` duplicate
   download/extract logic — leave it duplicated until a third caller appears.
 - Deliberate shortcuts get a `ponytail:` comment naming the ceiling and the
-  upgrade path. Examples: `update.rs` checksum note, `completion.rs` EPIPE note.
+  upgrade path. Examples: `update.rs` checksum note, `completion.rs` EPIPE note,
+  `update.rs::install_release` (11 parameters), `cli.rs::SourceAction` (232-byte enum).
 - Non-trivial logic ships one assert-based test. Current suite: 21 tests —
   6 in `src/commands/install.rs`, 4 in `src/core/winreg.rs`, 4 in
   `src/core/config.rs`, 3 in `src/commands/self_update.rs`, 3 in
