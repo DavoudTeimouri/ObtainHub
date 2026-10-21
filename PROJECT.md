@@ -7,7 +7,7 @@ file disagree, the code is the bug.
 **Start at `AGENTS.md`** — it is the entry point and points here.
 This file also owns the **changelog template** (§0).
 
-Last verified against: `main` @ `9972ce7` (v3.0.26-rc1).
+Last verified against: `main` @ `e6f7159` (v3.0.51-rc1).
 
 ---
 
@@ -377,8 +377,10 @@ rejection.
   download/extract logic — leave it duplicated until a third caller appears.
 - Deliberate shortcuts get a `ponytail:` comment naming the ceiling and the
   upgrade path. Examples: `update.rs` checksum note, `completion.rs` EPIPE note.
-- Non-trivial logic ships one assert-based test. Current suite: 2 tests in
-  `src/core/config.rs`.
+- Non-trivial logic ships one assert-based test. Current suite: 21 tests —
+  6 in `src/commands/install.rs`, 4 in `src/core/winreg.rs`, 4 in
+  `src/core/config.rs`, 3 in `src/commands/self_update.rs`, 3 in
+  `src/commands/check.rs`, 1 in `src/utils/retry.rs`.
 - Build artifacts are gitignored: `ObtainHub.msi`,
   `installer/ObtainHub-Setup.exe`, `installer/ohub.exe`.
 
