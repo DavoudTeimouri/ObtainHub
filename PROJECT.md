@@ -7,7 +7,7 @@ file disagree, the code is the bug.
 **Start at `AGENTS.md`** — it is the entry point and points here.
 This file also owns the **changelog template** (§0).
 
-Last verified against: `main` @ `836912d` (v3.0.64-rc1).
+Last verified against: `main` @ `43c8309` (v3.0.65-rc1).
 
 ---
 
@@ -396,12 +396,13 @@ rejection.
 - Deliberate shortcuts get a `ponytail:` comment naming the ceiling and the
   upgrade path. Examples: `update.rs` checksum note, `completion.rs` EPIPE note,
   `update.rs::install_release` (11 parameters), `cli.rs::SourceAction` (232-byte enum).
-- Non-trivial logic ships one assert-based test. Current suite: 40 tests —
+- Non-trivial logic ships one assert-based test. Current suite: 42 tests —
   10 in `src/core/winreg.rs`, 8 in `src/commands/tui.rs`, 7 in
   `src/commands/install.rs`, 4 in `src/core/config.rs`, 3 in
   `src/commands/self_update.rs`, 3 in `src/commands/check.rs`, 2 in
-  `src/core/registries.rs`, 1 each in `src/utils/retry.rs`,
-  `src/core/credentials.rs` and `src/commands/schedule.rs`.
+  `src/core/registries.rs`, 2 in `src/core/cache.rs`, 1 each in
+  `src/utils/retry.rs`, `src/core/credentials.rs` and
+  `src/commands/schedule.rs`.
 - Build artifacts are gitignored: `ObtainHub.msi`,
   `installer/ObtainHub-Setup.exe`, `installer/ohub.exe`.
 
@@ -409,7 +410,7 @@ rejection.
 
 ## 11. Work tracking
 
-`PLAN.md` holds the numbered improvement plan. Status as of `836912d`:
+`PLAN.md` holds the numbered improvement plan. Status as of `43c8309`:
 
 | # | Item | State |
 |---|---|---|
