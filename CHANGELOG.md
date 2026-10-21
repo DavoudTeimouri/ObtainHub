@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.50-rc1] - 2026-10-13
+### Added
+- Track real install location + uninstaller for third-party installers. `ohub update` snapshots the Windows uninstall registry before and after running an installer, then records where the app landed and how to remove it.
+- `ohub uninstall` now runs the app's own registered uninstaller (elevated) instead of only deleting ObtainHub's download folder. Handles NSIS (`unins000.exe`), MSI (`MsiExec /X{GUID}`) and Burn bundles (`/I` → `/X`).
+- New `src/core/winreg.rs`: uninstall-registry scanning and change detection (new entry or version bump), with 4 unit tests.
+- New `src/core/elevate.rs`: shared elevated-launch helper for installers and uninstallers (PowerShell `Start-Process -Verb RunAs -Wait`).
+- `state.json`: new `uninstaller` field on each managed app (optional; old state files still load).
+
+### Changed
+- `ohub list` Path column now shows the app's real install folder (e.g. `C:\Users\x\AppData\Local\Programs\OnionHop V3\`) instead of ObtainHub's download folder.
+- `ohub check --all` / `--candidates` capture each app's uninstaller from the registry, so `ohub uninstall` works for apps tracked without an update.
+- `check.rs` registry scan now delegates to `core::winreg` (removed ~40 lines of duplicated code).
+
 ## [v3.0.49-rc1] - 2026-10-13
 ### Added
 - TUI: Interactive update (`u`) - updates selected app with update available

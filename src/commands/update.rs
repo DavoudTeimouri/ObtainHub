@@ -1,4 +1,4 @@
-use crate::core::{ConfigManager, StateManager};
+use crate::core::{ConfigManager, StateManager, run_installer};
 use crate::cli::UpdateArgs;
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::{Context, Result};
@@ -121,6 +121,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
                                     previous_install_path: None,
                                     dependencies: Vec::new(),
                                     is_dependency: false,
+                                    ..Default::default()
                                 });
                             }
                         }
@@ -500,63 +501,6 @@ fn select_installer_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
     }
 }
 
-/// Resolve powershell.exe on Windows. Try explicit common paths first,
-/// then fall back to PATH lookup.
-#[cfg(windows)]
-fn find_powershell() -> String {
-    let candidates = [
-        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
-        r"C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe",
-    ];
-    for c in candidates {
-        if std::path::Path::new(c).exists() {
-            return c.to_string();
-        }
-    }
-    "powershell.exe".to_string()
-}
-
-#[cfg(not(windows))]
-fn find_powershell() -> String {
-    "powershell".to_string()
-}
-
-/// Run an installer (.exe/.msi) with elevation, waiting for completion.
-/// Uses PowerShell Start-Process -Verb RunAs so the installer gets admin rights.
-#[cfg(windows)]
-fn run_installer(installer_path: &std::path::Path) -> Result<()> {
-    let path_str = installer_path.to_string_lossy().to_string();
-    let powershell = find_powershell();
-    let powershell_cmd = if installer_path.extension().and_then(|s| s.to_str()) == Some("msi") {
-        format!(
-            "Start-Process 'msiexec' -ArgumentList '/i {} /qn /norestart' -Verb RunAs -Wait",
-            path_str
-        )
-    } else {
-        format!("Start-Process '{}' -ArgumentList '/S' -Verb RunAs -Wait", path_str)
-    };
-
-    let status = std::process::Command::new(&powershell)
-        .args(&["-Command", powershell_cmd.as_str()])
-        .status()
-        .context("Failed to launch elevated installer")?;
-    if !status.success() {
-        anyhow::bail!("Installer exited with error code {:?}", status.code());
-    }
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn run_installer(installer_path: &std::path::Path) -> Result<()> {
-    let status = std::process::Command::new(installer_path)
-        .status()
-        .context("Failed to run installer")?;
-    if !status.success() {
-        anyhow::bail!("Installer exited with error code {:?}", status.code());
-    }
-    Ok(())
-}
-
 async fn install_release(
     repo: &str,
     version: &str,
@@ -710,8 +654,15 @@ async fn install_release(
 
     // If it's an installer (.exe/.msi), run it so the app actually gets installed
     let is_installer = asset.name.ends_with(".exe") || asset.name.ends_with(".msi");
+    let mut detected_uninstaller: Option<String> = None;
+    let mut detected_install_dir: Option<std::path::PathBuf> = None;
     if is_installer {
         println!("  Running installer: {}", asset.name);
+
+        // Snapshot the uninstall registry so we can tell where the app landed
+        // and how to remove it later.
+        let before = crate::core::scan_uninstall_entries();
+
         run_installer(&asset_path)?;
         // Verify installer ran: check app exe was updated
         if !asset_path.exists() {
@@ -720,13 +671,29 @@ async fn install_release(
                 asset.name
             ));
         }
+
+        // The installer registers itself; find the entry it added or bumped.
+        let after = crate::core::scan_uninstall_entries();
+        let hints = vec![
+            repo.rsplit('/').next().unwrap_or(repo).to_string(),
+            repo.replace('/', "-"),
+        ];
+        if let Some(entry) = crate::core::detect_install_change(&before, &after, &hints) {
+            if !entry.uninstall_string.is_empty() {
+                detected_uninstaller = Some(entry.uninstall_string.clone());
+            }
+            detected_install_dir = entry.install_dir();
+            if let Some(dir) = &detected_install_dir {
+                println!("  Installed to: {}", dir.display());
+            }
+        }
     }
 
     // Update state
     let mut new_repo = crate::core::state::InstalledRepo {
         repo: repo.to_string(),
         version: version.to_string(),
-        install_path: install_dir.clone(),
+        install_path: detected_install_dir.unwrap_or_else(|| install_dir.clone()),
         installed_at: chrono::Utc::now(),
         updated_at: Some(chrono::Utc::now()),
         checksum: None,
@@ -735,6 +702,8 @@ async fn install_release(
         previous_install_path: None,
         dependencies: Vec::new(),
         is_dependency: false,
+        uninstaller: detected_uninstaller,
+        ..Default::default()
     };
     state.add_installed(new_repo.clone());
     state.save()?;

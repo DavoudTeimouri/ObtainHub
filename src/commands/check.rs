@@ -236,6 +236,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                             repo: selected_repo.clone(),
                                             version: skipped_entry.version.clone(),
                                             install_path: skipped_entry.install_path.clone(),
+                                            uninstaller: skipped_entry.uninstaller.clone(),
                                             installed_at: chrono::Utc::now(),
                                             updated_at: None,
                                             checksum: None,
@@ -244,6 +245,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                             previous_install_path: None,
                                             dependencies: Vec::new(),
                                             is_dependency: false,
+                                            ..Default::default()
                                         };
                                         state.add_installed(new_repo.clone());
                                         state.save()?;
@@ -295,6 +297,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                                     repo: selected_repo.clone(),
                                                     version: skipped_entry.version.clone(),
                                                     install_path: skipped_entry.install_path.clone(),
+                                                    uninstaller: skipped_entry.uninstaller.clone(),
                                                     installed_at: chrono::Utc::now(),
                                                     updated_at: None,
                                                     checksum: None,
@@ -303,6 +306,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                                     previous_install_path: None,
                                                     dependencies: Vec::new(),
                                                     is_dependency: false,
+                                                    ..Default::default()
                                                 };
                                                 state.add_installed(new_repo.clone());
                                                 state.save()?;
@@ -387,6 +391,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                 repo: selected_repo.clone(),
                                 version: skipped_entry.map(|e| e.version.clone()).unwrap_or_else(|| "unknown".to_string()),
                                 install_path: skipped_entry.map(|e| e.install_path.clone()).unwrap_or_default(),
+                                uninstaller: skipped_entry.and_then(|e| e.uninstaller.clone()),
                                 installed_at: chrono::Utc::now(),
                                 updated_at: None,
                                 checksum: None,
@@ -395,6 +400,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                 previous_install_path: None,
                                 dependencies: Vec::new(),
                                 is_dependency: false,
+                                ..Default::default()
                             };
                             state.add_installed(new_repo.clone());
                             state.save()?;
@@ -447,6 +453,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                         repo: selected_repo.clone(),
                                         version: skipped_entry.map(|e| e.version.clone()).unwrap_or_else(|| "unknown".to_string()),
                                         install_path: skipped_entry.map(|e| e.install_path.clone()).unwrap_or_default(),
+                                        uninstaller: skipped_entry.and_then(|e| e.uninstaller.clone()),
                                         installed_at: chrono::Utc::now(),
                                         updated_at: None,
                                         checksum: None,
@@ -455,6 +462,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                         previous_install_path: None,
                                         dependencies: Vec::new(),
                                         is_dependency: false,
+                                        ..Default::default()
                                     };
                                     state.add_installed(new_repo.clone());
                                     state.save()?;
@@ -622,66 +630,44 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
 #[cfg(windows)]
 fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::InstalledRepo>> {
     use std::collections::HashSet;
-    use std::path::PathBuf;
-    use winreg::enums::*;
-    use winreg::RegKey;
 
     let mut results = Vec::new();
     let mut seen = HashSet::new();
 
-    for &root in &[HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
-        for &view in &[KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
-            let hklm = RegKey::predef(root);
-            let uninstall_path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
-
-            if let Ok(uninstall_key) = hklm.open_subkey_with_flags(uninstall_path, KEY_READ | view) {
-                for subkey_name in uninstall_key.enum_keys().flatten() {
-                    if let Ok(subkey) = uninstall_key.open_subkey_with_flags(&subkey_name, KEY_READ | view) {
-                        let display_name: Option<String> = subkey.get_value("DisplayName").ok();
-                        let display_version: Option<String> = subkey.get_value("DisplayVersion").ok();
-                        let publisher: Option<String> = subkey.get_value("Publisher").ok();
-                        let uninstall_string: Option<String> = subkey.get_value("UninstallString").ok();
-
-                        let install_location: Option<String> = subkey.get_value("InstallLocation").ok();
-
-                        if let Some(name) = display_name {
-                            if name.contains("ObtainHub") {
-                                continue;
-                            }
-
-                            // Best source: InstallLocation (folder path, often set by MSI)
-                            // Fall back: extract directory from UninstallString
-                            let install_path = install_location
-                                .map(PathBuf::from)
-                                .or_else(|| {
-                                    uninstall_string.as_deref().and_then(|s| {
-                                        let s = s.trim().trim_matches('"');
-                                        PathBuf::from(s).parent().map(|p| p.to_path_buf())
-                                    })
-                                })
-                                .unwrap_or_default();
-
-                            let key = format!("{}|{}", name, display_version.clone().unwrap_or_default());
-                            if seen.insert(key) {
-                                results.push(crate::core::state::InstalledRepo {
-                                    repo: name.clone(),
-                                    version: display_version.unwrap_or_else(|| "unknown".to_string()),
-                                    install_path,
-                                    installed_at: chrono::Utc::now(),
-                                    updated_at: None,
-                                    checksum: None,
-                                    metadata: serde_json::Value::Null,
-                                    previous_version: None,
-                                    previous_install_path: None,
-                                    dependencies: Vec::new(),
-                                    is_dependency: false,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
+    for entry in crate::core::scan_uninstall_entries() {
+        let name = entry.display_name;
+        if name.contains("ObtainHub") {
+            continue;
         }
+
+        let key = format!("{}|{}", name, entry.display_version);
+        if !seen.insert(key) {
+            continue;
+        }
+
+        results.push(crate::core::state::InstalledRepo {
+            repo: name,
+            version: if entry.display_version.is_empty() {
+                "unknown".to_string()
+            } else {
+                entry.display_version.clone()
+            },
+            install_path: entry.install_dir().unwrap_or_default(),
+            installed_at: chrono::Utc::now(),
+            updated_at: None,
+            checksum: None,
+            metadata: serde_json::Value::Null,
+            previous_version: None,
+            previous_install_path: None,
+            dependencies: Vec::new(),
+            is_dependency: false,
+            uninstaller: if entry.uninstall_string.is_empty() {
+                None
+            } else {
+                Some(entry.uninstall_string.clone())
+            },
+            ..Default::default()
+        });
     }
 
     Ok(results)
@@ -724,6 +710,12 @@ fn partition_gitHub_managed(
                 previous_install_path: tracked.previous_install_path.clone(),
                 dependencies: tracked.dependencies.clone(),
                 is_dependency: tracked.is_dependency,
+                // Prefer the stored uninstaller; fall back to the registry scan
+                // for entries tracked before uninstallers were recorded.
+                uninstaller: tracked
+                    .uninstaller
+                    .clone()
+                    .or_else(|| entry.uninstaller.clone()),
             });
         } else {
             skipped.push(entry.clone());
@@ -931,6 +923,7 @@ mod tests {
             previous_install_path: None,
             dependencies: Vec::new(),
             is_dependency: false,
+            ..Default::default()
         }
     }
 

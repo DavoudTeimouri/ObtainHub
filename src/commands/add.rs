@@ -69,6 +69,7 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
                 previous_install_path: None,
                 dependencies: Vec::new(),
                 is_dependency: false,
+                ..Default::default()
             };
             
             state.add_installed(repo);
@@ -191,6 +192,7 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
                     previous_install_path: None,
                     dependencies: Vec::new(),
                     is_dependency: false,
+                    ..Default::default()
                 });
 
                 println!("Added '{}' to management.", exe_name);

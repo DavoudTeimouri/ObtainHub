@@ -86,6 +86,7 @@ pub async fn execute(args: RollbackArgs, config: &ConfigManager, state: &mut Sta
         previous_install_path: Some(entry.install_path.clone()),
         dependencies: entry.dependencies.clone(),
         is_dependency: entry.is_dependency,
+        uninstaller: entry.uninstaller.clone(),
     };
     
     state.add_installed(repo_entry);

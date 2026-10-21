@@ -11,7 +11,7 @@ pub struct State {
     pub metadata: HashMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InstalledRepo {
     pub repo: String,
     pub version: String,
@@ -30,6 +30,10 @@ pub struct InstalledRepo {
     /// Whether this repo is a dependency of another repo (prevents auto-removal)
     #[serde(default)]
     pub is_dependency: bool,
+    /// Uninstaller command the app's own installer registered in the Windows
+    /// uninstall registry. Used by `ohub uninstall` to actually remove the app.
+    #[serde(default)]
+    pub uninstaller: Option<String>,
 }
 
 pub struct StateManager {

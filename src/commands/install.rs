@@ -226,6 +226,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
         previous_install_path: None,
         dependencies: args.dependencies.clone(),
         is_dependency: false,
+        ..Default::default()
     };
     
     // Update state
@@ -597,6 +598,7 @@ async fn install_from_file(args: &InstallArgs, file_path: &str, config: &ConfigM
         previous_install_path: None,
         dependencies: args.dependencies.clone(),
         is_dependency: false,
+        ..Default::default()
     };
     
     // Update state
@@ -675,6 +677,7 @@ async fn install_from_url(args: &InstallArgs, url: &str, config: &ConfigManager,
         previous_install_path: None,
         dependencies: args.dependencies.clone(),
         is_dependency: false,
+        ..Default::default()
     };
     
     // Update state

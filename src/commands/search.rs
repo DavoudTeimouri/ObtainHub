@@ -121,6 +121,7 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
                             previous_install_path: None,
                             dependencies: Vec::new(),
                             is_dependency: false,
+                            ..Default::default()
                         };
                         state.add_installed(new_repo.clone());
                         state.save()?;

@@ -51,10 +51,26 @@ pub async fn execute(args: UninstallArgs, config: &mut ConfigManager, state: &mu
         }
     }
     
-    // Remove installation directory
+    // Run the app's own uninstaller if its installer registered one.
+    // This is what actually removes third-party apps from Program Files.
+    if let Some(uninstaller) = &entry.uninstaller {
+        match crate::core::run_uninstaller(uninstaller) {
+            Ok(true) => println!("Ran uninstaller: {}", uninstaller),
+            Ok(false) => println!("Registered uninstaller not runnable: {}", uninstaller),
+            Err(e) => eprintln!("Uninstaller failed: {}", e),
+        }
+    }
+
+    // Remove any leftover installation directory (uninstaller usually does this).
     if entry.install_path.exists() {
-        fs::remove_dir_all(&entry.install_path)?;
-        println!("Removed installation directory: {}", entry.install_path.display());
+        match fs::remove_dir_all(&entry.install_path) {
+            Ok(()) => println!("Removed installation directory: {}", entry.install_path.display()),
+            Err(e) => eprintln!(
+                "Could not remove {}: {} (run the app's uninstaller manually)",
+                entry.install_path.display(),
+                e
+            ),
+        }
     }
     
     // Remove from state
