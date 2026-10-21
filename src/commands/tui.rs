@@ -418,7 +418,8 @@ impl App {
         self.status_message = "Loading apps...".to_string();
 
         let apps = state.get_all_apps();
-        let token = config.get().github_token.as_deref();
+        let token_owned = config.github_token();
+        let token = token_owned.as_deref();
         // Windows knows the real install folder; state.json can still hold
         // the path ObtainHub downloaded to.
         let registry = crate::core::scan_uninstall_entries();
@@ -537,7 +538,8 @@ async fn handle_search_input(
                 return Ok(());
             }
             app.status_message = format!("Searching GitHub for '{query}'...");
-            let token = config.get().github_token.as_deref();
+            let token_owned = config.github_token();
+            let token = token_owned.as_deref();
             match crate::commands::install::search_github_repos(&query, token, config).await {
                 Ok(results) if !results.is_empty() => {
                     app.search_results = results;
@@ -840,7 +842,8 @@ async fn handle_key_event(
             let repo = app.apps[idx].repo.clone();
             let name = app.apps[idx].name.clone();
             app.status_message = format!("Refreshing {name}...");
-            let token = config.get().github_token.as_deref();
+            let token_owned = config.github_token();
+            let token = token_owned.as_deref();
             let retry = app.retry_config.clone();
             match fetch_latest_release(&repo, token, &retry).await {
                 Ok(Some(latest)) => {
@@ -862,7 +865,8 @@ async fn handle_key_event(
                 return Ok(());
             };
             app.status_message = format!("Loading release notes for {}...", app_info.name);
-            let token = config.get().github_token.as_deref();
+            let token_owned = config.github_token();
+            let token = token_owned.as_deref();
             let retry = app.retry_config.clone();
             match crate::core::registries::fetch_release_notes(&app_info.repo, token, &retry).await {
                 Ok(Some(notes)) => {

@@ -69,7 +69,8 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         }
     }
 
-    let token = config.get().github_token.as_deref();
+    let token_owned = config.github_token();
+    let token = token_owned.as_deref();
     let retry_config = RetryConfig::from_config(config);
 
     if let Some(timeout) = args.timeout {

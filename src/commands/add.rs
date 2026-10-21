@@ -28,7 +28,8 @@ pub async fn execute(args: AddArgs, config: &mut ConfigManager, state: &mut Stat
     match args.add_type {
         AddType::Github => {
             // Check if GitHub repository exists before adding
-            let token = config.get().github_token.as_deref();
+            let token_owned = config.github_token();
+            let token = token_owned.as_deref();
             let repo_exists = execute_with_retry(retry_config, || {
                 let repo = args.repo.clone();
                 let token = token.map(|s| s.to_string());

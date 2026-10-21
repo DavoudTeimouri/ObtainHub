@@ -186,8 +186,57 @@ impl ConfigManager {
             Config::default()
         };
         Self::sanitize(&mut config);
-        
-        Ok(Self { config, config_path })
+
+        let mut manager = Self { config, config_path };
+        // A token left in the config file by an older version moves into the
+        // credential store, so the plain text copy disappears on first run.
+        if manager.migrate_token_to_credential_store()? {
+            eprintln!(
+                "Moved the GitHub token from {} into the OS credential store.",
+                manager.config_path.display()
+            );
+        }
+        Ok(manager)
+    }
+
+    /// The GitHub token: the OS credential store first, the config file second.
+    ///
+    /// The credential store is the token's home. The config file is only a
+    /// fallback for a machine with no credential store.
+    pub fn github_token(&self) -> Option<String> {
+        crate::core::credentials::load_token().or_else(|| self.config.github_token.clone())
+    }
+
+    /// Where the GitHub token lives: "credential store", "config file" or
+    /// "not set".
+    pub fn token_source(&self) -> &'static str {
+        if crate::core::credentials::load_token().is_some() {
+            "credential store"
+        } else if self.config.github_token.is_some() {
+            "config file"
+        } else {
+            "not set"
+        }
+    }
+
+    /// Move a plaintext token from the config file into the OS credential
+    /// store.
+    ///
+    /// Does nothing when there is no token, or when this machine has no
+    /// credential store. Returns `true` when the config file was changed.
+    pub fn migrate_token_to_credential_store(&mut self) -> Result<bool> {
+        let Some(token) = self.config.github_token.clone() else {
+            return Ok(false);
+        };
+        if crate::core::credentials::load_token().is_none()
+            && !crate::core::credentials::store_token(&token)?
+        {
+            // No credential store on this machine - the token stays where it is.
+            return Ok(false);
+        }
+        self.config.github_token = None;
+        self.save()?;
+        Ok(true)
     }
 
     /// Clamp out-of-range values that would otherwise cause hangs or div-by-zero

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.63-rc1] - 2026-10-21
+The GitHub token leaves the config file and goes into the OS credential store.
+
+### Fixed
+- The GitHub token was stored in plain text in `config.toml`. It now goes into the Windows Credential Manager, and the plain text copy is removed from the config file. A token left behind by an older version moves into the credential store on the first run.
+- `ohub config set github_token <token>` echoed the token to the terminal and to the log file. It prints `[stored]` now.
+- `ohub config show` printed the token. It is masked now.
+- `ohub self-uninstall` printed "GitHub token removal from keyring not implemented in this version" and left the credential behind. It removes the credential now.
+- `ohub reset` cleared the config but not the credential store. Both are cleared now, and `--keep-token` puts the token back.
+
+### Changed
+- `ohub config auth` reports where the token actually lives: "credential store", "config file" or "not set".
+- A machine with no credential store keeps the token in the config file and says so.
+
+### Security
+- The token no longer lands in a config backup (`ohub config backup`, `ohub reset --backup`) or in a restored config file.
+
 ## [v3.0.62-rc1] - 2026-10-21
 Wires up three more flags that were accepted but did nothing, and fixes an
 architecture bug in the asset selection.

@@ -75,7 +75,8 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     
     // Determine registry to use
     // First, check if there's a manifest source matching this repo
-    let token = config.get().github_token.as_deref();
+    let token_owned = config.github_token();
+    let token = token_owned.as_deref();
     let install_dir = config.get().install_dir.join(&args.repo);
     
     // Check if already installed
@@ -530,7 +531,8 @@ async fn install_from_file(args: &InstallArgs, file_path: &str, config: &ConfigM
 }
 
 async fn install_from_url(args: &InstallArgs, url: &str, config: &ConfigManager, state_manager: &mut StateManager) -> Result<()> {
-    let token = config.get().github_token.as_deref();
+    let token_owned = config.github_token();
+    let token = token_owned.as_deref();
     let install_dir = config.get().install_dir.join(&args.repo);
     
     // Check if already installed

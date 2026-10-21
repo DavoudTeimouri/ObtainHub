@@ -217,9 +217,10 @@ HTTP retry configuration (configurable per-command via `RetryConfig` from config
 `http_retry_backoff` (default 2.0 exponential). Applied to GitHub API calls in
 `check`, `search`, `install`, `update`, and `self-update`.
 
-`github_token` is stored in plain config. It is **not** in the Windows keyring —
-`keyring` is a declared dependency but unwired. Treat the token as a secret that
-must not land in logs, backups, or `ohub config list` output.
+`github_token` is stored in the **OS credential store** (Windows Credential
+Manager), not in the config file. A machine with no credential store keeps it
+in the config file as a fallback. Treat the token as a secret that must not
+land in logs, backups, or `ohub config list` output.
 
 ---
 
@@ -285,7 +286,7 @@ split.
 
 | Update assets | Checksum verification now works for published digests — see below. `update` still does not verify. |
 | Archive extraction | Zip-slip guarded in `install.rs` and `update.rs` (`safe_join` / inline equivalent). Tar uses `tar::unpack`, which sanitizes internally. |
-| GitHub token | Plaintext in config, not keyring. No longer echoed by `config get`, and excluded from backups. |
+| GitHub token | In the OS credential store (Windows Credential Manager), with the config file as the fallback. Never echoed, never in a backup. |
 | Signing | Neither installer is Authenticode signed. |
 
 Anything above marked high-risk belongs on the fix list before the next feature.
@@ -307,23 +308,40 @@ starts with `dest`, so a naive `starts_with` check passes it. Covered by
 
 ### GitHub token handling
 
-The token is stored as plaintext `github_token` in `config.toml`. The `keyring`
-crate is a declared dependency but nothing calls it.
+The token lives in the **OS credential store** — the Windows Credential Manager
+on Windows, via the `keyring` crate. `src/core/credentials.rs` owns it.
 
-What protects it now:
+The `keyring` crate falls back to an **in-process mock** when the platform has
+no backend, so a write "succeeds" and the value is gone when the process
+exits. The credential store is therefore used on Windows only
+(`#[cfg(windows)]`); everywhere else the token stays in `config.toml` and the
+user is told so.
 
-- `config get github_token` returns `[stored]`, never the value. The old code
-  printed it verbatim, which leaks it into shell history, CI logs, and
-  `ohub config list | tee`.
-- `config auth` already reported presence only.
+What protects it:
+
+- `config set github_token <value>` writes to the credential store and removes
+  the plain text copy from `config.toml`. It prints `[stored]`, never the
+  value — the old code echoed it to the terminal and to the log file.
+- `config get github_token` and `config show` return `[stored]`, never the
+  value. The old code printed it verbatim, which leaks it into shell history,
+  CI logs, and `ohub config list | tee`.
+- `config auth` reports where the token actually lives: `credential store`,
+  `config file` or `not set`.
 - `backup` and `reset --backup` strip the token from the archive. A backup is a
   file the user copies between machines; a plaintext token inside one is a
   credential in transit.
+- `reset` clears the credential store as well as the config file.
+  `--keep-token` puts the token back; `--move-token <file>` writes it to a
+  file with `0600` permissions.
+- `self-uninstall` removes the credential, so an uninstall does not leave a
+  live secret behind.
+- A token left in `config.toml` by an older version moves into the credential
+  store on the first run after the upgrade.
 
 What does not: `config set github_token <value>` still takes the token as a
-command-line argument, so it lands in shell history and process listings. Wiring
-`keyring` for storage, and reading the token from stdin or the environment when
-setting it, is the real fix. Until then, treat `config.toml` as a secret file.
+command-line argument, so it lands in shell history and process listings.
+Reading the token from stdin or the environment when setting it is the real
+fix for that.
 
 ### Self-update verification
 
@@ -421,7 +439,7 @@ Discovered by inspection, not in the plan:
 
 - MSI ↔ NSIS mutual refusal is dead code both directions — section 4.
 - NSIS uninstall leaves `HKLM\Software\ObtainHub` orphaned — section 5.
-- `keyring` declared but unwired; token is plaintext. Echoing and backups fixed, see section 9. Setting via CLI arg still leaks to shell history.
+- `keyring` was declared but unwired; the token was plaintext. **Fixed** — the token now lives in the OS credential store, see section 9. Setting it via a CLI arg still leaks to shell history.
 - `verify_checksums` could never match → **Fixed** in `install.rs`, see section 9.
 - `update` downloads and extracts with no checksum check at all. → **Fixed**,
   `update.rs` verifies the published SHA256 and refuses a mismatch, see

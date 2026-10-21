@@ -171,7 +171,14 @@ State file: `%APPDATA%\ObtainHub\state.json`
 ohub config list          # Show all config
 ohub config get key       # Get value
 ohub config set key value # Set value
+ohub config auth          # Where the GitHub token lives
 ```
+
+The GitHub token is stored in the **OS credential store** (Windows Credential
+Manager), not in `config.toml`. `ohub config set github_token <token>` writes
+it there and removes the plain text copy from the config file; `ohub config
+auth` reports where the token actually is. A machine with no credential store
+keeps it in the config file instead.
 
 ## Command reference
 

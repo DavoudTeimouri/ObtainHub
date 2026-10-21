@@ -39,7 +39,8 @@ struct Owner {
 pub async fn execute(args: InfoArgs, config: &ConfigManager, _state: &StateManager) -> Result<()> {
     info!("Fetching info for {}", args.repo);
     
-    let token = config.get().github_token.as_deref();
+    let token_owned = config.github_token();
+    let token = token_owned.as_deref();
     let mut req = get(format!("https://api.github.com/repos/{}", args.repo));
     
     if let Some(token) = token {

@@ -5,6 +5,7 @@ pub mod assets;
 pub mod registries;
 pub mod winreg;
 pub mod elevate;
+pub mod credentials;
 
 pub use config::ConfigManager;
 pub use state::{normalize_version, StateManager};

@@ -75,9 +75,13 @@ pub async fn execute(args: SelfUninstallArgs, _config: &ConfigManager, _state: &
         }
     }
 
-    // Clear token from keyring
-    // keyring API varies by version; skip for now
-    println!("Note: GitHub token removal from keyring not implemented in this version");
+    // Remove the GitHub token from the OS credential store, so a
+    // self-uninstall does not leave a live credential behind.
+    if crate::core::credentials::delete_token() {
+        println!("GitHub token removed from the credential store.");
+    } else {
+        println!("No GitHub token in the credential store.");
+    }
 
     println!("\nSelf-uninstall complete.");
 

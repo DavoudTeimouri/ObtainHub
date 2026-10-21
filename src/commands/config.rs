@@ -12,13 +12,28 @@ use dirs;
 pub async fn execute(args: ConfigArgs, config: &mut ConfigManager, state: &mut StateManager) -> Result<()> {
     match args.action {
         ConfigAction::Show => {
-            println!("{}", toml::to_string_pretty(config.get())?);
+            // The token is not printed, even masked - it is a secret.
+            let mut shown = config.get().clone();
+            if shown.github_token.is_some() {
+                shown.github_token = Some("[stored]".to_string());
+            }
+            println!("{}", toml::to_string_pretty(&shown)?);
         }
         ConfigAction::Set { key, value } => {
-            info!("Setting config: {} = {}", key, value);
+            // Never echo the token: it lands in shell history and CI logs.
+            let secret = key == "github_token";
+            if secret {
+                info!("Setting config: {}", key);
+            } else {
+                info!("Setting config: {} = {}", key, value);
+            }
             set_config_value(config, &key, &value)?;
             config.save()?;
-            println!("Set {} = {}", key, value);
+            if secret {
+                println!("Set {} = [stored]", key);
+            } else {
+                println!("Set {} = {}", key, value);
+            }
         }
         ConfigAction::Get { key } => {
             info!("Getting config: {}", key);
@@ -94,11 +109,7 @@ pub async fn execute(args: ConfigArgs, config: &mut ConfigManager, state: &mut S
         }
         ConfigAction::Auth { token_source } => {
             println!("GitHub token source: {:?}", token_source);
-            let cfg = config.get();
-            match &cfg.github_token {
-                Some(_) => println!("Token: [stored]"),
-                None => println!("Token: [not set]"),
-            }
+            println!("Token: [{}]", config.token_source());
         }
     }
     Ok(())
@@ -113,7 +124,11 @@ fn create_config_backup(path: &PathBuf, config: &ConfigManager, state: &StateMan
     let mut zip = zip::ZipWriter::new(file);
     let options = FileOptions::default().compression_method(CompressionMethod::Deflated);
 
-    let config_toml = toml::to_string_pretty(config.get())?;
+    // The token never goes into a backup file - it lives in the credential
+    // store, and a backup is the kind of file people paste into a bug report.
+    let mut backup_config = config.get().clone();
+    backup_config.github_token = None;
+    let config_toml = toml::to_string_pretty(&backup_config)?;
     zip.start_file("config.toml", options)?;
     zip.write_all(config_toml.as_bytes())?;
 
@@ -136,8 +151,11 @@ fn restore_config_backup(path: &PathBuf, config: &mut ConfigManager, state: &mut
         if name == "config.toml" {
             let mut content = String::new();
             file.read_to_string(&mut content)?;
-            if force || config.get().github_token.is_none() {
+            if force || config.github_token().is_none() {
                 config.config = toml::from_str(&content)?;
+                // A token in the backup goes into the credential store, not
+                // back into the config file.
+                config.migrate_token_to_credential_store()?;
                 config.save()?;
             }
         } else if name == "state.json" {
@@ -153,9 +171,22 @@ fn restore_config_backup(path: &PathBuf, config: &mut ConfigManager, state: &mut
 }
 
 fn set_config_value(config: &mut ConfigManager, key: &str, value: &str) -> Result<()> {
+    if key == "github_token" {
+        // The token belongs in the OS credential store, not in a plain text
+        // config file. A machine with no credential store keeps it in the
+        // config file as before.
+        if crate::core::credentials::store_token(value)? {
+            config.get_mut().github_token = None;
+        } else {
+            eprintln!(
+                "No OS credential store on this machine - the token stays in the config file."
+            );
+            config.get_mut().github_token = Some(value.to_string());
+        }
+        return Ok(());
+    }
     let cfg = config.get_mut();
     match key {
-        "github_token" => cfg.github_token = Some(value.to_string()),
         "install_dir" => cfg.install_dir = Path::new(value).to_path_buf(),
         "parallel_downloads" => cfg.parallel_downloads = value.parse()?,
         "timeout_seconds" => cfg.timeout_seconds = value.parse()?,
@@ -173,7 +204,7 @@ fn get_config_value(config: &ConfigManager, key: &str) -> Result<Option<String>>
     let value = match key {
         // Never echo the token: this value lands in shell history, CI logs, and
         // `ohub config list | tee`. `config auth` reports presence instead.
-        "github_token" => cfg.github_token.as_ref().map(|_| "[stored]".to_string()),
+        "github_token" => config.github_token().map(|_| "[stored]".to_string()),
         "install_dir" => Some(cfg.install_dir.display().to_string()),
         "parallel_downloads" => Some(cfg.parallel_downloads.to_string()),
         "timeout_seconds" => Some(cfg.timeout_seconds.to_string()),

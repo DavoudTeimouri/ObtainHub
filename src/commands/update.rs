@@ -166,7 +166,8 @@ pub(crate) async fn fetch_release_by_tag(
 pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Updating repositories");
 
-    let token = config.get().github_token.as_deref();
+    let token_owned = config.github_token();
+    let token = token_owned.as_deref();
     let install_dir = config.get().install_dir.clone();
     let download_dir = config.get().download_dir.clone();
     let mut reporter = Reporter::new(args.quiet, args.log.as_deref());

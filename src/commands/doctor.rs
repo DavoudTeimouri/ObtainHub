@@ -130,7 +130,8 @@ pub async fn execute(args: DoctorArgs, config: &ConfigManager, state: &mut State
     
     // Check GitHub token
     println!("\n3. GitHub Authentication");
-    match config.get().github_token.as_deref() {
+    let token_owned = config.github_token();
+    match token_owned.as_deref() {
         Some(token) if !token.is_empty() => {
             println!("   ✓ GitHub token configured");
 

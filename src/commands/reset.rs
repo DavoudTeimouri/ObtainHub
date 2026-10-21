@@ -19,9 +19,9 @@ pub async fn execute(args: ResetArgs, config: &mut ConfigManager, state: &mut St
         println!("Backup created successfully.");
     }
 
-    // Capture the token BEFORE the reset — config.reset() wipes github_token, so
-    // reading it afterwards (as this used to) always found nothing.
-    let existing_token = config.get().github_token.clone();
+    // Capture the token BEFORE the reset - it lives in the OS credential
+    // store, and the reset below removes it from there.
+    let existing_token = config.github_token();
 
     // Reset config
     println!("Resetting configuration...");
@@ -33,13 +33,18 @@ pub async fn execute(args: ResetArgs, config: &mut ConfigManager, state: &mut St
     state.clear()?;
     println!("State cleared.");
 
-    // The token lives in config, not the keyring (keyring is declared but unwired),
-    // so the reset above already removed it. --keep-token means "put it back".
+    // The token lives in the OS credential store, so the reset has to remove
+    // it from there. --keep-token means "put it back".
+    crate::core::credentials::delete_token();
     match (&existing_token, args.keep_token, &args.move_token) {
         (Some(token), true, _) => {
-            config.get_mut().github_token = Some(token.clone());
-            config.save()?;
-            println!("GitHub token preserved.");
+            if crate::core::credentials::store_token(token)? {
+                println!("GitHub token preserved in the credential store.");
+            } else {
+                config.get_mut().github_token = Some(token.clone());
+                config.save()?;
+                println!("GitHub token preserved in the config file.");
+            }
         }
         (Some(_), false, Some(path)) => {
             let dest = PathBuf::from(path);

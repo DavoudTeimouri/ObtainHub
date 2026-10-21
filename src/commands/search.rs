@@ -30,7 +30,8 @@ struct SearchResponse {
 pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut StateManager, format: OutputFormat) -> Result<()> {
     info!("Searching for: {}", args.query);
 
-    let token = config.get().github_token.as_deref();
+    let token_owned = config.github_token();
+    let token = token_owned.as_deref();
 
     let mut url = format!(
         "https://api.github.com/search/repositories?q={}&per_page={}&page={}&sort={}&order=desc",

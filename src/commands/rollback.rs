@@ -56,7 +56,8 @@ pub async fn execute(
         }
     }
 
-    let token = config.get().github_token.as_deref();
+    let token_owned = config.github_token();
+    let token = token_owned.as_deref();
 
     // Find the release for the old tag.
     let release = match crate::commands::update::fetch_release_by_tag(
