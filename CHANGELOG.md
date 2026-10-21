@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Fixed
+- Two clippy findings in the new path lookup: `manual_strip` in `core/winreg.rs` (`strip_prefix` instead of `starts_with` + slice) and `type_complexity` in `commands/list.rs` (the row type is now named). Both are behaviour-neutral, so the v3.0.56-rc1 binary is unaffected.
+
+### Added
+- TUI layout regression tests. The TUI is rendered into a `ratatui` `TestBackend` and asserted: every app gets its own row, the table fills the main area (the list used to be squeezed into a 3-row strip where only one app was visible), apps needing an update carry the `^` marker and are counted in the title, and the filter narrows the table.
+
 ## [v3.0.56-rc1] - 2026-10-21
 Deeper fixes on top of v3.0.54-rc1 / v3.0.55-rc1, which addressed the same five
 reports but only part of the way.
