@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v3.0.57-rc1] - 2026-10-21
+Clean CI on the tag. The binary is behaviour-identical to v3.0.56-rc1 - the
+only changes are two clippy fixes and the TUI regression tests.
+
 ### Fixed
 - Two clippy findings in the new path lookup: `manual_strip` in `core/winreg.rs` (`strip_prefix` instead of `starts_with` + slice) and `type_complexity` in `commands/list.rs` (the row type is now named). Both are behaviour-neutral, so the v3.0.56-rc1 binary is unaffected.
 
