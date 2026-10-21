@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.55-rc1] - 2026-10-21
+Same fixes as v3.0.54-rc1 (real install paths, TUI list layout, TUI screen corruption, TUI version comparison, `ohub check --all` explanation, rollback tag lookup). The only difference is the CI clippy gate:
+
+### Fixed
+- `ohub list` passed `&repo` where `repo` was already a reference, which clippy rejected (`needless_borrow`). The binary in v3.0.54-rc1 was unaffected - only the CI lint gate was red.
+
 ## [v3.0.54-rc1] - 2026-10-21
 ### Fixed
 - `ohub list` showed ObtainHub's own download folder instead of where the app actually lives. The path is now read from the Windows uninstall registry (`C:\Users\x\AppData\Local\Programs\OnionHop V3\`), falling back to the stored path when Windows does not know the app.

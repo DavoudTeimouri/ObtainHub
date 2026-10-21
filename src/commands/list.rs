@@ -31,7 +31,7 @@ pub async fn execute(args: ListArgs, _config: &ConfigManager, state: &StateManag
         for repo in installed {
             println!("Repository: {}", repo.repo);
             println!("  Version: {}", repo.version);
-            println!("  Path: {}", resolve(&repo).display());
+            println!("  Path: {}", resolve(repo).display());
             println!("  Installed: {}", repo.installed_at.format("%Y-%m-%d %H:%M:%S UTC"));
             if let Some(updated) = repo.updated_at {
                 println!("  Updated: {}", updated.format("%Y-%m-%d %H:%M:%S UTC"));
@@ -49,7 +49,7 @@ pub async fn execute(args: ListArgs, _config: &ConfigManager, state: &StateManag
             table.add_row(vec![
                 Cell::new(&repo.repo),
                 Cell::new(&repo.version),
-                Cell::new(resolve(&repo).display().to_string()),
+                Cell::new(resolve(repo).display().to_string()),
                 Cell::new(repo.installed_at.format("%Y-%m-%d").to_string()),
             ]);
         }
