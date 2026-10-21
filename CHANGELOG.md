@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.64-rc1] - 2026-10-21
+The three plan items that were declared but never acted on: dependencies, the bandwidth limit, and the checksum for other registries.
+
+### Fixed
+- `ohub install --dependencies a/b,c/d` recorded the dependencies in the state but never installed them. They are installed first now, and marked in the state so `ohub uninstall` will not remove a dependency on its own. One level deep on purpose: a dependency's own dependencies are not known until it is installed, and a cycle would recurse forever.
+- `download_bandwidth_limit` was a config field that nothing read. The download is really paced now: the file is fetched in chunks, one chunk per second, as many bytes as the limit allows in that second. `minreq` buffers the whole body, so a single request cannot be slowed down - the server has to support Range requests.
+- Checksum verification for non-GitHub registries was a TODO. crates.io publishes the sha256 of the `.crate` file, and it is verified now.
+- `ohub config set download_bandwidth_limit 512` is a real setting now (KB per second; `none` clears it).
+
+### Added
+- The release workflow can be dispatched from the Actions tab with a tag: it creates the tag, and the tag push starts a fresh run that builds, checks and publishes the release.
+
 ## [v3.0.63-rc1] - 2026-10-21
 The GitHub token leaves the config file and goes into the OS credential store.
 

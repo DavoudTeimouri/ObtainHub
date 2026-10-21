@@ -172,6 +172,7 @@ ohub config list          # Show all config
 ohub config get key       # Get value
 ohub config set key value # Set value
 ohub config auth          # Where the GitHub token lives
+ohub config set download_bandwidth_limit 512   # KB per second (none to clear)
 ```
 
 The GitHub token is stored in the **OS credential store** (Windows Credential
@@ -185,7 +186,7 @@ keeps it in the config file instead.
 | Command | Purpose |
 |---------|---------|
 | `ohub search <query>` | Search GitHub repositories by keyword, language, stars. Results offer to add or install. |
-| `ohub install <owner/repo>` | Install an app from a GitHub release. Supports `--version`, `--arch`, `--file` (local archive), `--url` (direct download), `--dry-run`, `--timeout` (request timeout in seconds, 10-300). |
+| `ohub install <owner/repo>` | Install an app from a GitHub release. Supports `--version`, `--arch`, `--file` (local archive), `--url` (direct download), `--dry-run`, `--timeout` (request timeout in seconds, 10-300), `--dependencies` (install these repos first, comma separated). |
 | `ohub check` | Check all managed repositories for updates. Compares installed version (from state.json) against latest GitHub release tag. `--notes` prints the release notes of every outdated repo. `--timeout` sets the request timeout in seconds (10-300). `--log <PATH>` appends a run report to a file (used by the scheduled task). |
 | `ohub check --all` | **Discovery mode.** Scans ALL installed Windows programs (registry `Uninstall` keys), separates managed vs unmanaged, offers to add unmanaged ones with GitHub candidate repos, then checks all managed repos for updates. Existing `state.json` versions are synced with actual registry `DisplayVersion` values. |
 | `ohub check --candidates` | **Candidate mode.** Shows unmanaged installed apps sorted by name. First presents a vendor exclusion list (Microsoft, Adobe, Oracle, etc. pre-selected) so GitHub search stays efficient. Then searches GitHub for candidate repos for each remaining app, lets you select which to manage, and offers manual `owner/repo` entry if no candidates found. |

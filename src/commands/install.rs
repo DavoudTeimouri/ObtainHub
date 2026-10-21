@@ -42,7 +42,7 @@ pub struct GitHubAsset {
     pub content_type: Option<String>,
 }
 
-pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &mut StateManager, _retry_config: &RetryConfig) -> Result<()> {
+pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Installing: {}", args.repo);
 
     if let Some(timeout) = args.timeout {
@@ -154,7 +154,12 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     };
     
     info!("Installing {}@{}", args.repo, version);
-    
+
+    // The declared dependencies go in first - the app may need them.
+    if !args.skip_deps && !args.dependencies.is_empty() {
+        install_dependencies(&args.dependencies, config, state_manager, retry_config).await?;
+    }
+
     // Find appropriate asset
     let asset = registry.select_asset(&release, &args.arch)?;
     debug!("Selected asset: {} ({} bytes)", asset.name, asset.size);
@@ -168,7 +173,6 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     
     // Verify checksum if enabled
     if config.get().verify_checksums {
-        // TODO: Implement checksum verification for non-GitHub registries
         if source.registry_type == "github" {
             if let Some(expected) = crate::commands::install::fetch_published_checksum(
                 &crate::commands::install::GitHubRelease {
@@ -188,17 +192,15 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                 &asset.name,
                 token,
             ).await? {
-                let actual = crate::core::assets::calculate_sha256_bytes(&std::fs::read(&asset_path)?);
-                if !expected.eq_ignore_ascii_case(&actual) {
-                    return Err(anyhow::anyhow!(
-                        "Checksum mismatch for {}: expected {}, got {}",
-                        asset.name, expected, actual
-                    ));
-                }
-                info!("Checksum verified for {}", asset.name);
-            } else if config.get().verify_checksums {
+                verify_file_checksum(&asset_path, &asset.name, &expected)?;
+            } else {
                 warn!("No published checksum for {} — skipping verification", asset.name);
             }
+        } else if let Some(expected) = &release.checksum {
+            // crates.io publishes the sha256 of the .crate file.
+            verify_file_checksum(&asset_path, &asset.name, expected)?;
+        } else {
+            warn!("No published checksum for {} — skipping verification", asset.name);
         }
     }
     
@@ -235,6 +237,78 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     let _ = fs::remove_file(&asset_path);
     
     println!("Successfully installed {}@{} to {}", args.repo, version, install_dir.display());
+    Ok(())
+}
+
+/// Compare a downloaded file against a published checksum.
+fn verify_file_checksum(path: &std::path::Path, name: &str, expected: &str) -> Result<()> {
+    let actual = crate::core::assets::calculate_sha256_bytes(&std::fs::read(path)?);
+    if !expected.eq_ignore_ascii_case(&actual) {
+        return Err(anyhow::anyhow!(
+            "Checksum mismatch for {}: expected {}, got {}",
+            name,
+            expected,
+            actual
+        ));
+    }
+    info!("Checksum verified for {}", name);
+    Ok(())
+}
+
+/// Install the repositories an app declares as dependencies.
+///
+/// One level deep on purpose: a dependency's own dependencies are not known
+/// until it is installed, and a cycle would recurse forever. The dependency
+/// is marked in the state so `ohub uninstall` will not remove it on its own -
+/// it belongs to the app that declared it.
+async fn install_dependencies(
+    deps: &[String],
+    config: &ConfigManager,
+    state: &mut StateManager,
+    retry_config: &RetryConfig,
+) -> Result<()> {
+    for dep in deps {
+        if state.get_installed(dep).is_some() {
+            println!("Dependency {} is already installed", dep);
+            continue;
+        }
+        println!("Installing dependency {}...", dep);
+        let dep_args = InstallArgs {
+            repo: dep.clone(),
+            version: None,
+            tag: None,
+            prerelease: false,
+            force: false,
+            download_only: false,
+            skip_deps: false,
+            arch: Arch::Auto,
+            timeout: None,
+            yes: true,
+            reset: false,
+            interactive: false,
+            dry_run: false,
+            file: None,
+            url: None,
+            // A dependency's own dependencies are not followed: that is what
+            // keeps a cycle from recursing.
+            dependencies: Vec::new(),
+        };
+        // Boxed because installing a dependency calls back into execute -
+        // an async fn that recurses needs a boxed future.
+        Box::pin(execute(dep_args, config, state, retry_config)).await?;
+
+        // Mark the dependency so `ohub uninstall` will not remove it on its
+        // own - it belongs to the app that declared it.
+        let marked = state.get_installed(dep).map(|entry| {
+            let mut marked = entry.clone();
+            marked.is_dependency = true;
+            marked
+        });
+        if let Some(marked) = marked {
+            state.add_installed(marked);
+            state.save()?;
+        }
+    }
     Ok(())
 }
 
@@ -736,6 +810,18 @@ async fn find_matching_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_wrong_checksum_is_refused() {
+        let path = std::env::temp_dir().join("ohub-checksum-test.bin");
+        std::fs::write(&path, b"hello").unwrap();
+        let actual = crate::core::assets::calculate_sha256_bytes(b"hello");
+        // The right checksum passes.
+        verify_file_checksum(&path, "test.bin", &actual).unwrap();
+        // The wrong one is refused, not warned about.
+        assert!(verify_file_checksum(&path, "test.bin", &"0".repeat(64)).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn safe_join_rejects_parent_traversal() {

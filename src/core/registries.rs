@@ -75,6 +75,10 @@ pub struct RegistryRelease {
     pub assets: Vec<RegistryAsset>,
     pub zipball_url: String,
     pub tarball_url: String,
+    /// The published sha256 of the asset, when the registry has one.
+    /// crates.io publishes it; GitHub keeps it in the release digest instead.
+    #[serde(default)]
+    pub checksum: Option<String>,
 }
 
 fn default_tag_name() -> String {
@@ -229,17 +233,26 @@ impl GitHubRegistry {
         asset: &RegistryAsset,
         dest: &std::path::Path,
         token: Option<&str>,
-        _config: &ConfigManager,
+        config: &ConfigManager,
     ) -> Result<()> {
+        // With a bandwidth limit the file is fetched in chunks, one chunk per
+        // second, so the transfer really is paced. `minreq` buffers the whole
+        // body, so a single request cannot be slowed down.
+        if let Some(limit_kbps) = config.get().download_bandwidth_limit {
+            if limit_kbps > 0 && asset.size > 0 {
+                return download_paced(asset, dest, token, limit_kbps).await;
+            }
+        }
+
         let mut req = github_get(&asset.browser_download_url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {}", token));
         }
-        
+
         let response = req
             .send()
             .context("Failed to send request")?;
-        
+
         let total_size = response
             .headers
             .get("content-length")
@@ -304,6 +317,9 @@ impl CratesIoRegistry {
         struct CrateVersion {
             num: String,
             downloads: Vec<CrateDownload>,
+            /// The sha256 of the .crate file, published by crates.io.
+            #[serde(default)]
+            checksum: Option<String>,
         }
         
         #[derive(Deserialize)]
@@ -336,9 +352,10 @@ impl CratesIoRegistry {
             assets: vec![asset],
             zipball_url: String::new(),
             tarball_url: String::new(),
+            checksum: latest_version.checksum.clone(),
         })
     }
-    
+
     pub async fn fetch_release_by_tag(
         &self,
         package_name: &str,
@@ -360,6 +377,9 @@ impl CratesIoRegistry {
             #[allow(dead_code)]
             num: String,
             downloads: Vec<CrateDownload>,
+            /// The sha256 of the .crate file, published by crates.io.
+            #[serde(default)]
+            checksum: Option<String>,
         }
         
         #[derive(Deserialize)]
@@ -388,6 +408,7 @@ impl CratesIoRegistry {
             assets: vec![asset],
             zipball_url: String::new(),
             tarball_url: String::new(),
+            checksum: resp.version.checksum.clone(),
         })
     }
     
@@ -488,17 +509,26 @@ impl GenericHttpRegistry {
         asset: &RegistryAsset,
         dest: &std::path::Path,
         token: Option<&str>,
-        _config: &ConfigManager,
+        config: &ConfigManager,
     ) -> Result<()> {
+        // With a bandwidth limit the file is fetched in chunks, one chunk per
+        // second, so the transfer really is paced. `minreq` buffers the whole
+        // body, so a single request cannot be slowed down.
+        if let Some(limit_kbps) = config.get().download_bandwidth_limit {
+            if limit_kbps > 0 && asset.size > 0 {
+                return download_paced(asset, dest, token, limit_kbps).await;
+            }
+        }
+
         let mut req = github_get(&asset.browser_download_url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {}", token));
         }
-        
+
         let response = req
             .send()
             .context("Failed to send request")?;
-        
+
         let total_size = response
             .headers
             .get("content-length")
@@ -524,6 +554,44 @@ impl GenericHttpRegistry {
         std::fs::write(dest, bytes).context("Failed to write download")?;
         Ok(())
     }
+}
+
+/// Download an asset at a limited rate.
+///
+/// The chunk is as many bytes as the limit allows in one second and the next
+/// chunk starts a second later, so the average rate is the configured one. The
+/// server has to support Range requests; without them the download cannot be
+/// paced and the caller is told so.
+async fn download_paced(
+    asset: &RegistryAsset,
+    dest: &std::path::Path,
+    token: Option<&str>,
+    limit_kbps: u64,
+) -> Result<()> {
+    let chunk_size = limit_kbps.saturating_mul(1024).max(1);
+    let mut bytes: Vec<u8> = Vec::with_capacity(asset.size as usize);
+    let mut start: u64 = 0;
+    while start < asset.size {
+        let end = (start + chunk_size - 1).min(asset.size - 1);
+        let mut req = github_get(&asset.browser_download_url);
+        req = req.with_header("Range", format!("bytes={start}-{end}"));
+        if let Some(token) = token {
+            req = req.with_header("Authorization", format!("Bearer {}", token));
+        }
+        let response = req.send().context("Failed to send request")?;
+        if response.status_code != 206 {
+            anyhow::bail!(
+                "The server does not support range requests, so the download cannot be rate limited"
+            );
+        }
+        bytes.extend_from_slice(response.as_bytes());
+        start = end + 1;
+        if start < asset.size {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    }
+    std::fs::write(dest, &bytes).context("Failed to write download")?;
+    Ok(())
 }
 
 /// Factory for creating registry instances

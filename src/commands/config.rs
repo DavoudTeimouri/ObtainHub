@@ -194,6 +194,13 @@ fn set_config_value(config: &mut ConfigManager, key: &str, value: &str) -> Resul
         "auto_cleanup" => cfg.auto_cleanup = value.parse()?,
         "proxy" => cfg.proxy = Some(value.to_string()),
         "verify_checksums" => cfg.verify_checksums = value.parse()?,
+        "download_bandwidth_limit" => {
+            cfg.download_bandwidth_limit = if value.eq_ignore_ascii_case("none") {
+                None
+            } else {
+                Some(value.parse()?)
+            };
+        }
         _ => return Err(anyhow::anyhow!("Unknown config key: {}", key)),
     }
     Ok(())
@@ -212,6 +219,7 @@ fn get_config_value(config: &ConfigManager, key: &str) -> Result<Option<String>>
         "auto_cleanup" => Some(cfg.auto_cleanup.to_string()),
         "proxy" => cfg.proxy.clone(),
         "verify_checksums" => Some(cfg.verify_checksums.to_string()),
+        "download_bandwidth_limit" => cfg.download_bandwidth_limit.map(|v| v.to_string()),
         _ => return Err(anyhow::anyhow!("Unknown config key: {}", key)),
     };
     Ok(value)

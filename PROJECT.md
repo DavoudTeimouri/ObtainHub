@@ -425,13 +425,13 @@ rejection.
 | 10 | Search pagination | Open |
 | 11 | Self-update signature verification | **Partial** — SHA256SUMS gate done; signing still open |
 | 12 | Fish completion | Closed — already supported |
-| 13 | Dependency tracking | Open |
-| 14 | Non-GitHub registries | Open |
+| 13 | Dependency tracking | **Done** — `--dependencies` installs them first and marks them |
+| 14 | Non-GitHub registries | **Done** — crates.io and generic HTTP, with checksum verification |
 | 15 | Update rollback | **Done** — `ohub rollback` re-downloads and reinstalls the previous version |
-| 16 | Bandwidth throttling | Open |
+| 16 | Bandwidth throttling | **Done** — `download_bandwidth_limit` paces the download |
 | 17 | README examples | **Done** — added, plus fixed config path |
 | 18 | CONTRIBUTING.md | **Done** |
-| 19 | Automated release CI | Open — pipeline exists but tag push is manual |
+| 19 | Automated release CI | **Done** — the workflow can cut a tag from the Actions tab |
 
 ### Untracked from PLAN.md
 
