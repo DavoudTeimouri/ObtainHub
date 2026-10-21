@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap},
     Terminal,
 };
 use crossterm::{
@@ -18,7 +18,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use serde::{Deserialize, Serialize};
-use std::io;
+use std::io::{self, Write};
 use tracing::info;
 
 pub async fn execute(args: TuiArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
@@ -60,6 +60,35 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
     Ok(())
 }
 
+/// Hand the screen back to the shell.
+///
+/// A command that prints to stdout - or opens a dialoguer prompt - writes
+/// straight into the alternate screen while the TUI is still in raw mode,
+/// which leaves the TUI garbled and the command's text on screen. Leaving the
+/// alternate screen first gives the command a normal terminal to work in.
+fn suspend_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.backend_mut().flush()?;
+    Ok(())
+}
+
+/// Take the screen back after a suspended command.
+fn resume_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+    enable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        EnterAlternateScreen,
+        EnableMouseCapture
+    )?;
+    terminal.clear()?;
+    Ok(())
+}
+
 /// Which panel the TUI is showing.
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum Mode {
@@ -73,7 +102,7 @@ enum Mode {
 
 struct App {
     apps: Vec<AppInfo>,
-    list_state: ListState,
+    table_state: TableState,
     selected_index: Option<usize>,
     should_quit: bool,
     status_message: String,
@@ -142,14 +171,14 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
     Ok(result)
 }
 
-async fn run_app<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
+async fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     config: &ConfigManager,
     state: &mut StateManager,
 ) -> Result<()> {
     let mut app = App {
         apps: Vec::new(),
-        list_state: ListState::default(),
+        table_state: TableState::default(),
         selected_index: None,
         should_quit: false,
         status_message: "Loading...".to_string(),
@@ -174,7 +203,7 @@ async fn run_app<B: ratatui::backend::Backend>(
 
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
-                handle_key_event(key.code, &mut app, config, state).await?;
+                handle_key_event(key.code, &mut app, config, state, terminal).await?;
 
                 // install/remove print to stdout, which lands inside the
                 // alternate screen. Wipe it and let the next draw repaint.
@@ -195,6 +224,9 @@ impl App {
 
         let apps = state.get_all_apps();
         let token = config.get().github_token.as_deref();
+        // Windows knows the real install folder; state.json can still hold
+        // the path ObtainHub downloaded to.
+        let registry = crate::core::scan_uninstall_entries();
 
         let mut app_infos = Vec::new();
 
@@ -234,19 +266,27 @@ impl App {
                 "Update".to_string()
             };
 
+            let install_path = crate::core::find_entry_for_repo(
+                &registry,
+                &repo_id,
+                Some(&current_version),
+            )
+            .and_then(|e| e.install_dir())
+            .unwrap_or_else(|| app.install_path.clone());
+
             app_infos.push(AppInfo {
                 name: repo.to_string(),
                 current_version,
                 latest_version,
                 status,
                 repo: repo_id,
-                install_path: app.install_path.display().to_string(),
+                install_path: install_path.display().to_string(),
             });
         }
 
         self.apps = app_infos;
         self.apply_filter();
-        self.list_state.select(Some(0));
+        self.table_state.select(Some(0));
         self.selected_index = Some(0);
         self.status_message = format!("Loaded {} apps", self.apps.len());
     }
@@ -268,17 +308,17 @@ impl App {
         }
         // Clamp selection to valid range
         if self.filtered_indices.is_empty() {
-            self.list_state.select(None);
+            self.table_state.select(None);
             self.selected_index = None;
         } else if let Some(sel) = self.selected_index {
             if sel >= self.filtered_indices.len() {
-                self.list_state.select(Some(0));
+                self.table_state.select(Some(0));
                 self.selected_index = Some(0);
             } else {
-                self.list_state.select(Some(sel));
+                self.table_state.select(Some(sel));
             }
         } else {
-            self.list_state.select(Some(0));
+            self.table_state.select(Some(0));
             self.selected_index = Some(0);
         }
     }
@@ -343,6 +383,7 @@ async fn handle_search_results(
     app: &mut App,
     config: &ConfigManager,
     state: &mut StateManager,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<()> {
     let selected = app
         .search_state
@@ -383,7 +424,10 @@ async fn handle_search_results(
                 repo_arg: None,
                 yes: true,
             };
-            match crate::commands::add::execute(args, config, state, &app.retry_config).await {
+            suspend_tui(terminal)?;
+            let result = crate::commands::add::execute(args, config, state, &app.retry_config).await;
+            resume_tui(terminal)?;
+            match result {
                 Ok(()) => {
                     app.status_message = format!("Added {repo}");
                     app.mode = Mode::List;
@@ -414,7 +458,10 @@ async fn handle_search_results(
                 url: None,
                 dependencies: Vec::new(),
             };
-            match crate::commands::install::execute(args, config, state, &app.retry_config).await {
+            suspend_tui(terminal)?;
+            let result = crate::commands::install::execute(args, config, state, &app.retry_config).await;
+            resume_tui(terminal)?;
+            match result {
                 Ok(()) => {
                     app.status_message = format!("Installed {repo}");
                     app.mode = Mode::List;
@@ -434,58 +481,88 @@ async fn handle_key_event(
     app: &mut App,
     config: &ConfigManager,
     state: &mut StateManager,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<()> {
     // Search panels take over all keys while active.
     match app.mode {
         Mode::SearchInput => return handle_search_input(key, app, config).await,
-        Mode::SearchResults => return handle_search_results(key, app, config, state).await,
+        Mode::SearchResults => {
+            return handle_search_results(key, app, config, state, terminal).await;
+        }
         Mode::List => {}
     }
 
+    // While a filter is active every printable key belongs to the filter, so
+    // the command keys are guarded off and only the navigation and control
+    // keys stay live.
+    let filtering = !app.filter_text.is_empty();
+
     match key {
-        KeyCode::Char('q') | KeyCode::Esc => {
+        KeyCode::Esc => {
             if app.show_help {
                 app.show_help = false;
             } else if app.show_details {
                 app.show_details = false;
-            } else if !app.filter_text.is_empty() {
+            } else if filtering {
                 app.filter_text.clear();
                 app.apply_filter();
             } else {
                 app.should_quit = true;
             }
         }
-        KeyCode::Char('?') | KeyCode::Char('h') | KeyCode::F(1) => {
+        KeyCode::F(1) => {
             app.show_help = !app.show_help;
         }
-        KeyCode::Char('j') | KeyCode::Down => {
-            if let Some(selected) = app.list_state.selected() {
+        KeyCode::Char('?') | KeyCode::Char('h') if !filtering => {
+            app.show_help = !app.show_help;
+        }
+        KeyCode::Char('j') if !filtering => {
+            if let Some(selected) = app.table_state.selected() {
                 if selected < app.filtered_indices.len().saturating_sub(1) {
-                    app.list_state.select(Some(selected + 1));
+                    app.table_state.select(Some(selected + 1));
                     app.selected_index = Some(selected + 1);
                 }
             }
         }
-        KeyCode::Char('k') | KeyCode::Up => {
-            if let Some(selected) = app.list_state.selected() {
+        KeyCode::Down => {
+            if let Some(selected) = app.table_state.selected() {
+                if selected < app.filtered_indices.len().saturating_sub(1) {
+                    app.table_state.select(Some(selected + 1));
+                    app.selected_index = Some(selected + 1);
+                }
+            }
+        }
+        KeyCode::Char('k') if !filtering => {
+            if let Some(selected) = app.table_state.selected() {
                 if selected > 0 {
-                    app.list_state.select(Some(selected - 1));
+                    app.table_state.select(Some(selected - 1));
                     app.selected_index = Some(selected - 1);
                 }
             }
         }
-        KeyCode::Char('a') => {
+        KeyCode::Up => {
+            if let Some(selected) = app.table_state.selected() {
+                if selected > 0 {
+                    app.table_state.select(Some(selected - 1));
+                    app.selected_index = Some(selected - 1);
+                }
+            }
+        }
+        KeyCode::Char('a') if !filtering => {
             app.mode = Mode::SearchInput;
             app.search_input.clear();
             app.status_message = "Type a search query, Enter to search, Esc to cancel".to_string();
         }
-        KeyCode::Char('r') => {
+        KeyCode::Char('r') if !filtering => {
             app.status_message = "Refreshing...".to_string();
             let retry_config_clone = app.retry_config.clone();
             app.load_apps(config, state, &retry_config_clone).await;
             app.status_message = format!("Refreshed {} apps", app.apps.len());
         }
-        KeyCode::Char('u') => {
+        KeyCode::Char('q') if !filtering => {
+            app.should_quit = true;
+        }
+        KeyCode::Char('u') if !filtering => {
             let selected = app.selected_app().cloned();
             if let Some(app_info) = selected {
                 if app_info.status == "Update" || app_info.status == "Outdated" {
@@ -508,14 +585,18 @@ async fn handle_key_event(
                         quiet: true,
                         log: None,
                     };
-                    match crate::commands::update::execute(
+                    // Give the command a normal terminal to print in -
+                    // otherwise its output lands in the alternate screen.
+                    suspend_tui(terminal)?;
+                    let result = crate::commands::update::execute(
                         update_args,
                         config,
                         state,
                         &app.retry_config,
                     )
-                    .await
-                    {
+                    .await;
+                    resume_tui(terminal)?;
+                    match result {
                         Ok(_) => {
                             app.status_message = format!("Updated {app_name}");
                             let retry_config_clone = app.retry_config.clone();
@@ -530,14 +611,15 @@ async fn handle_key_event(
                 }
             }
         }
-        KeyCode::Char('x') => {
+        KeyCode::Char('x') if !filtering => {
             let selected = app.selected_app().cloned();
             if let Some(app_info) = selected {
                 let repo_name = app_info.repo.clone();
                 let app_name = app_info.name.clone();
                 app.status_message = format!("Removing {app_name}...");
                 app.clear_screen = true;
-                match crate::commands::remove::execute(
+                suspend_tui(terminal)?;
+                let result = crate::commands::remove::execute(
                     RemoveArgs {
                         repo: repo_name,
                         yes: true,
@@ -546,8 +628,9 @@ async fn handle_key_event(
                     config,
                     state,
                 )
-                .await
-                {
+                .await;
+                resume_tui(terminal)?;
+                match result {
                     Ok(_) => {
                         app.status_message = format!("Removed {app_name}");
                         let retry_config_clone = app.retry_config.clone();
@@ -559,27 +642,32 @@ async fn handle_key_event(
                 }
             }
         }
-        KeyCode::Char('/') => {
+        KeyCode::Char('/') if !filtering => {
             app.filter_text = String::new();
-            app.status_message = "Filter: ".to_string();
+            app.status_message = "Type to filter, Enter to apply, Esc to cancel".to_string();
         }
-        KeyCode::Char('c') => {
+        KeyCode::Char('c') if !filtering => {
             app.filter_text.clear();
             app.apply_filter();
             app.status_message = "Filter cleared".to_string();
         }
+        // Enter applies the filter and closes the filter bar.
+        KeyCode::Enter if filtering => {
+            app.status_message = format!(
+                "Filter '{}' matches {} app(s)",
+                app.filter_text,
+                app.filtered_indices.len()
+            );
+        }
         KeyCode::Enter => {
             app.show_details = !app.show_details;
         }
-        KeyCode::Backspace => {
-            if !app.filter_text.is_empty() {
-                app.filter_text.pop();
-                app.apply_filter();
-            }
+        KeyCode::Backspace if filtering => {
+            app.filter_text.pop();
+            app.apply_filter();
         }
-        // Only handle char input when filtering. '/' and 'c' are handled by
-        // their own arms above.
-        KeyCode::Char(c) if !app.filter_text.is_empty() => {
+        // Any other printable key belongs to the filter.
+        KeyCode::Char(c) if filtering => {
             app.filter_text.push(c);
             app.apply_filter();
         }
@@ -599,25 +687,26 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             // otherwise so the app list gets the whole main area.
             if show_filter { Constraint::Length(3) } else { Constraint::Length(0) },
             Constraint::Min(0),
-            Constraint::Length(3),
+            // One plain line for the status - the table needs the room.
+            Constraint::Length(1),
         ])
         .split(f.size());
 
     // Header
     let header_text = match app.mode {
         Mode::SearchInput => format!(
-            "ObtainHub TUI - Search: '{}' | Enter to search, Esc to cancel",
+            "Search: '{}'   (Enter to search, Esc to cancel)",
             app.search_input
         ),
-        Mode::SearchResults => "ObtainHub TUI - Pick a repo: 'Enter' add to management, 'i' install, 'Esc' back".to_string(),
+        Mode::SearchResults => {
+            "Pick a repo   (Enter add, i install, Esc back)".to_string()
+        }
         Mode::List => {
             if !app.filter_text.is_empty() {
-                format!(
-                    "ObtainHub TUI - Filter: '{}' | 'u' update, 'x' remove, 'a' search, '/' filter, 'c' clear, 'Enter' details, 'r' refresh, '?' help, 'q' quit",
-                    app.filter_text
-                )
+                format!("Filter: '{}'   [u] update  [x] remove  [?] help  [q] quit", app.filter_text)
             } else {
-                "ObtainHub TUI - 'u' update, 'x' remove, 'a' search, '/' filter, 'c' clear, 'Enter' details, 'r' refresh, 'j/k' nav, '?' help, 'q' quit".to_string()
+                "ObtainHub   [u] update  [x] remove  [a] add  [/] filter  [?] help  [q] quit"
+                    .to_string()
             }
         }
     };
@@ -729,8 +818,18 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             ]),
             Line::from(vec![
                 Span::styled("  Enter", Style::default().fg(Color::Yellow)),
-                Span::raw("  - Show app details"),
+                Span::raw("  - Show app details (apply filter when one is active)"),
             ]),
+            Line::from(vec![
+                Span::styled("  Backspace", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Delete the last character of the filter"),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("While filtering:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
+            ]),
+            Line::from("  Every printable key is typed into the filter."),
+            Line::from("  Esc cancels the filter, ↑/↓ still move the selection."),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Status Colors:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
@@ -771,52 +870,92 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             .wrap(Wrap { trim: true });
         f.render_widget(help, chunks[2]);
     } else {
-        // App list (filtered)
+        // App list (filtered) - a table, so every app gets one row with
+        // aligned columns and the whole list is visible at a glance.
         let visible_indices: Vec<usize> = app.filtered_indices.to_vec();
-        let items: Vec<ListItem> = visible_indices
+        let has_update = |a: &AppInfo| {
+            a.status == "Update" || a.status == "Outdated"
+                || (a.latest_version != "?"
+                    && crate::core::normalize_version(&a.latest_version)
+                        != crate::core::normalize_version(&a.current_version))
+        };
+        let update_count = visible_indices
+            .iter()
+            .filter(|&&idx| has_update(&app.apps[idx]))
+            .count();
+
+        let rows: Vec<Row> = visible_indices
             .iter()
             .map(|&idx| {
                 let a = &app.apps[idx];
                 let status_style = match a.status.as_str() {
                     "Current" => Style::default().fg(Color::Green),
-                    "Update" | "Outdated" => Style::default().fg(Color::Red),
+                    "Update" | "Outdated" => {
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                    }
                     _ => Style::default().fg(Color::Yellow),
                 };
-
-                ListItem::new(Line::from(vec![
-                    Span::styled(&a.name, Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw("  "),
-                    Span::raw(format!("v{} ", crate::core::normalize_version(&a.current_version))),
-                    if a.latest_version != "?"
-                        && crate::core::normalize_version(&a.latest_version)
-                            != crate::core::normalize_version(&a.current_version)
-                    {
-                        Span::styled(
-                            format!("→ v{} ", crate::core::normalize_version(&a.latest_version)),
-                            Style::default().fg(Color::Cyan),
-                        )
-                    } else {
-                        Span::raw("     ")
-                    },
-                    Span::styled(&a.status, status_style),
-                    Span::raw("  "),
-                    Span::styled(&a.repo, Style::default().fg(Color::DarkGray)),
-                ]))
+                let latest = if has_update(a) {
+                    // Arrow marks the apps that need an update.
+                    Span::styled(
+                        format!("{} ^", crate::core::normalize_version(&a.latest_version)),
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    Span::styled(
+                        crate::core::normalize_version(&a.latest_version),
+                        Style::default().fg(Color::DarkGray),
+                    )
+                };
+                Row::new(vec![
+                    Cell::from(a.name.clone()),
+                    Cell::from(crate::core::normalize_version(&a.current_version)),
+                    Cell::from(latest),
+                    Cell::from(Span::styled(a.status.clone(), status_style)),
+                    Cell::from(a.repo.clone()),
+                ])
             })
             .collect();
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(format!("Managed Apps ({})", visible_indices.len())))
-            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-            .highlight_symbol("► ");
+        let header = Row::new(vec![
+            Cell::from("App"),
+            Cell::from("Installed"),
+            Cell::from("Latest"),
+            Cell::from("Status"),
+            Cell::from("Repository"),
+        ])
+        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
 
-        f.render_stateful_widget(list, chunks[2], &mut app.list_state);
+        let title = if update_count > 0 {
+            format!(
+                "Managed Apps ({}) - {} need an update (^)",
+                visible_indices.len(),
+                update_count
+            )
+        } else {
+            format!("Managed Apps ({})", visible_indices.len())
+        };
+
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Min(16),
+                Constraint::Length(9),
+                Constraint::Length(9),
+                Constraint::Length(8),
+                Constraint::Min(18),
+            ],
+        )
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .highlight_symbol("> ");
+
+        f.render_stateful_widget(table, chunks[2], &mut app.table_state);
     }
 
     // Footer / status
     let footer = Paragraph::new(app.status_message.as_str())
-        .style(Style::default().fg(Color::Gray))
-        .block(Block::default().borders(Borders::ALL).title("Status"))
-        .wrap(Wrap { trim: true });
+        .style(Style::default().fg(Color::Gray));
     f.render_widget(footer, chunks[3]);
 }

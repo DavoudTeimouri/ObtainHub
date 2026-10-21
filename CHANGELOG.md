@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.56-rc1] - 2026-10-21
+Deeper fixes on top of v3.0.54-rc1 / v3.0.55-rc1, which addressed the same five
+reports but only part of the way.
+
+### Fixed
+- `ohub list` still showed the wrong folder for some apps. The install path is now resolved through a cascade: `InstallLocation` (only when the folder really exists on disk), then `DisplayIcon` - the program's own exe path, which is the only answer for the many apps that leave `InstallLocation` empty - then the folder holding the uninstaller. Uninstaller paths in a `bin` subfolder resolve to the app folder, and quoted paths that contain spaces (`C:\Program Files\...`) are no longer truncated.
+- `ohub list` now writes the resolved path back to `state.json`, so the TUI, `ohub uninstall` and every later run agree on where the app lives instead of each re-deriving it.
+- The registry lookup is version-aware: when an old install is left behind next to a new one, the entry matching the recorded version wins.
+- TUI: the app list is a table - one row per app with aligned Installed / Latest / Status columns - so the whole list is visible at a glance instead of one long line per app. The header and footer are one line each, giving the table the rest of the screen.
+- TUI: `^` marks the apps that need an update, the Status column is red and bold for them, and the panel title says how many need one.
+- TUI: `remove` and `add` corrupted the screen because the command printed into the alternate screen while the TUI was still in raw mode. The TUI now leaves the alternate screen for the duration of the command and comes back afterwards.
+- TUI: while a filter is active, every printable key was swallowed by the command shortcuts, so `q`, `a`, `r`, `u`, `x` and `c` could not be typed into the filter. The command keys are now guarded off while filtering, and only Esc, Enter, Backspace and the arrow keys stay live.
+- `ohub check --all` and `--candidates` explain their purpose in plain words, with an example, and end with a summary line: managed / unmanaged / outdated / up to date.
+
 ## [v3.0.55-rc1] - 2026-10-21
 Same fixes as v3.0.54-rc1 (real install paths, TUI list layout, TUI screen corruption, TUI version comparison, `ohub check --all` explanation, rollback tag lookup). The only difference is the CI clippy gate:
 

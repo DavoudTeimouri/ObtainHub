@@ -38,19 +38,31 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     // read the whole uninstall registry, which is not obvious from the name.
     if !args.quiet {
         if args.all {
-            println!("ohub check --all - full system scan");
-            println!("  1. Reads every program Windows has installed (uninstall registry)");
-            println!("  2. Splits them into managed by ObtainHub vs not managed");
-            println!("  3. Refreshes each managed app's version from the registry");
-            println!("  4. Lists the unmanaged ones so you can add them");
-            println!("  5. Checks the managed ones for updates");
+            println!("=== ohub check --all : full system scan ===");
+            println!();
+            println!("What it does:");
+            println!("  Finds every program installed on this PC and sorts them into");
+            println!("  'already managed by ObtainHub' and 'not managed yet'.");
+            println!("  Managed apps get their version refreshed from the Windows registry");
+            println!("  and are then checked for updates. Unmanaged apps are listed so you");
+            println!("  can pick the ones you want ObtainHub to look after.");
+            println!();
+            println!("  Example: you installed OnionHop by hand. This finds it, finds its");
+            println!("  GitHub repo, and adds it to `ohub list` - so from then on");
+            println!("  `ohub update` can update it for you.");
+            println!();
+            println!("  Use `ohub check` on its own to only check apps you already manage,");
+            println!("  and `ohub check --candidates` to only look for repos to adopt.");
             println!();
         } else if args.candidates {
-            println!("ohub check --candidates - find GitHub repos for unmanaged apps");
-            println!("  1. Reads every program Windows has installed (uninstall registry)");
-            println!("  2. Skips the vendors you exclude (Microsoft, Adobe, ...)");
-            println!("  3. Searches GitHub for a matching repo for each remaining app");
-            println!("  4. Lets you pick which ones to manage");
+            println!("=== ohub check --candidates : find GitHub repos for apps you do not manage ===");
+            println!();
+            println!("What it does:");
+            println!("  Reads every program installed on this PC, then looks for a GitHub");
+            println!("  repository for the ones ObtainHub does not manage yet, so you can");
+            println!("  decide which apps to hand over to `ohub update`.");
+            println!();
+            println!("  Use `ohub check --all` to also check the apps you already manage.");
             println!();
         }
     }
@@ -83,6 +95,10 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     } else {
         (state.list_installed().into_iter().cloned().collect(), Vec::new())
     };
+
+    // Counts for the closing summary; `matched` is consumed by the loop below.
+    let managed_count = matched.len();
+    let unmanaged_count = skipped.len();
 
     // Sync state.json versions with actual registry scan versions for managed repos
     // (fixes stale versions from previous runs that overwrote with GitHub tags)
@@ -600,6 +616,33 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         println!("Errors ({}):", errors.len());
         for (repo, error) in &errors {
             println!("  {}: {}", repo, error);
+        }
+        println!();
+    }
+
+    // One closing line so the result is obvious without reading the tables.
+    if !args.quiet && !args.outdated_only {
+        if args.all || args.candidates {
+            println!(
+                "Summary: {} managed by ObtainHub, {} not managed, {} outdated, {} up to date.",
+                managed_count,
+                unmanaged_count,
+                outdated.len(),
+                current.len()
+            );
+            if unmanaged_count > 0 && !args.candidates {
+                println!(
+                    "  The {} unmanaged app(s) are listed above - pick the ones you want to manage.",
+                    unmanaged_count
+                );
+            }
+        } else {
+            println!(
+                "Summary: {} checked, {} outdated, {} up to date.",
+                managed_count,
+                outdated.len(),
+                current.len()
+            );
         }
         println!();
     }

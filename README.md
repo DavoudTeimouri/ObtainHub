@@ -41,7 +41,7 @@ ohub <COMMAND>
 | `state` | Export/import state |
 | `apps` | Backup/restore application folders |
 | `cleanup` | Clean up leftover files |
-| `tui` | Launch Textual User Interface |
+| `tui` | Launch the interactive app table |
 | `config` | Manage configuration |
 | `backup` | Backup installed repositories and config |
 | `restore` | Restore from backup |
@@ -152,20 +152,23 @@ ohub config set key value # Set value
 | `ohub check --candidates` | **Candidate mode.** Shows unmanaged installed apps sorted by name. First presents a vendor exclusion list (Microsoft, Adobe, Oracle, etc. pre-selected) so GitHub search stays efficient. Then searches GitHub for candidate repos for each remaining app, lets you select which to manage, and offers manual `owner/repo` entry if no candidates found. |
 | `ohub update <owner/repo>` | Update a managed repository to its latest version. Without args, updates all managed repos. Supports `--dry-run`, `--force`. `--quiet` suppresses progress output, `--log <PATH>` appends a run report to a file. |
 | `ohub rollback <owner/repo>` | Reinstall the previously installed version of a managed app from its GitHub release tag. Supports `--yes` (skip confirmation), `--quiet`. |
-| `ohub list` | Show installed repositories with version, install path, and install date. The path is the app's **real install folder** on disk (read from the Windows uninstall registry, e.g. `C:\Users\x\AppData\Local\Programs\OnionHop V3\`), falling back to ObtainHub's own download folder when Windows does not know the app. |
+| `ohub list` | Show installed repositories with version, install path, and install date. The path is the app's **real install folder** on disk, resolved from the Windows uninstall registry: `InstallLocation` first, then `DisplayIcon` (the program's own exe path), then the folder holding the uninstaller. The resolved path is written back to `state.json`, so it stays correct for the TUI and `ohub uninstall` too. |
 | `ohub uninstall <owner/repo>` | Uninstall an app. Runs the app's own registered uninstaller (from the Windows uninstall registry) with elevation, then removes leftovers. Use `--yes` to skip confirmation, `--purge` to also remove metadata. |
 | `ohub remove <owner/repo>` | Stop tracking an app in ObtainHub (keep files on disk). |
 | `ohub add <owner/repo>` | Add an existing install to management without re-installing. |
 | `ohub self-update` | Check for and install a new ohub release. Renames running `ohub.exe` before launching installer so the file can be replaced. Launches MSI/EXE installers elevated via PowerShell `Start-Process -Verb RunAs`. Use `--skip-signature` to bypass signature check, `--prerelease` for release candidates. |
 | `ohub config` | Get/set configuration keys (github_token, install_dir, etc.). |
 | `ohub doctor` | Diagnose installation issues: directory existence/writability, proxy, GitHub token and rate limit, PATH. `--fix` repairs what it can, `--strict` exits non-zero when issues remain. |
-| `ohub tui` | Launch Textual User Interface. Keys: `j`/`k` or arrows to move, `u` update, `x` remove, `a` search and add, `/` filter, `c` clear filter, `Enter` details, `r` refresh, `?` help, `q` quit. |
+| `ohub tui` | Interactive table of the managed apps - one row per app with Installed / Latest / Status columns, and `^` marking the apps that need an update. Keys: `j`/`k` or arrows to move, `u` update, `x` remove, `a` search and add, `/` filter, `Enter` details, `r` refresh, `?` help, `q` quit. |
 
 ### Version comparison
 Version strings are normalized before comparison: the `v`/`V` prefix is stripped, so `v3.0.32` matches `3.0.32`.
 
 ### `ohub check --all` flow
-`ohub check --all` is a **full system scan**, not a second update check:
+`ohub check --all` is a **full system scan**, not a second update check. In short:
+it finds every program installed on this PC, sorts them into "already managed
+by ObtainHub" and "not managed yet", lets you adopt the ones you want, and
+then checks the managed ones for updates.
 
 1. Scan the Windows uninstall registry for every installed program
 2. Skip ObtainHub itself
@@ -173,6 +176,7 @@ Version strings are normalized before comparison: the `v`/`V` prefix is stripped
 4. Sync `state.json` versions with actual registry `DisplayVersion` (fixes stale versions from previous runs)
 5. List the unmanaged apps so you can add them
 6. Check all managed repos for updates against GitHub latest release
+7. Print a summary: managed / unmanaged / outdated / up to date
 
 `ohub check` on its own only checks the repos ObtainHub already manages. `--all` adds the registry scan on top.
 

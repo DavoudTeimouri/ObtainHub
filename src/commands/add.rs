@@ -18,7 +18,7 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
         Some(p) => PathBuf::from(p),
         None => {
             let entries = scan_uninstall_entries();
-            find_entry_for_repo(&entries, &args.repo)
+            find_entry_for_repo(&entries, &args.repo, None)
                 .and_then(|e| e.install_dir())
                 .unwrap_or_else(|| install_dir.join(&repo_name))
         }
