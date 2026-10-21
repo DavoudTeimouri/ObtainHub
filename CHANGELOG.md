@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 - Clippy is a hard gate again (`-D warnings`) now that the lint backlog is cleared.
 
 ### Fixed
-- 71 clippy findings cleared across 16 files: needless borrows, redundant field names, no-op `..Default::default()` struct updates, `sort_by` → `sort_by_key`, `iter().any()` → `contains()`, `Iterator::last` → `next_back`, collapsible `if` blocks, unnecessary casts, a dead `GitHubRepoInfo` struct, and an unused type parameter on the TUI draw function.
+- 75 clippy findings cleared across 16 files: needless borrows, redundant field names, no-op `..Default::default()` struct updates, `sort_by` → `sort_by_key`, `iter().any()` → `contains()`, `iter().cloned().collect()` → `to_vec()`, `Iterator::last` → `next_back`, collapsible `if` blocks and match arms, unnecessary casts, a dead `GitHubRepoInfo` struct, and an unused type parameter on the TUI draw function.
 
 ## [v3.0.52-rc1] - 2026-10-21
 ### Fixed

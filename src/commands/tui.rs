@@ -557,13 +557,11 @@ async fn handle_key_event(
                 app.apply_filter();
             }
         }
-        KeyCode::Char(c) => {
-            // Only handle char input when filtering. '/' is the filter toggle
-            // and is handled by its own arm above.
-            if c != '/' && !app.filter_text.is_empty() {
-                app.filter_text.push(c);
-                app.apply_filter();
-            }
+        // Only handle char input when filtering. '/' and 'c' are handled by
+        // their own arms above.
+        KeyCode::Char(c) if !app.filter_text.is_empty() => {
+            app.filter_text.push(c);
+            app.apply_filter();
         }
         _ => {}
     }

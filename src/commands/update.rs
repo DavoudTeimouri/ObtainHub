@@ -644,7 +644,7 @@ fn cleanup_download_folder(download_dir: &std::path::Path) -> Result<()> {
             .split(|c: char| c.is_ascii_digit() || c == '.' || c == '-')
             .next()
             .unwrap_or(&file_name)
-            .trim_end_matches(|c: char| matches!(c, '_' | ' '))
+            .trim_end_matches(['_', ' '])
             .to_string();
         groups.entry(base).or_default().push(path);
     }

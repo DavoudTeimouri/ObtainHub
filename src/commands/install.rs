@@ -106,7 +106,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                     return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
                 }
                 let theme = dialoguer::theme::ColorfulTheme::default();
-                let repo_names: Vec<String> = candidates.iter().cloned().collect();
+                let repo_names: Vec<String> = candidates.to_vec();
                 let choice = dialoguer::Select::with_theme(&theme)
                     .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
                     .items(&repo_names)
@@ -134,7 +134,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                     return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
                 }
                 let theme = dialoguer::theme::ColorfulTheme::default();
-                let repo_names: Vec<String> = candidates.iter().cloned().collect();
+                let repo_names: Vec<String> = candidates.to_vec();
                 let choice = dialoguer::Select::with_theme(&theme)
                     .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
                     .items(&repo_names)
