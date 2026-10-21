@@ -29,7 +29,7 @@ pub async fn execute(args: StateArgs, _config: &ConfigManager, state: &mut State
                 }
             } else {
                 // Merge imported state
-                for (repo_id, repo) in imported.installed {
+                for (_repo_id, repo) in imported.installed {
                     state.add_installed(repo);
                 }
                 state.save()?;
@@ -58,7 +58,7 @@ pub async fn execute(args: StateArgs, _config: &ConfigManager, state: &mut State
             }
         }
         StateAction::Clean => {
-            let mut state_data = state.get_mut();
+            let state_data = state.get_mut();
             let original_count = state_data.installed.len();
             
             state_data.installed.retain(|repo_id, repo| {

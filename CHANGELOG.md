@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.51-rc1] - 2026-10-13
+### Added
+- `ohub update --quiet` suppresses progress output; `--log <PATH>` appends a run report to a file. Scheduled runs now leave a record behind.
+- `ohub rollback` re-downloads and reinstalls the recorded `previous_version` from its GitHub release tag instead of copying files around. Supports `--yes` (skip confirmation) and `--quiet`.
+- `ohub doctor` rewritten: checks Install / Download / Shim directories for existence **and** writability, reports proxy, GitHub token state plus remaining rate limit, and verifies the install and shim directories are on `PATH`. New `--strict` flag exits non-zero when issues are found.
+- `ohub check` offers to update outdated apps in one go (skipped under `--quiet` / `--outdated_only`, auto-confirmed with `--yes`).
+- New `src/core/elevate.rs`: one shared elevated-launch helper for installers and uninstallers (PowerShell `Start-Process -Verb RunAs -Wait`).
+- CI: separate `check` job on pull requests — `cargo check --all-targets`, `cargo test`, `cargo clippy --all-targets -- -D warnings`.
+
+### Fixed
+- `ohub check` ran its self-update check against a throwaway `ConfigManager`/`StateManager`, so the user's GitHub token was ignored and every self-update check hit the anonymous 60 req/hr limit. It now uses the real config and state.
+- `ohub update` reported success when an installer failed because the app was still running. The Windows uninstall registry is now snapshotted before and after the installer runs, and the result is verified against it.
+- `ohub update` prints a progress bar while downloading and shows the download directory it actually uses.
+
+### Changed
+- Compiler warnings: **91 → 0**. Unused parameters renamed to `_`, dead serde fields marked `#[allow(dead_code)]`, `partition_gitHub_managed` renamed to `partition_git_hub_managed` (clippy `snake_case`).
+- Dead code deleted instead of maintained: `src/cli/templates.rs`, `src/tui/mod.rs`, `assets.rs::{download_with_progress, verify_checksum, download_verify_extract}`, `logger.rs::init_with_level`, `registries.rs::Registry::registry_type`, `install.rs::{fetch_repo_info, fetch_latest_release, fetch_release_by_tag}`, `update.rs::{enumerate_all_installed_software, find_candidate_repos, clean_app_name}`.
+
 ## [v3.0.50-rc1] - 2026-10-13
 ### Added
 - Track real install location + uninstaller for third-party installers. `ohub update` snapshots the Windows uninstall registry before and after running an installer, then records where the app landed and how to remove it.

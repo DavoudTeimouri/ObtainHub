@@ -1,17 +1,16 @@
 use crate::core::{ConfigManager, StateManager};
-use crate::cli::{RemoveArgs, TuiArgs, UpdateArgs};
+use crate::cli::{AddArgs, AddType, Arch, InstallArgs, RemoveArgs, TuiArgs, UpdateArgs};
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use minreq;
 use ratatui;
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
-    Frame,
 };
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
@@ -20,7 +19,6 @@ use crossterm::{
 };
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::time::Duration;
 use tracing::info;
 
 pub async fn execute(args: TuiArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
@@ -62,6 +60,17 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
     Ok(())
 }
 
+/// Which panel the TUI is showing.
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Mode {
+    /// Managed app list
+    List,
+    /// Typing a GitHub search query
+    SearchInput,
+    /// Search results, pick one to add or install
+    SearchResults,
+}
+
 struct App {
     apps: Vec<AppInfo>,
     list_state: ListState,
@@ -72,12 +81,15 @@ struct App {
     filter_text: String,
     filtered_indices: Vec<usize>,
     show_details: bool,
+    mode: Mode,
+    search_input: String,
+    search_results: Vec<String>,
+    search_state: ListState,
     retry_config: RetryConfig,
 }
 
 #[derive(Clone)]
 struct AppInfo {
-    id: String,
     name: String,
     current_version: String,
     latest_version: String,
@@ -142,6 +154,10 @@ async fn run_app<B: ratatui::backend::Backend>(
         filter_text: String::new(),
         filtered_indices: Vec::new(),
         show_details: false,
+        mode: Mode::List,
+        search_input: String::new(),
+        search_results: Vec::new(),
+        search_state: ListState::default(),
         retry_config: RetryConfig::from_config(config),
     };
 
@@ -173,7 +189,7 @@ impl App {
 
         for app in apps {
             let repo_id = app.repo.clone();
-            let (owner, repo) = if let Some(idx) = repo_id.find('/') {
+            let (_owner, repo) = if let Some(idx) = repo_id.find('/') {
                 (&repo_id[..idx], &repo_id[idx+1..])
             } else {
                 ("", "")
@@ -202,7 +218,6 @@ impl App {
             };
 
             app_infos.push(AppInfo {
-                id: repo_id.clone(),
                 name: repo.to_string(),
                 current_version,
                 latest_version,
@@ -258,12 +273,157 @@ impl App {
     }
 }
 
+/// Typing a GitHub search query.
+async fn handle_search_input(
+    key: KeyCode,
+    app: &mut App,
+    config: &ConfigManager,
+) -> Result<()> {
+    match key {
+        KeyCode::Esc => {
+            app.mode = Mode::List;
+            app.search_input.clear();
+            app.status_message = "Search cancelled".to_string();
+        }
+        KeyCode::Backspace => {
+            app.search_input.pop();
+        }
+        KeyCode::Enter => {
+            let query = app.search_input.trim().to_string();
+            if query.is_empty() {
+                app.status_message = "Type a search query first".to_string();
+                return Ok(());
+            }
+            app.status_message = format!("Searching GitHub for '{query}'...");
+            let token = config.get().github_token.as_deref();
+            match crate::commands::install::search_github_repos(&query, token, config).await {
+                Ok(results) if !results.is_empty() => {
+                    app.search_results = results;
+                    app.search_state.select(Some(0));
+                    app.mode = Mode::SearchResults;
+                    app.status_message =
+                        format!("{} results - 'Enter' add, 'i' install, 'Esc' back", app.search_results.len());
+                }
+                Ok(_) => {
+                    app.status_message = format!("No results for '{query}'");
+                }
+                Err(e) => {
+                    app.status_message = format!("Search failed: {e}");
+                }
+            }
+        }
+        KeyCode::Char(c) => {
+            app.search_input.push(c);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Picking a repository from the search results.
+async fn handle_search_results(
+    key: KeyCode,
+    app: &mut App,
+    config: &ConfigManager,
+    state: &mut StateManager,
+) -> Result<()> {
+    let selected = app
+        .search_state
+        .selected()
+        .and_then(|i| app.search_results.get(i))
+        .cloned();
+
+    match key {
+        KeyCode::Esc => {
+            app.mode = Mode::List;
+            app.status_message = "Search closed".to_string();
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if let Some(sel) = app.search_state.selected() {
+                if sel < app.search_results.len().saturating_sub(1) {
+                    app.search_state.select(Some(sel + 1));
+                }
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if let Some(sel) = app.search_state.selected() {
+                if sel > 0 {
+                    app.search_state.select(Some(sel - 1));
+                }
+            }
+        }
+        KeyCode::Enter | KeyCode::Char('a') => {
+            let Some(repo) = selected else { return Ok(()) };
+            app.status_message = format!("Adding {repo}...");
+            let args = AddArgs {
+                repo: repo.clone(),
+                name: None,
+                path: None,
+                add_type: AddType::Github,
+                location: None,
+                as_source: false,
+                recursive: false,
+                repo_arg: None,
+                yes: true,
+            };
+            match crate::commands::add::execute(args, config, state, &app.retry_config).await {
+                Ok(()) => {
+                    app.status_message = format!("Added {repo}");
+                    app.mode = Mode::List;
+                    let retry_config_clone = app.retry_config.clone();
+                    app.load_apps(config, state, &retry_config_clone).await;
+                }
+                Err(e) => app.status_message = format!("Add failed: {e}"),
+            }
+        }
+        KeyCode::Char('i') => {
+            let Some(repo) = selected else { return Ok(()) };
+            app.status_message = format!("Installing {repo}...");
+            let args = InstallArgs {
+                repo: repo.clone(),
+                version: None,
+                tag: None,
+                prerelease: false,
+                force: false,
+                download_only: false,
+                skip_deps: false,
+                arch: Arch::Auto,
+                yes: true,
+                reset: false,
+                interactive: false,
+                dry_run: false,
+                file: None,
+                url: None,
+                dependencies: Vec::new(),
+            };
+            match crate::commands::install::execute(args, config, state, &app.retry_config).await {
+                Ok(()) => {
+                    app.status_message = format!("Installed {repo}");
+                    app.mode = Mode::List;
+                    let retry_config_clone = app.retry_config.clone();
+                    app.load_apps(config, state, &retry_config_clone).await;
+                }
+                Err(e) => app.status_message = format!("Install failed: {e}"),
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 async fn handle_key_event(
     key: KeyCode,
     app: &mut App,
     config: &ConfigManager,
     state: &mut StateManager,
 ) -> Result<()> {
+    // Search panels take over all keys while active.
+    match app.mode {
+        Mode::SearchInput => return handle_search_input(key, app, config).await,
+        Mode::SearchResults => return handle_search_results(key, app, config, state).await,
+        Mode::List => {}
+    }
+
     match key {
         KeyCode::Char('q') | KeyCode::Esc => {
             if app.show_help {
@@ -296,6 +456,11 @@ async fn handle_key_event(
                 }
             }
         }
+        KeyCode::Char('a') => {
+            app.mode = Mode::SearchInput;
+            app.search_input.clear();
+            app.status_message = "Type a search query, Enter to search, Esc to cancel".to_string();
+        }
         KeyCode::Char('r') => {
             app.status_message = "Refreshing...".to_string();
             let retry_config_clone = app.retry_config.clone();
@@ -320,6 +485,9 @@ async fn handle_key_event(
                         reset: false,
                         interactive: false,
                         notes: false,
+                        // The TUI owns the screen - update output would corrupt it.
+                        quiet: true,
+                        log: None,
                     };
                     match crate::commands::update::execute(
                         update_args,
@@ -417,13 +585,22 @@ fn ui<B: ratatui::backend::Backend>(f: &mut ratatui::Frame, app: &mut App) {
         .split(f.size());
 
     // Header
-    let header_text = if !app.filter_text.is_empty() {
-        format!(
-            "ObtainHub TUI - Filter: '{}' | 'u' update, 'x' remove, '/' filter, 'c' clear, 'Enter' details, 'r' refresh, '?' help, 'q' quit",
-            app.filter_text
-        )
-    } else {
-        "ObtainHub TUI - 'u' update, 'x' remove, '/' filter, 'c' clear, 'Enter' details, 'r' refresh, 'j/k' nav, '?' help, 'q' quit".to_string()
+    let header_text = match app.mode {
+        Mode::SearchInput => format!(
+            "ObtainHub TUI - Search: '{}' | Enter to search, Esc to cancel",
+            app.search_input
+        ),
+        Mode::SearchResults => "ObtainHub TUI - Pick a repo: 'Enter' add to management, 'i' install, 'Esc' back".to_string(),
+        Mode::List => {
+            if !app.filter_text.is_empty() {
+                format!(
+                    "ObtainHub TUI - Filter: '{}' | 'u' update, 'x' remove, 'a' search, '/' filter, 'c' clear, 'Enter' details, 'r' refresh, '?' help, 'q' quit",
+                    app.filter_text
+                )
+            } else {
+                "ObtainHub TUI - 'u' update, 'x' remove, 'a' search, '/' filter, 'c' clear, 'Enter' details, 'r' refresh, 'j/k' nav, '?' help, 'q' quit".to_string()
+            }
+        }
     };
     let header = Paragraph::new(header_text)
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
@@ -431,15 +608,39 @@ fn ui<B: ratatui::backend::Backend>(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(header, chunks[0]);
 
     // Filter input bar
-    if !app.filter_text.is_empty() {
+    if !app.filter_text.is_empty() && app.mode == Mode::List {
         let filter_bar = Paragraph::new(format!("Filter: {}", app.filter_text))
             .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
             .block(Block::default().borders(Borders::ALL).title("Filter"));
         f.render_widget(filter_bar, chunks[1]);
     }
 
-    // Details modal or App list or Help
-    if app.show_details {
+    // Search panels take over the main area
+    if app.mode == Mode::SearchInput {
+        let input = Paragraph::new(format!("> {}", app.search_input))
+            .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Search GitHub - Enter to search, Esc to cancel"),
+            );
+        f.render_widget(input, chunks[2]);
+    } else if app.mode == Mode::SearchResults {
+        let items: Vec<ListItem> = app
+            .search_results
+            .iter()
+            .map(|r| ListItem::new(Line::from(Span::raw(r))))
+            .collect();
+        let list = List::new(items)
+            .block(
+                Block::default().borders(Borders::ALL).title(
+                    "Search Results - Enter/a add, 'i' install, Esc back",
+                ),
+            )
+            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+            .highlight_symbol("► ");
+        f.render_stateful_widget(list, chunks[2], &mut app.search_state);
+    } else if app.show_details {
         if let Some(app_info) = app.selected_app() {
             let details = vec![
                 Line::from(vec![Span::styled("Name: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&app_info.name)]),
@@ -486,6 +687,30 @@ fn ui<B: ratatui::backend::Backend>(f: &mut ratatui::Frame, app: &mut App) {
             Line::from(vec![
                 Span::styled("  r", Style::default().fg(Color::Yellow)),
                 Span::raw("  - Refresh app list"),
+            ]),
+            Line::from(vec![
+                Span::styled("  u", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Update selected app (if update available)"),
+            ]),
+            Line::from(vec![
+                Span::styled("  x", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Remove selected app from management"),
+            ]),
+            Line::from(vec![
+                Span::styled("  a", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Search GitHub, then add or install a repository"),
+            ]),
+            Line::from(vec![
+                Span::styled("  /", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Filter apps by name/repo/status"),
+            ]),
+            Line::from(vec![
+                Span::styled("  c", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Clear filter"),
+            ]),
+            Line::from(vec![
+                Span::styled("  Enter", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Show app details"),
             ]),
             Line::from(""),
             Line::from(vec![

@@ -8,7 +8,7 @@ use tracing::info;
 use zip::write::FileOptions;
 use zip::CompressionMethod;
 
-pub async fn execute(args: AppsArgs, config: &ConfigManager, state: &StateManager) -> Result<()> {
+pub async fn execute(args: AppsArgs, config: &ConfigManager, _state: &StateManager) -> Result<()> {
     info!("Apps command: {:?}", args.action);
 
     let config_data = config.get();

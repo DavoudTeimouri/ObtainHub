@@ -1,7 +1,7 @@
-use crate::core::{ConfigManager, StateManager, assets::{download_verify_extract, calculate_sha256_bytes}, registries::{create_registry, RegistryRelease, RegistryAsset}};
+use crate::core::{ConfigManager, StateManager, registries::create_registry};
 use crate::cli::InstallArgs;
 use crate::utils::retry::RetryConfig;
-use anyhow::{Result, Context};
+use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -49,7 +49,7 @@ struct GitHubRepoInfo {
     description: Option<String>,
 }
 
-pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
+pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &mut StateManager, _retry_config: &RetryConfig) -> Result<()> {
     info!("Installing: {}", args.repo);
     
     // Handle --file (local file install)
@@ -238,84 +238,6 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     
     println!("Successfully installed {}@{} to {}", args.repo, version, install_dir.display());
     Ok(())
-}
-
-async fn fetch_repo_info(repo: &str, token: Option<&str>) -> Result<GitHubRepoInfo> {
-    let url = format!("https://api.github.com/repos/{}", repo);
-    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {token}"));
-    }
-    let resp = req.send()?;
-
-    if resp.status_code == 403 {
-        return Err(anyhow::anyhow!(
-            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
-        ));
-    }
-
-    if resp.status_code == 404 {
-        return Err(anyhow::anyhow!("Repository not found: {repo}"));
-    }
-
-    if !(resp.status_code >= 200 && resp.status_code < 300) {
-        return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
-    }
-
-    let repo: GitHubRepoInfo = resp.json()?;
-    Ok(repo)
-}
-
-async fn fetch_latest_release(repo: &str, token: Option<&str>) -> Result<GitHubRelease> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {token}"));
-    }
-    let resp = req.send()?;
-
-    if resp.status_code == 403 {
-        return Err(anyhow::anyhow!(
-            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
-        ));
-    }
-
-    if resp.status_code == 404 {
-        return Err(anyhow::anyhow!("No releases found for {repo}"));
-    }
-
-    if !(resp.status_code >= 200 && resp.status_code < 300) {
-        return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
-    }
-
-    let release: GitHubRelease = resp.json()?;
-    Ok(release)
-}
-
-async fn fetch_release_by_tag(repo: &str, tag: &str, token: Option<&str>) -> Result<GitHubRelease> {
-    let url = format!("https://api.github.com/repos/{}/releases/tags/{}", repo, tag);
-    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {token}"));
-    }
-    let resp = req.send()?;
-
-    if resp.status_code == 403 {
-        return Err(anyhow::anyhow!(
-            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
-        ));
-    }
-
-    if resp.status_code == 404 {
-        return Err(anyhow::anyhow!("Release tag '{tag}' not found in {repo}"));
-    }
-
-    if !(resp.status_code >= 200 && resp.status_code < 300) {
-        return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
-    }
-
-    let release: GitHubRelease = resp.json()?;
-    Ok(release)
 }
 
 /// Select the best asset for the current platform
@@ -750,10 +672,9 @@ fn finalize_install(extracted_path: &Path, install_dir: &Path) -> Result<PathBuf
     
     Ok(install_dir.to_path_buf())
 }
-async fn search_github_repos(query: &str, token: Option<&str>, config: &ConfigManager) -> Result<Vec<String>> {
+pub async fn search_github_repos(query: &str, token: Option<&str>, config: &ConfigManager) -> Result<Vec<String>> {
     let encoded = urlencoding::encode(query);
     let url = format!("https://api.github.com/search/repositories?q={}&per_page=10", encoded);
-    let token_clone = token.map(|s| s.to_string());
 
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {

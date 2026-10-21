@@ -1,16 +1,13 @@
 use crate::core::{ConfigManager, StateManager, run_installer};
 use crate::cli::UpdateArgs;
 use crate::utils::retry::{execute_with_retry, RetryConfig};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
-use tracing::{info, warn};
-use urlencoding;
+use std::time::SystemTime;
+use tracing::info;
 use indicatif::{ProgressBar, ProgressStyle};
-use dialoguer::{MultiSelect, Select, theme::ColorfulTheme};
+use dialoguer::{Select, theme::ColorfulTheme};
 
 use crate::commands::install::{fetch_published_checksum, GitHubRelease as InstallGitHubRelease, GitHubAsset as InstallGitHubAsset, select_asset as install_select_asset};
 use sha2::{Digest, Sha256};
@@ -21,8 +18,52 @@ fn calculate_sha256_bytes(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-struct GitHubRelease {
+/// Prints progress to stdout (unless quiet) and appends everything to an
+/// optional log file, so scheduled runs leave a record behind.
+struct Reporter {
+    quiet: bool,
+    log: Option<std::fs::File>,
+}
+
+impl Reporter {
+    fn new(quiet: bool, log_path: Option<&str>) -> Self {
+        let log = log_path.and_then(|p| {
+            if let Some(parent) = std::path::Path::new(p).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(p)
+                .ok()
+        });
+        Reporter { quiet, log }
+    }
+
+    /// Progress message: stdout only when not quiet, always logged.
+    fn say(&mut self, msg: &str) {
+        if !self.quiet {
+            println!("{msg}");
+        }
+        self.write(msg);
+    }
+
+    /// Error message: always on stderr, always logged.
+    fn err(&mut self, msg: &str) {
+        eprintln!("{msg}");
+        self.write(msg);
+    }
+
+    fn write(&mut self, msg: &str) {
+        use std::io::Write;
+        if let Some(f) = &mut self.log {
+            let _ = writeln!(f, "{msg}");
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub(crate) struct GitHubRelease {
     #[serde(default = "default_tag_name")]
     tag_name: String,
     name: Option<String>,
@@ -38,7 +79,7 @@ fn default_tag_name() -> String {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-struct GitHubAsset {
+pub(crate) struct GitHubAsset {
     name: String,
     browser_download_url: String,
     size: u64,
@@ -81,161 +122,46 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
     Ok(result)
 }
 
-#[cfg(windows)]
-fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::InstalledRepo>> {
-    use std::collections::HashSet;
-    use winreg::enums::*;
-    use winreg::RegKey;
+/// Fetch a specific release by tag. Used by rollback to re-install an older version.
+pub(crate) async fn fetch_release_by_tag(
+    repo: &str,
+    tag: &str,
+    token: Option<&str>,
+    retry_config: &RetryConfig,
+) -> Result<Option<GitHubRelease>> {
+    let url = format!("https://api.github.com/repos/{}/releases/tags/{}", repo, tag);
+    let token_clone = token.map(|s| s.to_string());
 
-    let mut results = Vec::new();
-    let mut seen = HashSet::new();
-
-    for &root in &[HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
-        for &view in &[KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
-            let hklm = RegKey::predef(root);
-            let uninstall_path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
-
-            if let Ok(uninstall_key) = hklm.open_subkey_with_flags(uninstall_path, KEY_READ | view) {
-                for subkey_name in uninstall_key.enum_keys().flatten() {
-                    if let Ok(subkey) = uninstall_key.open_subkey_with_flags(&subkey_name, KEY_READ | view) {
-                        let display_name: Option<String> = subkey.get_value("DisplayName").ok();
-                        let display_version: Option<String> = subkey.get_value("DisplayVersion").ok();
-                        let uninstall_string: Option<String> = subkey.get_value("UninstallString").ok();
-
-                        if let Some(name) = display_name {
-                            if name.contains("ObtainHub") {
-                                continue;
-                            }
-
-                            let key = format!("{}|{}", name, display_version.clone().unwrap_or_default());
-                            if seen.insert(key) {
-                                results.push(crate::core::state::InstalledRepo {
-                                    repo: name.clone(),
-                                    version: display_version.unwrap_or_else(|| "unknown".to_string()),
-                                    install_path: PathBuf::from(uninstall_string.unwrap_or_default()),
-                                    installed_at: chrono::Utc::now(),
-                                    updated_at: None,
-                                    checksum: None,
-                                    metadata: serde_json::Value::Null,
-                                    previous_version: None,
-                                    previous_install_path: None,
-                                    dependencies: Vec::new(),
-                                    is_dependency: false,
-                                    ..Default::default()
-                                });
-                            }
-                        }
-                    }
-                }
+    let result = execute_with_retry(retry_config, || {
+        let url = url.clone();
+        let token = token_clone.clone();
+        async move {
+            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            if let Some(token) = token {
+                req = req.with_header("Authorization", &format!("Bearer {token}"));
             }
-        }
-    }
+            let resp = req.send()?;
 
-    Ok(results)
-}
-
-#[cfg(not(windows))]
-fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::InstalledRepo>> {
-    Ok(Vec::new())
-}
-
-async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Vec<String>> {
-    let cleaned = clean_app_name(name);
-
-    // Build multiple search term candidates to maximize hit rate
-    let mut search_terms: Vec<&str> = Vec::new();
-
-    // 1. Full cleaned name
-    if !cleaned.is_empty() {
-        search_terms.push(cleaned.as_str());
-    }
-
-    // 2. First word of cleaned name (e.g. "OnionHop version" -> "OnionHop")
-    if let Some(first) = cleaned.split_whitespace().next() {
-        if !search_terms.iter().any(|&t| t == first) {
-            search_terms.push(first);
-        }
-    }
-
-    // 3. Original name with digits/dots removed
-    let stripped: String = name.chars().filter(|c| !c.is_ascii_digit() && *c != '.').collect();
-    let stripped = stripped.trim();
-    if !stripped.is_empty() && !search_terms.iter().any(|&t| t == stripped) {
-        search_terms.push(stripped);
-    }
-
-    // 4. Original name (last resort)
-    if !search_terms.iter().any(|&t| t == name) {
-        search_terms.push(name);
-    }
-
-    let mut all_candidates: Vec<String> = Vec::new();
-    let mut seen = HashMap::new();
-
-    for term in search_terms {
-        if term.is_empty() {
-            continue;
-        }
-        let encoded_name = urlencoding::encode(term);
-        let url = format!("https://api.github.com/search/repositories?q={}&per_page=5", encoded_name);
-        let token_clone = token.map(|s| s.to_string());
-
-        let result = execute_with_retry(retry_config, || {
-            let url = url.clone();
-            let token = token_clone.clone();
-            async move {
-                let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-                if let Some(token) = token {
-                    req = req.with_header("Authorization", &format!("Bearer {}", token));
-                }
-                let resp = req.send()?;
-
-                if resp.status_code == 403 {
-                    return Err(anyhow::anyhow!(
-                        "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
-                    ));
-                }
-
-                // Non-2xx means rate limit, auth error, etc. - return empty candidates
-                if !(resp.status_code >= 200 && resp.status_code < 300) {
-                    return Ok(Vec::new());
-                }
-
-                let body = resp.as_bytes().to_vec();
-                if body.is_empty() {
-                    return Ok(Vec::new());
-                }
-                let resp: serde_json::Value = serde_json::from_slice(&body)?;
-                let items = resp["items"].as_array().unwrap_or(&vec![]).to_vec();
-                let mut candidates = Vec::new();
-                for item in items {
-                    if let Some(full_name) = item["full_name"].as_str() {
-                        candidates.push(full_name.to_string());
-                    }
-                }
-                Ok(candidates)
+            if resp.status_code == 404 {
+                return Ok(None);
             }
-        }, "find_candidate_repos").await;
 
-        match result {
-            Ok(candidates) => {
-                for c in candidates {
-                    if seen.insert(c.clone(), true).is_none() {
-                        all_candidates.push(c);
-                    }
-                }
+            if resp.status_code == 403 {
+                return Err(anyhow::anyhow!(
+                    "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                ));
             }
-            Err(e) => {
-                // Only propagate error if this was the last term tried
-                if !term.eq(name) {
-                    continue;
-                }
-                return Err(e);
+
+            if !(resp.status_code >= 200 && resp.status_code < 300) {
+                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
             }
+
+            let release: GitHubRelease = resp.json()?;
+            Ok(Some(release))
         }
-    }
+    }, "fetch_release_by_tag").await?;
 
-    Ok(all_candidates)
+    Ok(result)
 }
 
 fn normalize_version(v: &str) -> String {
@@ -244,57 +170,19 @@ fn normalize_version(v: &str) -> String {
     v.to_string()
 }
 
-fn clean_app_name(name: &str) -> String {
-    let mut cleaned = name.to_string();
-
-    // Remove version-like tokens and common noise words
-    let noise_words = ["version", "edition", "x64", "x86", "64bit", "32bit", "64-bit", "32-bit"];
-
-    cleaned = cleaned.split(char::is_whitespace)
-        .filter(|part| {
-            let lower = part.to_lowercase();
-            // Skip common noise words
-            if noise_words.iter().any(|&w| lower == w) {
-                return false;
-            }
-            let has_digit = part.chars().any(|c| c.is_ascii_digit());
-            let has_dot = part.contains('.');
-            let has_v_prefix = part.starts_with('v') || part.starts_with('V');
-            if has_digit && (has_dot || has_v_prefix) && part.len() <= 10 {
-                return false;
-            }
-            if part.len() == 1 && (*part == "v" || *part == "V") {
-                return false;
-            }
-            true
-        })
-        .collect::<Vec<&str>>()
-        .join(" ")
-        .trim()
-        .to_string();
-
-    let suffixes = [" for windows", " for mac", " for linux", " portable", " installer", " setup"];
-    for suffix in &suffixes {
-        if cleaned.to_lowercase().ends_with(suffix) {
-            cleaned = cleaned[..cleaned.len() - suffix.len()].trim().to_string();
-        }
-    }
-
-    cleaned.trim().to_string()
-}
-
 pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Updating repositories");
 
     let token = config.get().github_token.as_deref();
     let install_dir = config.get().install_dir.clone();
     let download_dir = config.get().download_dir.clone();
-    println!("Install directory: {}", install_dir.display());
-    println!("Download directory: {}", download_dir.display());
+    let mut reporter = Reporter::new(args.quiet, args.log.as_deref());
+    reporter.say(&format!("Install directory: {}", install_dir.display()));
+    reporter.say(&format!("Download directory: {}", download_dir.display()));
 
     // Cleanup download folder: remove old duplicate downloads
     if let Err(e) = cleanup_download_folder(&download_dir) {
-        eprintln!("Warning: download cleanup failed: {e}");
+        reporter.err(&format!("Warning: download cleanup failed: {e}"));
     }
 
     let installed = state.list_installed();
@@ -324,23 +212,23 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     let mut errors = Vec::new();
 
     for (repo_name, current_version) in targets {
-        println!("Checking {}@{}...", repo_name, current_version);
+        reporter.say(&format!("Checking {}@{}...", repo_name, current_version));
 
         // First, check if this repo has dependencies that need updating
         if !args.skip_deps {
             let deps = state.get_installed(repo_name).map(|e| e.dependencies.clone()).unwrap_or_default();
             for dep in &deps {
-                println!("  Checking dependency {}...", dep);
+                reporter.say(&format!("  Checking dependency {}...", dep));
                 if let Some(dep_entry) = state.get_installed(dep) {
                     match fetch_latest_release(dep, token, retry_config).await {
                         Ok(Some(dep_release)) => {
                             let dep_latest = dep_release.tag_name.clone();
                             if normalize_version(&dep_latest) != normalize_version(&dep_entry.version) {
-                                println!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest);
+                                reporter.say(&format!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest));
                                 if !args.dry_run {
-                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, args.force, true, None).await {
-                                        Ok(_) => println!("    Updated dependency {} to {}", dep, dep_latest),
-                                        Err(e) => eprintln!("    Failed to update dependency {}: {}", dep, e),
+                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, args.force, true, None, args.quiet, Some(dep_entry.version.clone())).await {
+                                        Ok(_) => reporter.say(&format!("    Updated dependency {} to {}", dep, dep_latest)),
+                                        Err(e) => reporter.err(&format!("    Failed to update dependency {}: {}", dep, e)),
                                     }
                                 }
                             }
@@ -348,7 +236,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                         Ok(None) => {
                             // No releases found for dependency
                         }
-                        Err(e) => eprintln!("    Error checking dependency {}: {}", dep, e),
+                        Err(e) => reporter.err(&format!("    Error checking dependency {}: {}", dep, e)),
                     }
                 }
             }
@@ -360,7 +248,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                 let latest_norm = normalize_version(&latest_version);
                 let current_norm = normalize_version(current_version);
                 if latest_norm != current_norm {
-                    println!("  Update available: {} -> {}", current_version, latest_version);
+                    reporter.say(&format!("  Update available: {} -> {}", current_version, latest_version));
 
                     if args.dry_run {
                         updated.push((repo_name.clone(), current_version.clone(), latest_version));
@@ -369,54 +257,59 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
 
                     // Perform update (reinstall with new version)
                     // Interactive asset selection: only .exe (setup) and .msi, correct architecture
-                    let selected_asset = select_installer_asset(&release)?;
-                    match install_release(repo_name, &latest_version, &release, token, config, state, args.force, args.skip_deps, Some(selected_asset)).await {
+                    let selected_asset = select_installer_asset(&release, args.quiet)?;
+                    match install_release(repo_name, &latest_version, &release, token, config, state, args.force, args.skip_deps, Some(selected_asset), args.quiet, Some(current_version.to_string())).await {
                         Ok(_) => {
                             updated.push((repo_name.clone(), current_version.clone(), latest_version.clone()));
-                            println!("  Updated to {}", latest_version);
+                            reporter.say(&format!("  Updated to {}", latest_version));
                         }
                         Err(e) => {
                             errors.push((repo_name.clone(), e.to_string()));
-                            eprintln!("  Failed: {}", e);
+                            reporter.err(&format!("  Failed: {}", e));
                         }
                     }
                 } else {
                     already_current.push(repo_name.clone());
-                    println!("  Already at latest version");
+                    reporter.say("  Already at latest version");
                 }
             }
             Ok(None) => {
                 // No releases found for this repo
-                println!("  No releases found on GitHub");
+                reporter.say("  No releases found on GitHub");
             }
             Err(e) => {
                 errors.push((repo_name.clone(), e.to_string()));
-                eprintln!("  Error checking: {}", e);
+                reporter.err(&format!("  Error checking: {}", e));
             }
         }
     }
 
     // Summary
-    println!("\nUpdate Summary:");
+    reporter.say("\nUpdate Summary:");
     if !updated.is_empty() {
-        println!("  Updated ({})", updated.len());
+        reporter.say(&format!("  Updated ({})", updated.len()));
         for (repo, old, new) in &updated {
-            println!("    {} {} -> {}", repo, old, new);
+            reporter.say(&format!("    {} {} -> {}", repo, old, new));
         }
     }
 
     if !already_current.is_empty() {
-        println!("  Already current ({})", already_current.len());
+        reporter.say(&format!("  Already current ({})", already_current.len()));
         for repo in &already_current {
-            println!("    {}", repo);
+            reporter.say(&format!("    {}", repo));
         }
     }
 
     if !errors.is_empty() {
-        println!("  Errors ({})", errors.len());
+        reporter.say(&format!("  Errors ({})", errors.len()));
         for (repo, error) in &errors {
-            println!("    {}: {}", repo, error);
+            reporter.say(&format!("    {}: {}", repo, error));
         }
+    }
+
+    // Scheduled runs rely on the exit code to report failure.
+    if !errors.is_empty() {
+        anyhow::bail!("{} update(s) failed", errors.len());
     }
 
     Ok(())
@@ -426,7 +319,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
 /// matched to current architecture. MSI preferred over EXE. Other file types
 /// (.zip, .tar.gz, etc.) are hidden. Falls back to all installers if no
 /// arch-specific match is found (asset naming varies across repos).
-fn select_installer_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
+pub(crate) fn select_installer_asset(release: &GitHubRelease, quiet: bool) -> Result<GitHubAsset> {
     let target_arch = std::env::consts::ARCH;
 
     // Filter: only .exe and .msi files, matching current architecture
@@ -480,6 +373,11 @@ fn select_installer_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
         }
     });
 
+    // Quiet (scheduled) runs must not block on a prompt - take the preferred asset.
+    if quiet {
+        return Ok(sorted[0].clone());
+    }
+
     let theme = ColorfulTheme::default();
     let items: Vec<String> = sorted
         .iter()
@@ -501,20 +399,19 @@ fn select_installer_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
     }
 }
 
-async fn install_release(
+pub(crate) async fn install_release(
     repo: &str,
     version: &str,
     release: &GitHubRelease,
     token: Option<&str>,
     config: &ConfigManager,
     state: &mut StateManager,
-    force: bool,
+    _force: bool,
     _skip_deps: bool,
     selected_asset: Option<GitHubAsset>,
+    quiet: bool,
+    previous_version: Option<String>,
 ) -> Result<()> {
-    let download_dir = config.get().download_dir.clone();
-    println!("  Download directory: {}", download_dir.display());
-
     // Use interactively selected asset, or fall back to auto-select
     let asset = match selected_asset {
         Some(a) => a,
@@ -581,7 +478,9 @@ async fn install_release(
             let existing_hash = calculate_sha256_bytes(&existing_bytes);
             if let Some(expected) = &expected_hash {
                 if expected.eq_ignore_ascii_case(&existing_hash) {
-                    println!("  Already downloaded: {} ({} bytes)", asset.name, existing_size);
+                    if !quiet {
+                        println!("  Already downloaded: {} ({} bytes)", asset.name, existing_size);
+                    }
                     goto_skip_download = true;
                 }
             }
@@ -606,7 +505,11 @@ async fn install_release(
             .len() as u64;
         let bytes = response.as_bytes().to_vec();
 
-        let pb = ProgressBar::new(total_size);
+        let pb = if quiet {
+            ProgressBar::hidden()
+        } else {
+            ProgressBar::new(total_size)
+        };
         pb.set_style(
             ProgressStyle::default_bar()
                 .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
@@ -657,7 +560,9 @@ async fn install_release(
     let mut detected_uninstaller: Option<String> = None;
     let mut detected_install_dir: Option<std::path::PathBuf> = None;
     if is_installer {
-        println!("  Running installer: {}", asset.name);
+        if !quiet {
+            println!("  Running installer: {}", asset.name);
+        }
 
         // Snapshot the uninstall registry so we can tell where the app landed
         // and how to remove it later.
@@ -684,13 +589,15 @@ async fn install_release(
             }
             detected_install_dir = entry.install_dir();
             if let Some(dir) = &detected_install_dir {
-                println!("  Installed to: {}", dir.display());
+                if !quiet {
+                    println!("  Installed to: {}", dir.display());
+                }
             }
         }
     }
 
     // Update state
-    let mut new_repo = crate::core::state::InstalledRepo {
+    let new_repo = crate::core::state::InstalledRepo {
         repo: repo.to_string(),
         version: version.to_string(),
         install_path: detected_install_dir.unwrap_or_else(|| install_dir.clone()),
@@ -698,7 +605,7 @@ async fn install_release(
         updated_at: Some(chrono::Utc::now()),
         checksum: None,
         metadata: serde_json::Value::Null,
-        previous_version: Some(version.to_string()),
+        previous_version: previous_version,
         previous_install_path: None,
         dependencies: Vec::new(),
         is_dependency: false,
@@ -756,14 +663,3 @@ fn cleanup_download_folder(download_dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn clean_app_name_strips_version() {
-        assert_eq!(clean_app_name("OnionHop V3 3.8.6"), "OnionHop");
-        assert_eq!(clean_app_name("Aether-GUI"), "Aether-GUI");
-        assert_eq!(clean_app_name("Obsidian"), "Obsidian");
-    }
-}

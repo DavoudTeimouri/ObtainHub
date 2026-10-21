@@ -1,9 +1,20 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::RollbackArgs;
+use crate::utils::retry::RetryConfig;
 use anyhow::Result;
 use tracing::info;
 
-pub async fn execute(args: RollbackArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
+/// Roll a managed app back to its previous version.
+///
+/// The old version is re-downloaded from its GitHub release tag and installed
+/// again, so rollback works for installer-based apps without keeping a local
+/// copy of every previous install.
+pub async fn execute(
+    args: RollbackArgs,
+    config: &ConfigManager,
+    state: &mut StateManager,
+    retry_config: &RetryConfig,
+) -> Result<()> {
     info!("Rolling back: {}", args.repo);
     
     // Get the entry first, then release the borrow
@@ -30,20 +41,10 @@ pub async fn execute(args: RollbackArgs, config: &ConfigManager, state: &mut Sta
         }
     };
     
-    let prev_path = match &entry.previous_install_path {
-        Some(p) => p.clone(),
-        None => {
-            return Err(anyhow::anyhow!(
-                "No previous install path available for '{}'. Cannot rollback.", 
-                args.repo
-            ));
-        }
-    };
-    
     // Confirmation unless --yes
     if !args.yes {
         println!("About to rollback {} from {} to {}", args.repo, entry.version, prev_version);
-        println!("  Will restore from: {}", prev_path.display());
+        println!("  Will re-download and install {prev_version} from GitHub");
         print!("Continue? [y/N] ");
         use std::io::{stdout, Write};
         stdout().flush()?;
@@ -54,58 +55,52 @@ pub async fn execute(args: RollbackArgs, config: &ConfigManager, state: &mut Sta
             return Ok(());
         }
     }
-    
-    // Remove current installation
-    if entry.install_path.exists() {
-        std::fs::remove_dir_all(&entry.install_path)?;
-        println!("Removed current installation: {}", entry.install_path.display());
-    }
-    
-    // Restore previous version if path exists
-    if prev_path.exists() {
-        // Copy previous installation back
-        copy_dir_all(&prev_path, &entry.install_path)?;
-        println!("Restored previous version from: {}", prev_path.display());
-    } else {
-        return Err(anyhow::anyhow!(
-            "Previous installation path no longer exists: {}. Cannot rollback automatically.", 
-            prev_path.display()
-        ));
-    }
-    
-    // Update state
-    let repo_entry = crate::core::state::InstalledRepo {
-        repo: args.repo.clone(),
-        version: prev_version.clone(),
-        install_path: entry.install_path.clone(),
-        installed_at: entry.installed_at,
-        updated_at: Some(chrono::Utc::now()),
-        checksum: entry.checksum.clone(),
-        metadata: entry.metadata.clone(),
-        previous_version: Some(entry.version.clone()),  // Current becomes previous
-        previous_install_path: Some(entry.install_path.clone()),
-        dependencies: entry.dependencies.clone(),
-        is_dependency: entry.is_dependency,
-        uninstaller: entry.uninstaller.clone(),
-    };
-    
-    state.add_installed(repo_entry);
-    state.save()?;
-    
-    println!("Successfully rolled back {} to {}", args.repo, prev_version);
-    Ok(())
-}
 
-fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        if ty.is_dir() {
-            copy_dir_all(&entry.path(), &dst.join(entry.file_name()))?;
-        } else {
-            std::fs::copy(entry.path(), dst.join(entry.file_name()))?;
+    let token = config.get().github_token.as_deref();
+
+    // Find the release for the old tag.
+    let release = match crate::commands::update::fetch_release_by_tag(
+        &args.repo,
+        &prev_version,
+        token,
+        retry_config,
+    )
+    .await?
+    {
+        Some(r) => r,
+        None => {
+            return Err(anyhow::anyhow!(
+                "Release {} not found for '{}'. It may have been deleted from GitHub.",
+                prev_version,
+                args.repo
+            ));
         }
+    };
+
+    // Pick the installer asset for that release.
+    let asset = crate::commands::update::select_installer_asset(&release, args.quiet)?;
+
+    println!("Reinstalling {} {}...", args.repo, prev_version);
+
+    // Install the old version. The version we roll back from becomes the new
+    // "previous", so the rollback itself can be undone.
+    crate::commands::update::install_release(
+        &args.repo,
+        &prev_version,
+        &release,
+        token,
+        config,
+        state,
+        true,
+        true,
+        Some(asset),
+        args.quiet,
+        Some(entry.version.clone()),
+    )
+    .await?;
+
+    if !args.quiet {
+        println!("Successfully rolled back {} to {}", args.repo, prev_version);
     }
     Ok(())
 }

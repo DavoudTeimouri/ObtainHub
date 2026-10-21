@@ -1,9 +1,7 @@
-use crate::core::{ConfigManager, StateManager};
+use crate::core::ConfigManager;
 use anyhow::{Context, Result};
 use minreq;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tracing::{debug, info};
 
 /// Registry release information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,14 +39,7 @@ pub enum Registry {
 }
 
 impl Registry {
-    pub fn registry_type(&self) -> &'static str {
-        match self {
-            Registry::GitHub(_) => "github",
-            Registry::CratesIo(_) => "crates-io",
-            Registry::Generic(_) => "generic",
-        }
-    }
-    
+
     pub async fn fetch_latest_release(
         &self,
         package_name: &str,
@@ -247,6 +238,7 @@ impl CratesIoRegistry {
         
         #[derive(Deserialize)]
         struct CrateInfo {
+            #[allow(dead_code)]
             name: String,
             max_version: String,
         }
@@ -309,6 +301,7 @@ impl CratesIoRegistry {
         
         #[derive(Deserialize)]
         struct CrateVersionDetail {
+            #[allow(dead_code)]
             num: String,
             downloads: Vec<CrateDownload>,
         }
@@ -354,7 +347,7 @@ impl CratesIoRegistry {
         _token: Option<&str>,
         config: &ConfigManager,
     ) -> Result<()> {
-        let mut req = minreq::get(&asset.browser_download_url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let req = minreq::get(&asset.browser_download_url).with_header("User-Agent", "ObtainHub/3.0.0");
         
         let response = req
             .with_timeout(config.get().timeout_seconds as u64)

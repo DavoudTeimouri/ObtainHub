@@ -3,7 +3,7 @@ use crate::cli::{ScheduleArgs, ScheduleAction};
 use anyhow::Result;
 use tracing::info;
 
-pub async fn execute(args: ScheduleArgs, config: &mut ConfigManager, state: &mut StateManager) -> Result<()> {
+pub async fn execute(args: ScheduleArgs, config: &mut ConfigManager, _state: &StateManager) -> Result<()> {
     info!("Schedule command: {:?}", args.action);
 
     let config_data = config.get_mut();

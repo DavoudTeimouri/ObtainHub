@@ -26,6 +26,7 @@ struct GitHubRepo {
 #[derive(serde::Deserialize, Debug)]
 struct License {
     name: String,
+    #[allow(dead_code)]
     spdx_id: Option<String>,
 }
 

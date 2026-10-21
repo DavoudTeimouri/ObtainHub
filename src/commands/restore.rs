@@ -10,8 +10,10 @@ use sha2::Digest;
 
 #[derive(Deserialize, Debug)]
 struct BackupData {
+    #[allow(dead_code)]
     version: u32,
     created_at: chrono::DateTime<chrono::Utc>,
+    #[allow(dead_code)]
     config: crate::core::config::Config,
     installed_repos: Vec<crate::core::state::InstalledRepo>,
     repo_archives: Vec<RepoArchive>,
@@ -21,11 +23,12 @@ struct BackupData {
 struct RepoArchive {
     repo: String,
     archive_name: String,
+    #[allow(dead_code)]
     size: u64,
     sha256: String,
 }
 
-pub async fn execute(args: RestoreArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
+pub async fn execute(args: RestoreArgs, _config: &ConfigManager, state: &mut StateManager) -> Result<()> {
     info!("Restoring from backup: {}", args.file);
     
     let backup_path = Path::new(&args.file);

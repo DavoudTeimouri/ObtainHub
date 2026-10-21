@@ -23,11 +23,6 @@ pub fn find_powershell() -> String {
     "powershell.exe".to_string()
 }
 
-#[cfg(not(windows))]
-pub fn find_powershell() -> String {
-    "powershell".to_string()
-}
-
 /// Run a PowerShell `Start-Process ... -Verb RunAs -Wait` body elevated.
 #[cfg(windows)]
 pub fn run_elevated(ps_body: &str) -> Result<()> {

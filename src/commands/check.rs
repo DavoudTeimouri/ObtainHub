@@ -1,16 +1,15 @@
 use crate::core::{ConfigManager, StateManager};
-use crate::cli::{CheckArgs, SelfUpdateArgs};
+use crate::cli::CheckArgs;
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{self, Write};
 use std::time::Duration;
 use tracing::info;
 use comfy_table::{Table, Cell};
 use urlencoding;
-use dialoguer::{Select, MultiSelect, Confirm, theme::ColorfulTheme, Input};
+use dialoguer::{Select, MultiSelect, theme::ColorfulTheme, Input};
 use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -53,7 +52,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
         let all = enumerate_all_installed_software()?;
         let tracked = state.list_installed();
-        let (matched, skipped) = partition_gitHub_managed(&all, &tracked);
+        let (matched, skipped) = partition_git_hub_managed(&all, &tracked);
 
         pb.finish_with_message(format!("Scanned {} installed programs.", all.len()));
         if !skipped.is_empty() {
@@ -83,7 +82,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         if !args.quiet {
             println!("Checking ObtainHub self-update...");
         }
-        check_self_update(config, args.quiet, &retry_config).await?;
+        check_self_update(config, state, args.quiet, &retry_config).await?;
     }
 
     let mut outdated = Vec::new();
@@ -232,7 +231,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                         let selected_repo = &cands[repo_idx];
                                         let selected_repo = selected_repo.clone();
                                         // Use real install_path and version from the skipped entry if available
-                                        let mut new_repo = crate::core::state::InstalledRepo {
+                                        let new_repo = crate::core::state::InstalledRepo {
                                             repo: selected_repo.clone(),
                                             version: skipped_entry.version.clone(),
                                             install_path: skipped_entry.install_path.clone(),
@@ -293,7 +292,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                         if !repo_input.is_empty() {
                                             if repo_input.contains('/') {
                                                 let selected_repo = repo_input.to_string();
-                                                let mut new_repo = crate::core::state::InstalledRepo {
+                                                let new_repo = crate::core::state::InstalledRepo {
                                                     repo: selected_repo.clone(),
                                                     version: skipped_entry.version.clone(),
                                                     install_path: skipped_entry.install_path.clone(),
@@ -387,7 +386,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                         if let Some(repo_idx) = choice {
                             let selected_repo = sorted_candidates[repo_idx].clone();
                             let skipped_entry = skipped_by_name.get(app_name);
-                            let mut new_repo = crate::core::state::InstalledRepo {
+                            let new_repo = crate::core::state::InstalledRepo {
                                 repo: selected_repo.clone(),
                                 version: skipped_entry.map(|e| e.version.clone()).unwrap_or_else(|| "unknown".to_string()),
                                 install_path: skipped_entry.map(|e| e.install_path.clone()).unwrap_or_default(),
@@ -449,7 +448,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                             if !repo_input.is_empty() {
                                 if repo_input.contains('/') {
                                     let selected_repo = repo_input.to_string();
-                                    let mut new_repo = crate::core::state::InstalledRepo {
+                                    let new_repo = crate::core::state::InstalledRepo {
                                         repo: selected_repo.clone(),
                                         version: skipped_entry.map(|e| e.version.clone()).unwrap_or_else(|| "unknown".to_string()),
                                         install_path: skipped_entry.map(|e| e.install_path.clone()).unwrap_or_default(),
@@ -588,6 +587,42 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         println!();
     }
 
+    // Offer to update the outdated apps straight away.
+    if !outdated.is_empty() && !args.quiet && !args.outdated_only {
+        let count = outdated.len();
+        let proceed = if args.yes {
+            true
+        } else {
+            let theme = dialoguer::theme::ColorfulTheme::default();
+            dialoguer::Confirm::with_theme(&theme)
+                .with_prompt(format!("Update {count} outdated app(s) now?"))
+                .default(false)
+                .interact_opt()?
+                .unwrap_or(false)
+        };
+        if proceed {
+            let update_args = crate::cli::UpdateArgs {
+                repo: None,
+                prerelease: args.prerelease,
+                dry_run: false,
+                force: false,
+                skip_deps: false,
+                arch: args.arch,
+                yes: args.yes,
+                reset: false,
+                interactive: false,
+                notes: false,
+                quiet: false,
+                log: None,
+            };
+            if let Err(e) =
+                crate::commands::update::execute(update_args, config, state, &retry_config).await
+            {
+                eprintln!("Update failed: {e}");
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -678,7 +713,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
     Ok(Vec::new())
 }
 
-fn partition_gitHub_managed(
+fn partition_git_hub_managed(
     all: &[crate::core::state::InstalledRepo],
     tracked: &[&crate::core::state::InstalledRepo],
 ) -> (Vec<crate::core::state::InstalledRepo>, Vec<crate::core::state::InstalledRepo>) {
@@ -725,7 +760,12 @@ fn partition_gitHub_managed(
     (matched, skipped)
 }
 
-async fn check_self_update(config: &ConfigManager, quiet: bool, retry_config: &RetryConfig) -> Result<()> {
+async fn check_self_update(
+    config: &ConfigManager,
+    state: &StateManager,
+    _quiet: bool,
+    retry_config: &RetryConfig,
+) -> Result<()> {
     use crate::commands::self_update::{execute as self_update_execute};
     use crate::cli::SelfUpdateArgs;
     let args = SelfUpdateArgs {
@@ -736,7 +776,7 @@ async fn check_self_update(config: &ConfigManager, quiet: bool, retry_config: &R
         quiet: true,
         skip_signature: false,
     };
-    self_update_execute(args, &ConfigManager::new()?, &StateManager::new()?, retry_config).await
+    self_update_execute(args, config, state, retry_config).await
 }
 
 async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Vec<String>> {
@@ -936,7 +976,7 @@ mod tests {
             entry("7-Zip"),
         ];
         let tracked_refs: Vec<&crate::core::state::InstalledRepo> = tracked.iter().collect();
-        let (matched, skipped) = partition_gitHub_managed(&all, &tracked_refs);
+        let (matched, skipped) = partition_git_hub_managed(&all, &tracked_refs);
         assert!(matched.is_empty(), "nothing should match an empty state");
         assert_eq!(skipped.len(), 2, "NVIDIA + 7-Zip are not managed");
         assert!(!skipped.iter().any(|e| e.repo == "ObtainHub 3.0.1"), "self must not be listed as skipped");
@@ -947,7 +987,7 @@ mod tests {
         let tracked = vec![entry("BurntSushi/ripgrep")];
         let tracked_refs: Vec<&crate::core::state::InstalledRepo> = tracked.iter().collect();
         let all = vec![entry("ripgrep"), entry("7-Zip")];
-        let (matched, skipped) = partition_gitHub_managed(&all, &tracked_refs);
+        let (matched, skipped) = partition_git_hub_managed(&all, &tracked_refs);
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].repo, "BurntSushi/ripgrep");
         assert_eq!(skipped.len(), 1);

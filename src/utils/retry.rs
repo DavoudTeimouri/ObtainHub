@@ -1,5 +1,4 @@
 use crate::core::ConfigManager;
-use minreq::Response;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, warn};
@@ -24,6 +23,7 @@ impl RetryConfig {
         }
     }
     
+    #[allow(dead_code)]
     pub fn default() -> Self {
         Self {
             max_retries: 3,
@@ -102,8 +102,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::ConfigManager;
-    
+
     #[test]
     fn test_retry_config_defaults() {
         let config = RetryConfig::default();

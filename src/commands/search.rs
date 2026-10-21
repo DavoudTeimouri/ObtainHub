@@ -7,7 +7,7 @@ use tracing::info;
 use urlencoding;
 use chrono;
 use comfy_table::{Table, Cell, Attribute};
-use dialoguer::{Select, MultiSelect, Confirm, theme::ColorfulTheme};
+use dialoguer::{MultiSelect, Confirm, theme::ColorfulTheme};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GitHubRepo {
@@ -23,6 +23,7 @@ struct GitHubRepo {
 #[derive(Deserialize, Debug)]
 struct SearchResponse {
     items: Vec<GitHubRepo>,
+    #[allow(dead_code)]
     total_count: u32,
 }
 
@@ -109,7 +110,7 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
                 if add {
                     for idx in &selected_indices {
                         let repo = &results[*idx].full_name;
-                        let mut new_repo = crate::core::state::InstalledRepo {
+                        let new_repo = crate::core::state::InstalledRepo {
                             repo: repo.clone(),
                             version: "unknown".to_string(),
                             install_path: std::path::PathBuf::new(),

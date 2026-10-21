@@ -3,7 +3,7 @@ use crate::cli::{GroupArgs, GroupAction};
 use anyhow::Result;
 use tracing::info;
 
-pub async fn execute(args: GroupArgs, config: &mut ConfigManager, state: &StateManager) -> Result<()> {
+pub async fn execute(args: GroupArgs, config: &mut ConfigManager, _state: &StateManager) -> Result<()> {
     info!("Group command: {:?}", args.action);
 
     let config_data = config.get_mut();

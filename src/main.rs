@@ -2,12 +2,10 @@ use clap::Parser;
 use crate::cli::{Cli, Commands};
 use crate::core::{config, state, logger};
 use anyhow::Result;
-use tracing::info;
 
 mod cli;
 mod core;
 mod commands;
-mod tui;
 mod utils;
 
 #[tokio::main]
@@ -39,7 +37,7 @@ async fn main() -> Result<()> {
         Commands::Backup(args) => commands::backup::execute(args, &config_manager, &state_manager).await,
         Commands::Restore(args) => commands::restore::execute(args, &config_manager, &mut state_manager).await,
         Commands::SelfUpdate(args) => commands::self_update::execute(args, &config_manager, &state_manager, &retry_config).await,
-        Commands::Rollback(args) => commands::rollback::execute(args, &config_manager, &mut state_manager).await,
+        Commands::Rollback(args) => commands::rollback::execute(args, &config_manager, &mut state_manager, &retry_config).await,
         Commands::Completion(args) => commands::completion::execute(args).await,
         Commands::Doctor(args) => commands::doctor::execute(args, &config_manager, &mut state_manager).await,
         Commands::Info(args) => commands::info::execute(args, &config_manager, &state_manager).await,

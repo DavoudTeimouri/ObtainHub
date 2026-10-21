@@ -2,9 +2,9 @@ use crate::core::{ConfigManager, StateManager};
 use crate::cli::ListArgs;
 use anyhow::Result;
 use tracing::info;
-use comfy_table::{Table, Cell, Attribute};
+use comfy_table::{Table, Cell};
 
-pub async fn execute(args: ListArgs, config: &ConfigManager, state: &StateManager) -> Result<()> {
+pub async fn execute(args: ListArgs, _config: &ConfigManager, state: &StateManager) -> Result<()> {
     info!("Listing installed repositories");
     
     let installed = state.list_installed();

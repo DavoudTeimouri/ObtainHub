@@ -2,7 +2,6 @@ use crate::core::{ConfigManager, StateManager};
 use crate::cli::{CleanupArgs, CleanupAction};
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 use walkdir::WalkDir;

@@ -10,7 +10,6 @@
 pub struct UninstallEntry {
     pub display_name: String,
     pub display_version: String,
-    pub publisher: String,
     pub install_location: String,
     pub uninstall_string: String,
 }
@@ -69,7 +68,6 @@ pub fn scan_uninstall_entries() -> Vec<UninstallEntry> {
                 results.push(UninstallEntry {
                     display_name,
                     display_version: subkey.get_value("DisplayVersion").unwrap_or_default(),
-                    publisher: subkey.get_value("Publisher").unwrap_or_default(),
                     install_location: subkey.get_value("InstallLocation").unwrap_or_default(),
                     uninstall_string: subkey.get_value("UninstallString").unwrap_or_default(),
                 });
@@ -153,7 +151,6 @@ mod tests {
         UninstallEntry {
             display_name: name.to_string(),
             display_version: version.to_string(),
-            publisher: String::new(),
             install_location: String::new(),
             uninstall_string: uninstall.to_string(),
         }

@@ -1,8 +1,6 @@
 use clap::{Parser, Subcommand, Args};
 use clap_complete::Shell;
 
-pub mod templates;
-
 #[derive(Parser, Debug)]
 #[command(
     name = "ohub",
@@ -356,6 +354,14 @@ pub struct UpdateArgs {
     /// Show release notes for available updates
     #[arg(long)]
     pub notes: bool,
+
+    /// Suppress progress output; print only the summary (for scheduled runs)
+    #[arg(long, short)]
+    pub quiet: bool,
+
+    /// Append a run report to this file
+    #[arg(long, value_name = "PATH")]
+    pub log: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -367,6 +373,10 @@ pub struct RollbackArgs {
     /// Skip confirmation
     #[arg(long)]
     pub yes: bool,
+
+    /// Suppress progress output; print only the result
+    #[arg(long, short)]
+    pub quiet: bool,
 }
 
 #[derive(Args, Debug)]
@@ -816,6 +826,10 @@ pub struct DoctorArgs {
     /// Fix issues automatically
     #[arg(long)]
     pub fix: bool,
+
+    /// Exit with a non-zero status when issues are found
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[derive(Args, Debug)]

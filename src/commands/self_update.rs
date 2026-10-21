@@ -11,7 +11,6 @@ use tracing::info;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use ed25519_compact::PublicKey;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 
 const REPO_OWNER: &str = "DavoudTeimouri";
@@ -22,7 +21,7 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 // This should be set at build time from a secure source
 static RELEASE_PUBLIC_KEY_B64: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &StateManager, retry_config: &RetryConfig) -> Result<()> {
+pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Checking for self-update");
 
     let current_version = Version::parse(CURRENT_VERSION)?;
@@ -221,7 +220,7 @@ pub async fn execute(args: SelfUpdateArgs, config: &ConfigManager, _state: &Stat
     let bytes = execute_with_retry(retry_config, || {
         let download_url = download_url.to_string();
         async move {
-            let mut resp = minreq::get(download_url)
+            let resp = minreq::get(download_url)
                 .with_header("User-Agent", "ohub")
                 .send()
                 .context("Failed to download release asset")?;
@@ -547,7 +546,7 @@ fn find_published_digest(release: &serde_json::Value, asset_name: &str) -> Optio
             None => continue,
         };
 
-        let mut req = minreq::get(url).with_header("User-Agent", "ohub");
+        let req = minreq::get(url).with_header("User-Agent", "ohub");
         if let Ok(resp) = req.send() {
             if let Ok(text) = resp.as_str() {
                 if let Some(d) = digest_for(text, asset_name) {
@@ -588,7 +587,7 @@ async fn verify_signature(sig_url: &str, data: &[u8], retry_config: &RetryConfig
     let sig_b64 = execute_with_retry(retry_config, || {
         let sig_url = sig_url.to_string();
         async move {
-            let mut req = minreq::get(sig_url).with_header("User-Agent", "ohub");
+            let req = minreq::get(sig_url).with_header("User-Agent", "ohub");
             let resp = req.send().context("Failed to download signature")?;
             let sig_b64 = resp.as_str()?.trim().to_string();
             Ok(sig_b64)

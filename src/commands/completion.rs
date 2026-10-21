@@ -1,6 +1,5 @@
 use crate::cli::CompletionArgs;
 use anyhow::Result;
-use clap_complete::Shell;
 use clap::CommandFactory;
 use crate::cli::Cli;
 
