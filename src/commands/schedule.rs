@@ -22,16 +22,16 @@ fn schedule_log_path() -> PathBuf {
 /// The `schtasks` schedule and modifier for an interval in hours.
 /// Only the Windows task-scheduler path calls it.
 #[allow(dead_code)]
-fn schedule_parts(interval_hours: u64) -> Result<(&'static str, Option<u64>)> {
+fn schedule_parts(interval_hours: u64) -> Result<(&'static str, u64)> {
     match interval_hours {
         0 => Err(anyhow::anyhow!(
             "The schedule interval must be at least 1 hour"
         )),
         // /MO with /SC HOURLY accepts 1-23.
-        1..=23 => Ok(("HOURLY", Some(interval_hours))),
-        24 => Ok(("DAILY", None)),
-        // Every N days.
-        h if h % 24 == 0 && h / 24 <= 31 => Ok(("DAILY", Some(h / 24))),
+        1..=23 => Ok(("HOURLY", interval_hours)),
+        24 => Ok(("DAILY", 1)),
+        // Multiples of 24 become every N days.
+        h if h % 24 == 0 && h / 24 <= 31 => Ok(("DAILY", h / 24)),
         h => Err(anyhow::anyhow!(
             "Unsupported schedule interval of {h} hours - use 1-23 (hourly), 24 (daily), or a multiple of 24 up to 744"
         )),
@@ -50,23 +50,24 @@ fn create_task(interval_hours: u64) -> Result<()> {
         log.display()
     );
     let (schedule, modifier) = schedule_parts(interval_hours)?;
+    let modifier = modifier.to_string();
 
-    let mut args = vec![
-        "/Create".to_string(),
-        "/TN".to_string(),
-        TASK_NAME.to_string(),
-        "/TR".to_string(),
-        action,
-        "/SC".to_string(),
-        schedule.to_string(),
-        "/F".to_string(),
-    ];
-    if let Some(m) = modifier {
-        args.push("/MO".to_string());
-        args.push(m.to_string());
-    }
-
-    let output = Command::new("schtasks").args(&args).output()?;
+    // /MO is valid for both HOURLY (every n hours) and DAILY (every n days),
+    // so the argument list never changes shape.
+    let output = Command::new("schtasks")
+        .args([
+            "/Create",
+            "/TN",
+            TASK_NAME,
+            "/TR",
+            action.as_str(),
+            "/SC",
+            schedule,
+            "/MO",
+            modifier.as_str(),
+            "/F",
+        ])
+        .output()?;
     if !output.status.success() {
         anyhow::bail!(
             "Could not create the scheduled task: {}",
@@ -204,13 +205,13 @@ mod tests {
     #[test]
     fn intervals_map_to_schtasks_arguments() {
         // /MO with /SC HOURLY only accepts 1-23.
-        assert_eq!(schedule_parts(1).unwrap(), ("HOURLY", Some(1)));
-        assert_eq!(schedule_parts(23).unwrap(), ("HOURLY", Some(23)));
-        // A whole day is the default daily schedule.
-        assert_eq!(schedule_parts(24).unwrap(), ("DAILY", None));
+        assert_eq!(schedule_parts(1).unwrap(), ("HOURLY", 1));
+        assert_eq!(schedule_parts(23).unwrap(), ("HOURLY", 23));
+        // A whole day is every 1 day.
+        assert_eq!(schedule_parts(24).unwrap(), ("DAILY", 1));
         // Multiples of 24 become every N days.
-        assert_eq!(schedule_parts(48).unwrap(), ("DAILY", Some(2)));
-        assert_eq!(schedule_parts(744).unwrap(), ("DAILY", Some(31)));
+        assert_eq!(schedule_parts(48).unwrap(), ("DAILY", 2));
+        assert_eq!(schedule_parts(744).unwrap(), ("DAILY", 31));
         // Everything else is refused rather than silently rounded.
         assert!(schedule_parts(0).is_err());
         assert!(schedule_parts(25).is_err());

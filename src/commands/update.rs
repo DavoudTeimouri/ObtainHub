@@ -241,34 +241,34 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                 let latest_version = release.tag_name.clone();
                 let latest_norm = crate::core::normalize_version(&latest_version);
                 let current_norm = crate::core::normalize_version(current_version);
-                if latest_norm == current_norm && !args.force {
-                    already_current.push(repo_name.clone());
-                    reporter.say("  Already at latest version");
-                } else {
-                    if latest_norm == current_norm {
-                        // --force reinstalls the version that is already there.
-                        reporter.say(&format!("  Force reinstalling {current_version}"));
-                    } else {
-                        reporter.say(&format!("  Update available: {} -> {}", current_version, latest_version));
-                    }
-
-                    if args.dry_run {
-                        updated.push((repo_name.clone(), current_version.clone(), latest_version));
+                if latest_norm == current_norm {
+                    if !args.force {
+                        already_current.push(repo_name.clone());
+                        reporter.say("  Already at latest version");
                         continue;
                     }
+                    // --force reinstalls the version that is already there.
+                    reporter.say(&format!("  Force reinstalling {current_version}"));
+                } else {
+                    reporter.say(&format!("  Update available: {} -> {}", current_version, latest_version));
+                }
 
-                    // Perform update (reinstall with new version)
-                    // Interactive asset selection: only .exe (setup) and .msi, correct architecture
-                    let selected_asset = select_installer_asset(&release, args.quiet)?;
-                    match install_release(repo_name, &latest_version, &release, token, config, state, args.skip_deps, Some(selected_asset), args.quiet, Some(current_version.to_string())).await {
-                        Ok(_) => {
-                            updated.push((repo_name.clone(), current_version.clone(), latest_version.clone()));
-                            reporter.say(&format!("  Updated to {}", latest_version));
-                        }
-                        Err(e) => {
-                            errors.push((repo_name.clone(), e.to_string()));
-                            reporter.err(&format!("  Failed: {}", e));
-                        }
+                if args.dry_run {
+                    updated.push((repo_name.clone(), current_version.clone(), latest_version));
+                    continue;
+                }
+
+                // Perform update (reinstall with new version)
+                // Interactive asset selection: only .exe (setup) and .msi, correct architecture
+                let selected_asset = select_installer_asset(&release, args.quiet)?;
+                match install_release(repo_name, &latest_version, &release, token, config, state, args.skip_deps, Some(selected_asset), args.quiet, Some(current_version.to_string())).await {
+                    Ok(_) => {
+                        updated.push((repo_name.clone(), current_version.clone(), latest_version.clone()));
+                        reporter.say(&format!("  Updated to {}", latest_version));
+                    }
+                    Err(e) => {
+                        errors.push((repo_name.clone(), e.to_string()));
+                        reporter.err(&format!("  Failed: {}", e));
                     }
                 }
             }
