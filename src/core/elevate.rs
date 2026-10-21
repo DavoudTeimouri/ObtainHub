@@ -5,6 +5,9 @@
 //! until the child exits so callers can trust the exit code.
 
 use anyhow::Result;
+// `Result::context` is a trait method - only the Windows path uses it.
+#[cfg(windows)]
+use anyhow::Context;
 use std::path::Path;
 
 /// Resolve powershell.exe. Explicit paths first, then PATH lookup - some
