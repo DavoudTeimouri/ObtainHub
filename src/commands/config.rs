@@ -65,7 +65,7 @@ pub async fn execute(args: ConfigArgs, config: &mut ConfigManager, state: &mut S
                 .join("obtainhub")
                 .join("state.json");
             
-            fs::copy(&config_path, target.join("config.toml"))?;
+            fs::copy(config_path, target.join("config.toml"))?;
             if state_path.exists() {
                 fs::copy(&state_path, target.join("state.json"))?;
             }
@@ -179,7 +179,7 @@ fn get_config_value(config: &ConfigManager, key: &str) -> Result<Option<String>>
         "timeout_seconds" => Some(cfg.timeout_seconds.to_string()),
         "update_check_interval_hours" => Some(cfg.update_check_interval_hours.to_string()),
         "auto_cleanup" => Some(cfg.auto_cleanup.to_string()),
-        "proxy" => cfg.proxy.as_ref().map(|v| v.clone()),
+        "proxy" => cfg.proxy.clone(),
         "verify_checksums" => Some(cfg.verify_checksums.to_string()),
         _ => return Err(anyhow::anyhow!("Unknown config key: {}", key)),
     };

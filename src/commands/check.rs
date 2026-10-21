@@ -124,7 +124,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     if args.candidates {
         if !skipped.is_empty() {
             let mut sorted_skipped: Vec<&crate::core::state::InstalledRepo> = skipped.iter().collect();
-            sorted_skipped.sort_by(|a, b| a.repo.to_lowercase().cmp(&b.repo.to_lowercase()));
+            sorted_skipped.sort_by_key(|a| a.repo.to_lowercase());
 
             // ---- Vendor exclusion: let user skip known non-GitHub vendors ----
             let mut vendors: Vec<String> = Vec::new();
@@ -244,7 +244,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                             previous_install_path: None,
                                             dependencies: Vec::new(),
                                             is_dependency: false,
-                                            ..Default::default()
                                         };
                                         state.add_installed(new_repo.clone());
                                         state.save()?;
@@ -305,7 +304,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                                     previous_install_path: None,
                                                     dependencies: Vec::new(),
                                                     is_dependency: false,
-                                                    ..Default::default()
                                                 };
                                                 state.add_installed(new_repo.clone());
                                                 state.save()?;
@@ -352,7 +350,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
     if args.all && !skipped.is_empty() {
         let mut sorted_skipped: Vec<&crate::core::state::InstalledRepo> = skipped.iter().collect();
-        sorted_skipped.sort_by(|a, b| a.repo.to_lowercase().cmp(&b.repo.to_lowercase()));
+        sorted_skipped.sort_by_key(|a| a.repo.to_lowercase());
 
         println!("\nUnmanaged applications found on this system:");
         for (i, entry) in sorted_skipped.iter().enumerate() {
@@ -399,7 +397,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                 previous_install_path: None,
                                 dependencies: Vec::new(),
                                 is_dependency: false,
-                                ..Default::default()
                             };
                             state.add_installed(new_repo.clone());
                             state.save()?;
@@ -461,7 +458,6 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                         previous_install_path: None,
                                         dependencies: Vec::new(),
                                         is_dependency: false,
-                                        ..Default::default()
                                     };
                                     state.add_installed(new_repo.clone());
                                     state.save()?;
@@ -565,7 +561,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         let mut table = Table::new();
         table.set_header(vec!["Repository", "Current", "Latest"]);
         for (repo, current_ver, latest_ver) in &outdated {
-            table.add_row(vec![Cell::new(repo), Cell::new(current_ver), Cell::new(&latest_ver)]);
+            table.add_row(vec![Cell::new(repo), Cell::new(current_ver), Cell::new(latest_ver)]);
         }
         println!("{}", table);
         println!();
@@ -636,7 +632,7 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         async move {
             let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
             if let Some(token) = token {
-                req = req.with_header("Authorization", &format!("Bearer {}", token));
+                req = req.with_header("Authorization", format!("Bearer {}", token));
             }
             let resp = req.send()?;
 
@@ -705,7 +701,6 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
             dependencies: Vec::new(),
             is_dependency: false,
             uninstaller,
-            ..Default::default()
         });
     }
 
@@ -796,7 +791,7 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
 
     // 2. First word of cleaned name (e.g. "OnionHop version" -> "OnionHop")
     if let Some(first) = cleaned.split_whitespace().next() {
-        if !search_terms.iter().any(|&t| t == first) {
+        if !search_terms.contains(&first) {
             search_terms.push(first);
         }
     }
@@ -804,12 +799,12 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
     // 3. Original name with digits/dots removed (e.g. "OnionHop V3 version 3.8.6" -> "OnionHop  version ")
     let stripped: String = name.chars().filter(|c| !c.is_ascii_digit() && *c != '.').collect();
     let stripped = stripped.trim();
-    if !stripped.is_empty() && !search_terms.iter().any(|&t| t == stripped) {
+    if !stripped.is_empty() && !search_terms.contains(&stripped) {
         search_terms.push(stripped);
     }
 
     // 4. Original name (last resort)
-    if !search_terms.iter().any(|&t| t == name) {
+    if !search_terms.contains(&name) {
         search_terms.push(name);
     }
 
@@ -830,7 +825,7 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
             async move {
                 let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
                 if let Some(token) = token {
-                    req = req.with_header("Authorization", &format!("Bearer {}", token));
+                    req = req.with_header("Authorization", format!("Bearer {}", token));
                 }
                 let resp = req.send()?;
 
@@ -988,7 +983,7 @@ mod tests {
 
     #[test]
     fn partition_matches_tracked_repo() {
-        let tracked = vec![entry("BurntSushi/ripgrep")];
+        let tracked = [entry("BurntSushi/ripgrep")];
         let tracked_refs: Vec<&crate::core::state::InstalledRepo> = tracked.iter().collect();
         let all = vec![entry("ripgrep"), entry("7-Zip")];
         let (matched, skipped) = partition_git_hub_managed(&all, &tracked_refs);

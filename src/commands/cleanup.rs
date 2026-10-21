@@ -84,30 +84,28 @@ pub async fn execute(args: CleanupArgs, config: &ConfigManager, state: &mut Stat
     }
 
     // Clean up incomplete downloads (.part files)
-    if run_downloads {
-        if download_dir.exists() {
-            let part_files: Vec<_> = WalkDir::new(download_dir)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.file_type().is_file() && 
-                    e.file_name().to_string_lossy().ends_with(".part")
-                })
-                .collect();
+    if run_downloads && download_dir.exists() {
+        let part_files: Vec<_> = WalkDir::new(download_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_type().is_file() &&
+                e.file_name().to_string_lossy().ends_with(".part")
+            })
+            .collect();
 
-            for part_file in part_files {
-                let path = part_file.path();
-                if !dry_run {
-                    match fs::remove_file(path) {
-                        Ok(_) => {
-                            println!("Removed incomplete download: {}", path.display());
-                            cleaned_any = true;
-                        }
-                        Err(e) => eprintln!("Failed to remove {}: {}", path.display(), e),
+        for part_file in part_files {
+            let path = part_file.path();
+            if !dry_run {
+                match fs::remove_file(path) {
+                    Ok(_) => {
+                        println!("Removed incomplete download: {}", path.display());
+                        cleaned_any = true;
                     }
-                } else {
-                    println!("[DRY RUN] Would remove incomplete download: {}", path.display());
+                    Err(e) => eprintln!("Failed to remove {}: {}", path.display(), e),
                 }
+            } else {
+                println!("[DRY RUN] Would remove incomplete download: {}", path.display());
             }
         }
     }

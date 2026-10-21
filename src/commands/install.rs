@@ -42,13 +42,6 @@ pub struct GitHubAsset {
     pub content_type: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-struct GitHubRepoInfo {
-    full_name: String,
-    default_branch: String,
-    description: Option<String>,
-}
-
 pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &mut StateManager, _retry_config: &RetryConfig) -> Result<()> {
     info!("Installing: {}", args.repo);
     
@@ -113,7 +106,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                     return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
                 }
                 let theme = dialoguer::theme::ColorfulTheme::default();
-                let repo_names: Vec<String> = candidates.iter().map(|c| c.clone()).collect();
+                let repo_names: Vec<String> = candidates.iter().cloned().collect();
                 let choice = dialoguer::Select::with_theme(&theme)
                     .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
                     .items(&repo_names)
@@ -141,7 +134,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                     return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
                 }
                 let theme = dialoguer::theme::ColorfulTheme::default();
-                let repo_names: Vec<String> = candidates.iter().map(|c| c.clone()).collect();
+                let repo_names: Vec<String> = candidates.iter().cloned().collect();
                 let choice = dialoguer::Select::with_theme(&theme)
                     .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
                     .items(&repo_names)
@@ -249,12 +242,19 @@ pub fn select_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
     // Try to find platform-specific asset
     for asset in &release.assets {
         let name = asset.name.to_lowercase();
-        if (target_os == "windows" && (name.ends_with(".zip") || name.ends_with(".exe"))) ||
-           (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage"))) || 
-           (target_os == "macos" && (name.ends_with(".tar.gz") || name.ends_with(".dmg") || name.ends_with(".zip"))) {
-            if name.contains(target_arch) || name.contains("x86_64") || name.contains("x64") || name.contains("amd64") || name.contains("64-bit") || name.contains("64bit") || name.contains("aarch64") || name.contains("arm64") {
-                return Ok(asset.clone());
-            }
+        let os_match = (target_os == "windows" && (name.ends_with(".zip") || name.ends_with(".exe")))
+            || (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage")))
+            || (target_os == "macos" && (name.ends_with(".tar.gz") || name.ends_with(".dmg") || name.ends_with(".zip")));
+        let arch_match = name.contains(target_arch)
+            || name.contains("x86_64")
+            || name.contains("x64")
+            || name.contains("amd64")
+            || name.contains("64-bit")
+            || name.contains("64bit")
+            || name.contains("aarch64")
+            || name.contains("arm64");
+        if os_match && arch_match {
+            return Ok(asset.clone());
         }
     }
 
@@ -320,7 +320,7 @@ pub async fn fetch_published_checksum(
 async fn download_with_progress(url: &str, path: &Path, token: Option<&str>, timeout_secs: u64) -> Result<()> {
     let mut req = minreq::get(url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
+        req = req.with_header("Authorization", format!("Bearer {}", token));
     }
     
     let resp = req.with_timeout(timeout_secs).send()?;
@@ -349,7 +349,7 @@ async fn download_with_progress(url: &str, path: &Path, token: Option<&str>, tim
 async fn download_text(url: &str, token: Option<&str>) -> Result<String> {
     let mut req = minreq::get(url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {}", token));
+        req = req.with_header("Authorization", format!("Bearer {}", token));
     }
     let resp = req.send()?;
     Ok(resp.as_str()?.to_string())
@@ -552,7 +552,7 @@ async fn install_from_url(args: &InstallArgs, url: &str, config: &ConfigManager,
     fs::create_dir_all(&install_dir)?;
     
     // Extract filename from URL
-    let filename = url.split('/').last().unwrap_or("download");
+    let filename = url.split('/').next_back().unwrap_or("download");
     let asset_path = install_dir.join(filename);
     
     // Download with progress
@@ -678,10 +678,10 @@ pub async fn search_github_repos(query: &str, token: Option<&str>, config: &Conf
 
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {token}"));
+        req = req.with_header("Authorization", format!("Bearer {token}"));
     }
 
-    let resp = req.with_timeout(config.get().timeout_seconds as u64).send()?;
+    let resp = req.with_timeout(config.get().timeout_seconds).send()?;
 
     if resp.status_code == 403 {
         return Err(anyhow::anyhow!(
@@ -698,6 +698,42 @@ pub async fn search_github_repos(query: &str, token: Option<&str>, config: &Conf
         }
     }
     Ok(candidates)
+}
+
+/// Find a manifest source that matches the given repo name
+async fn find_matching_source(
+    repo: &str,
+    config: &ConfigManager,
+) -> Result<crate::core::config::ManifestSource> {
+    // First, try exact match on name or URL
+    for source in &config.get().manifest_sources {
+        if !source.enabled {
+            continue;
+        }
+        if source.name == repo || source.url.contains(repo) {
+            return Ok(source.clone());
+        }
+        // Check if package_name matches
+        if let Some(pkg) = &source.package_name {
+            if pkg == repo {
+                return Ok(source.clone());
+            }
+        }
+    }
+
+    // Default to GitHub source
+    Ok(crate::core::config::ManifestSource {
+        name: "github".to_string(),
+        url: "https://api.github.com".to_string(),
+        enabled: true,
+        headers: HashMap::new(),
+        src_type: "github".to_string(),
+        hooks: HashMap::new(),
+        priority: None,
+        auto_sync: false,
+        registry_type: "github".to_string(),
+        package_name: Some(repo.to_string()),
+    })
 }
 
 #[cfg(test)]
@@ -760,38 +796,3 @@ mod tests {
     }
 }
 
-/// Find a manifest source that matches the given repo name
-async fn find_matching_source(
-    repo: &str,
-    config: &ConfigManager,
-) -> Result<crate::core::config::ManifestSource> {
-    // First, try exact match on name or URL
-    for source in &config.get().manifest_sources {
-        if !source.enabled {
-            continue;
-        }
-        if source.name == repo || source.url.contains(repo) {
-            return Ok(source.clone());
-        }
-        // Check if package_name matches
-        if let Some(pkg) = &source.package_name {
-            if pkg == repo {
-                return Ok(source.clone());
-            }
-        }
-    }
-    
-    // Default to GitHub source
-    Ok(crate::core::config::ManifestSource {
-        name: "github".to_string(),
-        url: "https://api.github.com".to_string(),
-        enabled: true,
-        headers: HashMap::new(),
-        src_type: "github".to_string(),
-        hooks: HashMap::new(),
-        priority: None,
-        auto_sync: false,
-        registry_type: "github".to_string(),
-        package_name: Some(repo.to_string()),
-    })
-}

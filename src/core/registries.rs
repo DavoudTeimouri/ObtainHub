@@ -112,7 +112,7 @@ impl GitHubRegistry {
         let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
         let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
         if let Some(token) = token {
-            req = req.with_header("Authorization", &format!("Bearer {}", token));
+            req = req.with_header("Authorization", format!("Bearer {}", token));
         }
         let resp: RegistryRelease = req.send()?.json()?;
         Ok(resp)
@@ -128,7 +128,7 @@ impl GitHubRegistry {
         let url = format!("https://api.github.com/repos/{}/releases/tags/{}", repo, tag);
         let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
         if let Some(token) = token {
-            req = req.with_header("Authorization", &format!("Bearer {}", token));
+            req = req.with_header("Authorization", format!("Bearer {}", token));
         }
         let resp: RegistryRelease = req.send()?.json()?;
         Ok(resp)
@@ -140,12 +140,16 @@ impl GitHubRegistry {
         
         for asset in &release.assets {
             let name = asset.name.to_lowercase();
-            if (target_os == "windows" && (name.ends_with(".zip") || name.ends_with(".exe"))) ||
-               (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage"))) ||
-               (target_os == "macos" && (name.ends_with(".tar.gz") || name.ends_with(".dmg") || name.ends_with(".zip"))) {
-                if name.contains(target_arch) || name.contains("x86_64") || name.contains("amd64") || name.contains("aarch64") || name.contains("arm64") {
-                    return Ok(asset.clone());
-                }
+            let os_match = (target_os == "windows" && (name.ends_with(".zip") || name.ends_with(".exe")))
+                || (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage")))
+                || (target_os == "macos" && (name.ends_with(".tar.gz") || name.ends_with(".dmg") || name.ends_with(".zip")));
+            let arch_match = name.contains(target_arch)
+                || name.contains("x86_64")
+                || name.contains("amd64")
+                || name.contains("aarch64")
+                || name.contains("arm64");
+            if os_match && arch_match {
+                return Ok(asset.clone());
             }
         }
         
@@ -174,11 +178,11 @@ impl GitHubRegistry {
     ) -> Result<()> {
         let mut req = minreq::get(&asset.browser_download_url).with_header("User-Agent", "ObtainHub/3.0.0");
         if let Some(token) = token {
-            req = req.with_header("Authorization", &format!("Bearer {}", token));
+            req = req.with_header("Authorization", format!("Bearer {}", token));
         }
         
         let response = req
-            .with_timeout(config.get().timeout_seconds as u64)
+            .with_timeout(config.get().timeout_seconds)
             .send()
             .context("Failed to send request")?;
         
@@ -350,7 +354,7 @@ impl CratesIoRegistry {
         let req = minreq::get(&asset.browser_download_url).with_header("User-Agent", "ObtainHub/3.0.0");
         
         let response = req
-            .with_timeout(config.get().timeout_seconds as u64)
+            .with_timeout(config.get().timeout_seconds)
             .send()
             .context("Failed to send request")?;
         
@@ -402,7 +406,7 @@ impl GenericHttpRegistry {
         let url = format!("{}/packages/{}/latest", self.base_url, package_name);
         let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
         if let Some(token) = token {
-            req = req.with_header("Authorization", &format!("Bearer {}", token));
+            req = req.with_header("Authorization", format!("Bearer {}", token));
         }
         let resp: RegistryRelease = req.send()?.json()?;
         Ok(resp)
@@ -417,7 +421,7 @@ impl GenericHttpRegistry {
         let url = format!("{}/packages/{}/versions/{}", self.base_url, package_name, tag);
         let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
         if let Some(token) = token {
-            req = req.with_header("Authorization", &format!("Bearer {}", token));
+            req = req.with_header("Authorization", format!("Bearer {}", token));
         }
         let resp: RegistryRelease = req.send()?.json()?;
         Ok(resp)
@@ -437,11 +441,11 @@ impl GenericHttpRegistry {
     ) -> Result<()> {
         let mut req = minreq::get(&asset.browser_download_url).with_header("User-Agent", "ObtainHub/3.0.0");
         if let Some(token) = token {
-            req = req.with_header("Authorization", &format!("Bearer {}", token));
+            req = req.with_header("Authorization", format!("Bearer {}", token));
         }
         
         let response = req
-            .with_timeout(config.get().timeout_seconds as u64)
+            .with_timeout(config.get().timeout_seconds)
             .send()
             .context("Failed to send request")?;
         

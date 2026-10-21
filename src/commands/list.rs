@@ -36,8 +36,8 @@ pub async fn execute(args: ListArgs, _config: &ConfigManager, state: &StateManag
             table.add_row(vec![
                 Cell::new(&repo.repo),
                 Cell::new(&repo.version),
-                Cell::new(&repo.install_path.display().to_string()),
-                Cell::new(&repo.installed_at.format("%Y-%m-%d").to_string()),
+                Cell::new(repo.install_path.display().to_string()),
+                Cell::new(repo.installed_at.format("%Y-%m-%d").to_string()),
             ]);
         }
         

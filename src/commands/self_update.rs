@@ -109,7 +109,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
                     Ok(releases_array[0].clone())
                 }
             } else if !(resp.status_code >= 200 && resp.status_code < 300) {
-                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+                Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code))
             } else {
                 let body = resp.as_bytes().to_vec();
                 if body.is_empty() {
@@ -319,7 +319,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
                 msi_path
             );
             let status = std::process::Command::new(&powershell)
-                .args(&["-Command", powershell_cmd.as_str()])
+                .args(["-Command", powershell_cmd.as_str()])
                 .status()
                 .context("Failed to launch elevated MSI installer")?;
             if !status.success() {
@@ -335,7 +335,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
                 exe_path
             );
             let status = std::process::Command::new(&powershell)
-                .args(&["-Command", powershell_cmd.as_str()])
+                .args(["-Command", powershell_cmd.as_str()])
                 .status()
                 .context("Failed to launch elevated EXE installer")?;
             if !status.success() {

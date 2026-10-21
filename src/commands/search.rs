@@ -51,10 +51,10 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
 
     let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
     if let Some(token) = token {
-        req = req.with_header("Authorization", &format!("Bearer {token}"));
+        req = req.with_header("Authorization", format!("Bearer {token}"));
     }
 
-    let resp = req.with_timeout(config.get().timeout_seconds as u64).send()?;
+    let resp = req.with_timeout(config.get().timeout_seconds).send()?;
 
     if resp.status_code == 403 {
         return Err(anyhow::anyhow!(
@@ -90,7 +90,7 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
             let repo_names: Vec<String> = results.iter().map(|r| r.full_name.clone()).collect();
 
             let selections = MultiSelect::with_theme(&theme)
-                .with_prompt(format!("Select repositories from search results (Space to select, Enter to confirm)"))
+                .with_prompt("Select repositories from search results (Space to select, Enter to confirm)")
                 .items(&repo_names)
                 .interact_opt()?;
 

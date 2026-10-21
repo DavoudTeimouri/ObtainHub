@@ -100,7 +100,7 @@ pub async fn execute(args: BackupArgs, config: &ConfigManager, state: &StateMana
     for ra in &repo_archives {
         let temp_archive = std::env::temp_dir().join(&ra.archive_name);
         if temp_archive.exists() {
-            zip.start_file(&format!("repos/{}", ra.archive_name), options)?;
+            zip.start_file(format!("repos/{}", ra.archive_name), options)?;
             let mut file = fs::File::open(&temp_archive)?;
             std::io::copy(&mut file, &mut zip)?;
             fs::remove_file(&temp_archive)?;

@@ -41,7 +41,7 @@ pub async fn execute(args: ShimArgs, config: &ConfigManager, state: &StateManage
         ShimAction::Add { app, name } => {
                     // Find the app in state
                     let app_entry = state.get_installed(&app)
-                        .or_else(|| state.list_installed().into_iter().find(|a| a.repo.split('/').last().unwrap_or("") == app));
+                        .or_else(|| state.list_installed().into_iter().find(|a| a.repo.split('/').next_back().unwrap_or("") == app));
 
                     let Some(app_entry) = app_entry else {
                         println!("App not found in ohub state: {}", app);
@@ -60,7 +60,7 @@ pub async fn execute(args: ShimArgs, config: &ConfigManager, state: &StateManage
                         return Ok(());
                     };
 
-                    let shim_name = name.unwrap_or_else(|| app_entry.repo.split('/').last().unwrap_or("").to_string());
+                    let shim_name = name.unwrap_or_else(|| app_entry.repo.split('/').next_back().unwrap_or("").to_string());
                     fs::create_dir_all(shim_dir)?;
 
                     // Create .bat shim on Windows, .sh on Unix
@@ -87,7 +87,7 @@ pub async fn execute(args: ShimArgs, config: &ConfigManager, state: &StateManage
                 ShimAction::Remove { app } => {
                     // Try finding by app name in state
                     if let Some(app_entry) = state.get_installed(&app) {
-                        let shim_name = app_entry.repo.split('/').last().unwrap_or("");
+                        let shim_name = app_entry.repo.split('/').next_back().unwrap_or("");
                         let bat_path = shim_dir.join(format!("{}.bat", shim_name));
                         if bat_path.exists() {
                             fs::remove_file(&bat_path)?;

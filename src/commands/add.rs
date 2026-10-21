@@ -11,7 +11,7 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
     info!("Adding {} to management (type: {:?})", args.repo, args.add_type);
 
     let install_dir = config.get().install_dir.clone();
-    let repo_name = args.name.unwrap_or_else(|| args.repo.split('/').last().unwrap_or(&args.repo).to_string());
+    let repo_name = args.name.unwrap_or_else(|| args.repo.split('/').next_back().unwrap_or(&args.repo).to_string());
     let install_path = args.path.map(PathBuf::from).unwrap_or_else(|| install_dir.join(&repo_name));
 
     // Handle different add types
@@ -26,7 +26,7 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
                     let url = format!("https://api.github.com/repos/{}", repo);
                     let mut req = minreq::get(&url).with_header("User-Agent", "ohub");
                     if let Some(token) = token {
-                        req = req.with_header("Authorization", &format!("Bearer {}", token));
+                        req = req.with_header("Authorization", format!("Bearer {}", token));
                     }
                     let resp = req.send()?;
 

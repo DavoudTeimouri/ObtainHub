@@ -269,11 +269,13 @@ mod tests {
 
     #[test]
     fn sanitize_clamps_zero_values() {
-        let mut c = Config::default();
-        c.parallel_downloads = 0;
-        c.timeout_seconds = 0;
-        c.update_check_interval_hours = 0;
-        c.schedule.interval_hours = 0;
+        let mut c = Config {
+            parallel_downloads: 0,
+            timeout_seconds: 0,
+            update_check_interval_hours: 0,
+            schedule: ScheduleConfig { interval_hours: 0, ..Default::default() },
+            ..Default::default()
+        };
 
         ConfigManager::sanitize(&mut c);
 
@@ -285,9 +287,11 @@ mod tests {
 
     #[test]
     fn sanitize_leaves_valid_values_alone() {
-        let mut c = Config::default();
-        c.parallel_downloads = 8;
-        c.timeout_seconds = 90;
+        let mut c = Config {
+            parallel_downloads: 8,
+            timeout_seconds: 90,
+            ..Default::default()
+        };
 
         ConfigManager::sanitize(&mut c);
 
@@ -297,11 +301,13 @@ mod tests {
 
     #[test]
     fn sanitize_clamps_max_values() {
-        let mut c = Config::default();
-        c.parallel_downloads = 100;
-        c.timeout_seconds = 10000;
-        c.update_check_interval_hours = 20000;
-        c.schedule.interval_hours = 20000;
+        let mut c = Config {
+            parallel_downloads: 100,
+            timeout_seconds: 10000,
+            update_check_interval_hours: 20000,
+            schedule: ScheduleConfig { interval_hours: 20000, ..Default::default() },
+            ..Default::default()
+        };
 
         ConfigManager::sanitize(&mut c);
 
@@ -313,10 +319,12 @@ mod tests {
 
     #[test]
     fn sanitize_makes_paths_absolute() {
-        let mut c = Config::default();
-        c.install_dir = PathBuf::from("relative/install");
-        c.download_dir = PathBuf::from("relative/download");
-        c.shim_dir = PathBuf::from("relative/shim");
+        let mut c = Config {
+            install_dir: PathBuf::from("relative/install"),
+            download_dir: PathBuf::from("relative/download"),
+            shim_dir: PathBuf::from("relative/shim"),
+            ..Default::default()
+        };
 
         ConfigManager::sanitize(&mut c);
 

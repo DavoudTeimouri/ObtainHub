@@ -55,13 +55,12 @@ jobs:
           cargo test 2>&1 | tee test.log
         shell: bash
 
-      # Warn-only: this lint gate was added in v3.0.51-rc1 and has never run
-      # green over the pre-existing codebase, so it must not gate a release.
-      # `cargo check --all-targets` and `cargo test` above stay hard gates.
+      # Strict again: the lint backlog is cleared, so clippy is a real gate
+      # now. `cargo check --all-targets` and `cargo test` above stay hard gates.
       - name: Clippy
         run: |
           set -o pipefail
-          cargo clippy --all-targets 2>&1 | tee clippy.log
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
         shell: bash
 
       # Job logs are admin-only in the public API, so a failure is otherwise

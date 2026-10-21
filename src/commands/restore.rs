@@ -76,7 +76,7 @@ pub async fn execute(args: RestoreArgs, _config: &ConfigManager, state: &mut Sta
         let mut archive2 = ZipArchive::new(backup_file2)?;
         
         let install_root = dirs::data_dir()
-            .unwrap_or_else(|| std::env::temp_dir())
+            .unwrap_or_else(std::env::temp_dir)
             .join("obtainhub")
             .join("installed");
         

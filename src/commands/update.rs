@@ -96,7 +96,7 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         async move {
             let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
             if let Some(token) = token {
-                req = req.with_header("Authorization", &format!("Bearer {token}"));
+                req = req.with_header("Authorization", format!("Bearer {token}"));
             }
             let resp = req.send()?;
 
@@ -138,7 +138,7 @@ pub(crate) async fn fetch_release_by_tag(
         async move {
             let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
             if let Some(token) = token {
-                req = req.with_header("Authorization", &format!("Bearer {token}"));
+                req = req.with_header("Authorization", format!("Bearer {token}"));
             }
             let resp = req.send()?;
 
@@ -399,6 +399,9 @@ pub(crate) fn select_installer_asset(release: &GitHubRelease, quiet: bool) -> Re
     }
 }
 
+// ponytail: 11 parameters is over the 7-argument comfort line. Bundling them
+// into an options struct is the upgrade path once a third caller appears.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn install_release(
     repo: &str,
     version: &str,
@@ -496,7 +499,7 @@ pub(crate) async fn install_release(
         // Download with progress bar
         let mut req = minreq::get(download_url).with_header("User-Agent", "ObtainHub/3.0.0");
         if let Some(token) = token {
-            req = req.with_header("Authorization", &format!("Bearer {token}"));
+            req = req.with_header("Authorization", format!("Bearer {token}"));
         }
 
         let response = req.send()?;
@@ -605,12 +608,11 @@ pub(crate) async fn install_release(
         updated_at: Some(chrono::Utc::now()),
         checksum: None,
         metadata: serde_json::Value::Null,
-        previous_version: previous_version,
+        previous_version,
         previous_install_path: None,
         dependencies: Vec::new(),
         is_dependency: false,
         uninstaller: detected_uninstaller,
-        ..Default::default()
     };
     state.add_installed(new_repo.clone());
     state.save()?;
@@ -642,7 +644,7 @@ fn cleanup_download_folder(download_dir: &std::path::Path) -> Result<()> {
             .split(|c: char| c.is_ascii_digit() || c == '.' || c == '-')
             .next()
             .unwrap_or(&file_name)
-            .trim_end_matches(|c: char| c == '_' || c == ' ')
+            .trim_end_matches(|c: char| matches!(c, '_' | ' '))
             .to_string();
         groups.entry(base).or_default().push(path);
     }

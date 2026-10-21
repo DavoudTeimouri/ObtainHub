@@ -113,7 +113,7 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         async move {
             let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
             if let Some(token) = token {
-                req = req.with_header("Authorization", &format!("Bearer {}", token));
+                req = req.with_header("Authorization", format!("Bearer {}", token));
             }
             let resp = req.send()?;
 
@@ -166,7 +166,7 @@ async fn run_app<B: ratatui::backend::Backend>(
     app.load_apps(config, state, &retry_config_clone).await;
 
     while !app.should_quit {
-        terminal.draw(|f| ui::<B>(f, &mut app))?;
+        terminal.draw(|f| ui(f, &mut app))?;
 
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
@@ -558,13 +558,11 @@ async fn handle_key_event(
             }
         }
         KeyCode::Char(c) => {
-            // Only handle char input when filtering (filter_text started with /)
-            // or if we're in filter mode
-            if !app.filter_text.is_empty() || c == '/' {
-                if c != '/' {
-                    app.filter_text.push(c);
-                    app.apply_filter();
-                }
+            // Only handle char input when filtering. '/' is the filter toggle
+            // and is handled by its own arm above.
+            if c != '/' && !app.filter_text.is_empty() {
+                app.filter_text.push(c);
+                app.apply_filter();
             }
         }
         _ => {}
@@ -572,7 +570,7 @@ async fn handle_key_event(
     Ok(())
 }
 
-fn ui<B: ratatui::backend::Backend>(f: &mut ratatui::Frame, app: &mut App) {
+fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -753,7 +751,7 @@ fn ui<B: ratatui::backend::Backend>(f: &mut ratatui::Frame, app: &mut App) {
         f.render_widget(help, if !app.filter_text.is_empty() { chunks[2] } else { chunks[1] });
     } else {
         // App list (filtered)
-        let visible_indices: Vec<usize> = app.filtered_indices.iter().copied().collect();
+        let visible_indices: Vec<usize> = app.filtered_indices.to_vec();
         let items: Vec<ListItem> = visible_indices
             .iter()
             .map(|&idx| {

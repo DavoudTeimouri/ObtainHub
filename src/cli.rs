@@ -466,6 +466,10 @@ pub struct SourceArgs {
 }
 
 #[derive(Subcommand, Debug)]
+// ponytail: `Add` carries more fields than the other variants, so the enum is
+// 232 bytes. Boxing it would cost an allocation on every `ohub source add`;
+// splitting the variants into separate subcommands is the upgrade path.
+#[allow(clippy::large_enum_variant)]
 pub enum SourceAction {
     /// List configured sources
     List,

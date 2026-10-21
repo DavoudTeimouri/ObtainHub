@@ -30,7 +30,7 @@ pub fn find_powershell() -> String {
 #[cfg(windows)]
 pub fn run_elevated(ps_body: &str) -> Result<()> {
     let status = std::process::Command::new(find_powershell())
-        .args(&["-Command", ps_body])
+        .args(["-Command", ps_body])
         .status()
         .context("Failed to launch elevated program")?;
     if !status.success() {
