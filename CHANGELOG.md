@@ -4,8 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [v3.0.52-rc1] - 2026-10-21
 ### Fixed
-- Windows build broke: `src/core/elevate.rs` called `Result::context()` — a trait method — inside a `#[cfg(windows)]` block but only imported `anyhow::Result`. Linux never compiled that block, so the error stayed hidden until CI built on `windows-latest` (E0599: no method named `context` found for `Result` in `std::process::ExitStatus`). `anyhow::Context` is now imported under `#[cfg(windows)]`.
-- The v3.0.50-rc1 and v3.0.51-rc1 releases never published an installer: the Windows CI build failed on the same error, so no MSI or NSIS EXE was attached. Use v3.0.52-rc1 instead.
+- Windows build broke in two places, both hidden from Linux because the code sits behind `#[cfg(windows)]`:
+  - `src/core/elevate.rs` called `Result::context()` — a trait method — but only imported `anyhow::Result` (E0599). `anyhow::Context` is now imported under `#[cfg(windows)]`.
+  - `src/commands/check.rs` moved `entry.display_name` out of the registry entry and then borrowed the whole entry again for `entry.install_dir()` (E0382: borrow of partially moved value). The install path and uninstaller are now read before the move.
+- The v3.0.50-rc1 and v3.0.51-rc1 releases never published an installer: the Windows CI build failed on the same errors, so no MSI or NSIS EXE was attached. Use v3.0.52-rc1 instead.
 
 ## [v3.0.51-rc1] - 2026-10-13
 ### Added

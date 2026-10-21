@@ -670,6 +670,14 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
     let mut seen = HashSet::new();
 
     for entry in crate::core::scan_uninstall_entries() {
+        // Read the whole entry before moving `display_name` out of it.
+        let install_path = entry.install_dir().unwrap_or_default();
+        let uninstaller = if entry.uninstall_string.is_empty() {
+            None
+        } else {
+            Some(entry.uninstall_string.clone())
+        };
+
         let name = entry.display_name;
         if name.contains("ObtainHub") {
             continue;
@@ -687,7 +695,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
             } else {
                 entry.display_version.clone()
             },
-            install_path: entry.install_dir().unwrap_or_default(),
+            install_path,
             installed_at: chrono::Utc::now(),
             updated_at: None,
             checksum: None,
@@ -696,11 +704,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
             previous_install_path: None,
             dependencies: Vec::new(),
             is_dependency: false,
-            uninstaller: if entry.uninstall_string.is_empty() {
-                None
-            } else {
-                Some(entry.uninstall_string.clone())
-            },
+            uninstaller,
             ..Default::default()
         });
     }
