@@ -2,8 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.0.59-rc1] - 2026-10-21
-Finishes the three half-built commands.
+## [v3.0.60-rc1] - 2026-10-21
+Finishes the three half-built commands. Same content as the withdrawn
+v3.0.59-rc1, which failed the clippy gate on a collapsed-if lint and was
+never published.
 
 ### Added
 - `ohub group install|update|check|uninstall` now run the real command for every member of the group, one at a time, instead of printing "Bulk X integration pending". The group config model was already there - only the loop was missing.
@@ -11,6 +13,7 @@ Finishes the three half-built commands.
 - `ohub check --log <PATH>` appends a run report (outdated apps, errors, summary) to a file. The report is written even when the console output is suppressed, so a scheduled run leaves a record.
 
 ### Fixed
+- The clippy gate (`-D warnings`) fired on a nested `if` in the check summary, which blocked the whole release. The `if` is collapsed and the `--force` branch in `update` is flattened the same way.
 - `ohub update --force` was passed down to the installer and then ignored, so it did nothing. It now reinstalls the app even when it is already on the latest version, and says so (`Force reinstalling 3.9`).
 - The dead `force` parameter of `install_release` was removed rather than left as a no-op.
 
