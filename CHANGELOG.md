@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.65-rc1] - 2026-10-21
+Caches the GitHub candidate search.
+
+### Added
+- `ohub check --candidates` searches GitHub up to four times per installed app, on every run. The result is now cached for a day (`%APPDATA%\obtainhub\candidate-cache.json`), so a second run costs no API calls and does not eat the rate limit.
+
 ## [v3.0.64-rc1] - 2026-10-21
 The three plan items that were declared but never acted on: dependencies, the bandwidth limit, and the checksum for other registries.
 

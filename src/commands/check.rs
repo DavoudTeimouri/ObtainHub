@@ -891,6 +891,12 @@ async fn check_self_update(
 }
 
 async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Vec<String>> {
+    // The answer barely changes between runs, and the search is up to four
+    // API calls per app - a cached entry saves the lot.
+    if let Some(cached) = crate::core::cache::get(name) {
+        return Ok(cached);
+    }
+
     let cleaned = clean_app_name(name);
 
     // Build multiple search term candidates to maximize hit rate
@@ -985,6 +991,10 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
             }
         }
     }
+
+    // Keep the result for a day. A cache that cannot be written is not a
+    // reason to fail the search.
+    let _ = crate::core::cache::put(name, &all_candidates);
 
     Ok(all_candidates)
 }

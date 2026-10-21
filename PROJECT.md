@@ -422,7 +422,7 @@ rejection.
 | 7 | Consistent arch selection | **Done** — `install` / `update` / `rollback` honour `--arch` |
 | 8 | Config validation | **Done** — `sanitize()` + 2 tests |
 | 9 | TUI discoverability | Closed — header already lists keybindings |
-| 10 | Search pagination | Open |
+| 10 | Search pagination | **Done** — `ohub search --page` / `--per-page` |
 | 11 | Self-update signature verification | **Partial** — SHA256SUMS gate done; signing still open |
 | 12 | Fish completion | Closed — already supported |
 | 13 | Dependency tracking | **Done** — `--dependencies` installs them first and marks them |
@@ -440,6 +440,7 @@ Discovered by inspection, not in the plan:
 - MSI ↔ NSIS mutual refusal is dead code both directions — section 4.
 - NSIS uninstall leaves `HKLM\Software\ObtainHub` orphaned — section 5.
 - `keyring` was declared but unwired; the token was plaintext. **Fixed** — the token now lives in the OS credential store, see section 9. Setting it via a CLI arg still leaks to shell history.
+- The candidate search in `check --candidates` ran on every invocation, up to four API calls per installed app. **Fixed** — the result is cached for a day in `candidate-cache.json` (`src/core/cache.rs`).
 - `verify_checksums` could never match → **Fixed** in `install.rs`, see section 9.
 - `update` downloads and extracts with no checksum check at all. → **Fixed**,
   `update.rs` verifies the published SHA256 and refuses a mismatch, see
