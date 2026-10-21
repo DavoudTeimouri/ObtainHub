@@ -256,54 +256,6 @@ fn status_for(current_version: &str, latest_version: &str) -> String {
     }
 }
 
-/// The release notes (body) of a repo's latest release.
-async fn fetch_release_notes(
-    repo: &str,
-    token: Option<&str>,
-    retry_config: &RetryConfig,
-) -> Result<Option<String>> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-    let token_clone = token.map(|s| s.to_string());
-
-    let result = execute_with_retry(
-        retry_config,
-        || {
-            let url = url.clone();
-            let token = token_clone.clone();
-            async move {
-                let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-                if let Some(token) = token {
-                    req = req.with_header("Authorization", format!("Bearer {}", token));
-                }
-                let resp = req.send()?;
-
-                if resp.status_code == 404 {
-                    return Ok(None);
-                }
-                if resp.status_code == 403 {
-                    return Err(anyhow::anyhow!(
-                        "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
-                    ));
-                }
-                if !(resp.status_code >= 200 && resp.status_code < 300) {
-                    return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
-                }
-
-                let body = resp.as_bytes().to_vec();
-                if body.is_empty() {
-                    return Ok(None);
-                }
-                let json: serde_json::Value = serde_json::from_slice(&body)?;
-                Ok(json["body"].as_str().map(|s| s.to_string()))
-            }
-        },
-        "fetch_release_notes",
-    )
-    .await?;
-
-    Ok(result)
-}
-
 /// Put a string on the Windows clipboard.
 fn copy_to_clipboard(text: &str) -> Result<()> {
     #[cfg(windows)]
@@ -911,7 +863,7 @@ async fn handle_key_event(
             app.status_message = format!("Loading release notes for {}...", app_info.name);
             let token = config.get().github_token.as_deref();
             let retry = app.retry_config.clone();
-            match fetch_release_notes(&app_info.repo, token, &retry).await {
+            match crate::core::registries::fetch_release_notes(&app_info.repo, token, &retry).await {
                 Ok(Some(notes)) => {
                     app.notes = Some((app_info.repo.clone(), notes));
                     app.show_details = true;

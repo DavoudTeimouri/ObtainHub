@@ -486,3 +486,97 @@ pub fn create_registry(source: &crate::core::config::ManifestSource) -> Registry
         _ => Registry::Generic(GenericHttpRegistry::new(source.url.clone())),
     }
 }
+
+/// The release notes (body) of a repo's latest GitHub release.
+///
+/// Shared by the TUI and by the `check --notes` / `update --notes` flags. The
+/// TUI used to own a private copy, which left the CLI flags with nothing to
+/// call - they were accepted and did nothing.
+pub async fn fetch_release_notes(
+    repo: &str,
+    token: Option<&str>,
+    retry_config: &crate::utils::retry::RetryConfig,
+) -> Result<Option<String>> {
+    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+    let token_clone = token.map(|s| s.to_string());
+
+    let result = crate::utils::retry::execute_with_retry(
+        retry_config,
+        || {
+            let url = url.clone();
+            let token = token_clone.clone();
+            async move {
+                let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+                if let Some(token) = token {
+                    req = req.with_header("Authorization", format!("Bearer {}", token));
+                }
+                let resp = req.send()?;
+
+                if resp.status_code == 404 {
+                    return Ok(None);
+                }
+                if resp.status_code == 403 {
+                    return Err(anyhow::anyhow!(
+                        "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                    ));
+                }
+                if !(resp.status_code >= 200 && resp.status_code < 300) {
+                    return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+                }
+
+                let body = resp.as_bytes().to_vec();
+                if body.is_empty() {
+                    return Ok(None);
+                }
+                let json: serde_json::Value = serde_json::from_slice(&body)?;
+                Ok(json["body"].as_str().map(|s| s.to_string()))
+            }
+        },
+        "fetch_release_notes",
+    )
+    .await?;
+
+    Ok(result)
+}
+
+/// The release notes of a repo's latest release, as a printable block.
+///
+/// One place for the format, so `check --notes` and `update --notes` print
+/// the same thing.
+pub async fn release_notes_block(
+    repo: &str,
+    token: Option<&str>,
+    retry_config: &crate::utils::retry::RetryConfig,
+) -> String {
+    format_release_notes(repo, fetch_release_notes(repo, token, retry_config).await)
+}
+
+/// Format a release-notes result for display.
+pub fn format_release_notes(repo: &str, notes: Result<Option<String>>) -> String {
+    match notes {
+        Ok(Some(notes)) => format!("--- {repo} release notes ---\n{notes}\n"),
+        Ok(None) => format!("{repo}: no release notes\n"),
+        Err(e) => format!("{repo}: could not fetch the release notes: {e}\n"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_notes_cover_present_absent_and_failed() {
+        assert_eq!(
+            format_release_notes("a/b", Ok(Some("what changed".to_string()))),
+            "--- a/b release notes ---\nwhat changed\n"
+        );
+        assert_eq!(
+            format_release_notes("a/b", Ok(None)),
+            "a/b: no release notes\n"
+        );
+        assert_eq!(
+            format_release_notes("a/b", Err(anyhow::anyhow!("rate limited"))),
+            "a/b: could not fetch the release notes: rate limited\n"
+        );
+    }
+}

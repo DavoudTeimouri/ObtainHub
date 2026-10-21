@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.61-rc1] - 2026-10-21
+Wires up the flags that were accepted but did nothing, and makes the backup
+restore do its job.
+
+### Fixed
+- `ohub check --notes` and `ohub update --notes` were accepted and did nothing - `fetch_release_notes` lived in the TUI, so the CLI path had nothing to call. The helper moved to `core::registries` and is now shared: `check --notes` prints the release notes of every outdated repo, `update --notes` prints them for every repo that was updated.
+- `ohub restore --config` printed "Config restore not yet implemented (requires ConfigManager save)". `ConfigManager::save()` has existed all along - the saved config is now written back.
+
+### Changed
+- README: `--notes` and the `backup` / `restore` commands are documented.
+- PROJECT.md: three stale claims corrected - `update.rs` does verify the published SHA256, and `ohub rollback` is implemented.
+
 ## [v3.0.60-rc1] - 2026-10-21
 Finishes the three half-built commands. Same content as the withdrawn
 v3.0.59-rc1, which failed the clippy gate on a collapsed-if lint and was

@@ -292,6 +292,14 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
         }
     }
 
+    // Release notes for every repo that was just updated.
+    if args.notes && !updated.is_empty() {
+        for (repo, _, _) in &updated {
+            let block = crate::core::registries::release_notes_block(repo, token, retry_config).await;
+            reporter.say(block.trim_end());
+        }
+    }
+
     if !already_current.is_empty() {
         reporter.say(&format!("  Already current ({})", already_current.len()));
         for repo in &already_current {

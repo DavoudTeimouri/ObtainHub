@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
         Commands::Tui(args) => commands::tui::execute(args, &config_manager, &mut state_manager).await,
         Commands::Config(args) => commands::config::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Backup(args) => commands::backup::execute(args, &config_manager, &state_manager).await,
-        Commands::Restore(args) => commands::restore::execute(args, &config_manager, &mut state_manager).await,
+        Commands::Restore(args) => commands::restore::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::SelfUpdate(args) => commands::self_update::execute(args, &config_manager, &state_manager, &retry_config).await,
         Commands::Rollback(args) => commands::rollback::execute(args, &config_manager, &mut state_manager, &retry_config).await,
         Commands::Completion(args) => commands::completion::execute(args).await,

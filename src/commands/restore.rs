@@ -13,7 +13,6 @@ struct BackupData {
     #[allow(dead_code)]
     version: u32,
     created_at: chrono::DateTime<chrono::Utc>,
-    #[allow(dead_code)]
     config: crate::core::config::Config,
     installed_repos: Vec<crate::core::state::InstalledRepo>,
     repo_archives: Vec<RepoArchive>,
@@ -28,7 +27,7 @@ struct RepoArchive {
     sha256: String,
 }
 
-pub async fn execute(args: RestoreArgs, _config: &ConfigManager, state: &mut StateManager) -> Result<()> {
+pub async fn execute(args: RestoreArgs, config: &mut ConfigManager, state: &mut StateManager) -> Result<()> {
     info!("Restoring from backup: {}", args.file);
     
     let backup_path = Path::new(&args.file);
@@ -53,9 +52,9 @@ pub async fn execute(args: RestoreArgs, _config: &ConfigManager, state: &mut Sta
     
     // Restore config if requested
     if args.config {
-        // Save config to config manager
-        // This would require ConfigManager to have a save method
-        println!("Config restore not yet implemented (requires ConfigManager save)");
+        *config.get_mut() = backup_data.config.clone();
+        config.save()?;
+        println!("Config restored");
     }
     
     // Restore state (installed repos)

@@ -588,10 +588,13 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         } else {
             let mut table = Table::new();
             table.set_header(vec!["Repository", "Current", "Latest"]);
-            for (repo, current_ver, latest_ver) in outdated {
-                table.add_row(vec![Cell::new(&repo), Cell::new(&current_ver), Cell::new(&latest_ver)]);
+            for (repo, current_ver, latest_ver) in &outdated {
+                table.add_row(vec![Cell::new(repo), Cell::new(current_ver), Cell::new(latest_ver)]);
             }
             println!("{}", table);
+            if args.notes {
+                print_release_notes(&outdated, token, &retry_config).await;
+            }
         }
         return Ok(());
     }
@@ -606,6 +609,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         }
         println!("{}", table);
         println!();
+        if args.notes {
+            print_release_notes(&outdated, token, &retry_config).await;
+        }
     }
 
     if !current.is_empty() {
@@ -709,6 +715,18 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     }
 
     Ok(())
+}
+
+/// Print the release notes of the given repos - the `check --notes` output.
+async fn print_release_notes(
+    repos: &[(String, String, String)],
+    token: Option<&str>,
+    retry_config: &RetryConfig,
+) {
+    for (repo, _, _) in repos {
+        let block = crate::core::registries::release_notes_block(repo, token, retry_config).await;
+        print!("{block}");
+    }
 }
 
 async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Option<GitHubRelease>> {

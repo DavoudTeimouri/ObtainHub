@@ -378,11 +378,12 @@ rejection.
 - Deliberate shortcuts get a `ponytail:` comment naming the ceiling and the
   upgrade path. Examples: `update.rs` checksum note, `completion.rs` EPIPE note,
   `update.rs::install_release` (11 parameters), `cli.rs::SourceAction` (232-byte enum).
-- Non-trivial logic ships one assert-based test. Current suite: 36 tests —
+- Non-trivial logic ships one assert-based test. Current suite: 37 tests —
   10 in `src/core/winreg.rs`, 8 in `src/commands/tui.rs`, 6 in
   `src/commands/install.rs`, 4 in `src/core/config.rs`, 3 in
   `src/commands/self_update.rs`, 3 in `src/commands/check.rs`, 1 each in
-  `src/utils/retry.rs` and `src/commands/schedule.rs`.
+  `src/utils/retry.rs`, `src/core/registries.rs` and
+  `src/commands/schedule.rs`.
 - Build artifacts are gitignored: `ObtainHub.msi`,
   `installer/ObtainHub-Setup.exe`, `installer/ohub.exe`.
 
@@ -395,7 +396,7 @@ rejection.
 | # | Item | State |
 |---|---|---|
 | 1 | `update.rs` hardcoded install dir | **Done** — uses `config.install_dir` |
-| 2 | Checksum verification | **Done** in `install.rs`; `update.rs` still unverified |
+| 2 | Checksum verification | **Done** in `install.rs` and `update.rs` |
 | 3 | `uninstall --purge` stub | **Done** — drops state metadata + group entries |
 | 4 | Shared download/extract module | Open — deliberately, see rule 10 |
 | 5 | Error messages | Partial — EPIPE panic in `completion` fixed |
@@ -408,7 +409,7 @@ rejection.
 | 12 | Fish completion | Closed — already supported |
 | 13 | Dependency tracking | Open |
 | 14 | Non-GitHub registries | Open |
-| 15 | Update rollback | Open |
+| 15 | Update rollback | **Done** — `ohub rollback` re-downloads and reinstalls the previous version |
 | 16 | Bandwidth throttling | Open |
 | 17 | README examples | **Done** — added, plus fixed config path |
 | 18 | CONTRIBUTING.md | **Done** |
@@ -422,7 +423,9 @@ Discovered by inspection, not in the plan:
 - NSIS uninstall leaves `HKLM\Software\ObtainHub` orphaned — section 5.
 - `keyring` declared but unwired; token is plaintext. Echoing and backups fixed, see section 9. Setting via CLI arg still leaks to shell history.
 - `verify_checksums` could never match → **Fixed** in `install.rs`, see section 9.
-- `update` downloads and extracts with no checksum check at all.
+- `update` downloads and extracts with no checksum check at all. → **Fixed**,
+  `update.rs` verifies the published SHA256 and refuses a mismatch, see
+  section 9.
 - `zip`/`tar` extraction does not guard against path traversal. → **Fixed** in
   `install.rs` + `update.rs`, see section 9.
 
