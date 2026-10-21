@@ -1,5 +1,5 @@
 use crate::core::{ConfigManager, StateManager, registries::create_registry};
-use crate::cli::InstallArgs;
+use crate::cli::{Arch, InstallArgs};
 use crate::utils::retry::RetryConfig;
 use anyhow::Result;
 use minreq;
@@ -44,7 +44,11 @@ pub struct GitHubAsset {
 
 pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &mut StateManager, _retry_config: &RetryConfig) -> Result<()> {
     info!("Installing: {}", args.repo);
-    
+
+    if let Some(timeout) = args.timeout {
+        crate::core::registries::set_request_timeout(timeout);
+    }
+
     // Handle --file (local file install)
     if let Some(file_path) = &args.file {
         return install_from_file(&args, file_path, config, state_manager).await;
@@ -151,7 +155,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     info!("Installing {}@{}", args.repo, version);
     
     // Find appropriate asset
-    let asset = registry.select_asset(&release)?;
+    let asset = registry.select_asset(&release, &args.arch)?;
     debug!("Selected asset: {} ({} bytes)", asset.name, asset.size);
     
     // Create install directory
@@ -234,26 +238,17 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
 }
 
 /// Select the best asset for the current platform
-pub fn select_asset(release: &GitHubRelease) -> Result<GitHubAsset> {
+pub fn select_asset(release: &GitHubRelease, arch: &Arch) -> Result<GitHubAsset> {
     // Priority: platform-specific asset > generic archive > zipball
     let target_os = std::env::consts::OS;
-    let target_arch = std::env::consts::ARCH;
-    
+
     // Try to find platform-specific asset
     for asset in &release.assets {
         let name = asset.name.to_lowercase();
         let os_match = (target_os == "windows" && (name.ends_with(".zip") || name.ends_with(".exe")))
             || (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage")))
             || (target_os == "macos" && (name.ends_with(".tar.gz") || name.ends_with(".dmg") || name.ends_with(".zip")));
-        let arch_match = name.contains(target_arch)
-            || name.contains("x86_64")
-            || name.contains("x64")
-            || name.contains("amd64")
-            || name.contains("64-bit")
-            || name.contains("64bit")
-            || name.contains("aarch64")
-            || name.contains("arm64");
-        if os_match && arch_match {
+        if os_match && crate::core::registries::matches_arch(&name, arch) {
             return Ok(asset.clone());
         }
     }
@@ -317,13 +312,13 @@ pub async fn fetch_published_checksum(
     Ok(None)
 }
 
-async fn download_with_progress(url: &str, path: &Path, token: Option<&str>, timeout_secs: u64) -> Result<()> {
-    let mut req = minreq::get(url).with_header("User-Agent", "ObtainHub/3.0.0");
+async fn download_with_progress(url: &str, path: &Path, token: Option<&str>) -> Result<()> {
+    let mut req = crate::core::registries::github_get(url);
     if let Some(token) = token {
         req = req.with_header("Authorization", format!("Bearer {}", token));
     }
-    
-    let resp = req.with_timeout(timeout_secs).send()?;
+
+    let resp = req.send()?;
     let total_size = resp.headers.get("content-length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
     
     let pb = ProgressBar::new(total_size);
@@ -347,7 +342,7 @@ async fn download_with_progress(url: &str, path: &Path, token: Option<&str>, tim
 }
 
 async fn download_text(url: &str, token: Option<&str>) -> Result<String> {
-    let mut req = minreq::get(url).with_header("User-Agent", "ObtainHub/3.0.0");
+    let mut req = crate::core::registries::github_get(url);
     if let Some(token) = token {
         req = req.with_header("Authorization", format!("Bearer {}", token));
     }
@@ -556,7 +551,7 @@ async fn install_from_url(args: &InstallArgs, url: &str, config: &ConfigManager,
     let asset_path = install_dir.join(filename);
     
     // Download with progress
-    download_with_progress(url, &asset_path, token, config.get().timeout_seconds).await?;
+    download_with_progress(url, &asset_path, token).await?;
     
     // Verify checksum if enabled
     if config.get().verify_checksums {

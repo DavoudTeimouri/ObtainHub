@@ -2,7 +2,6 @@ use crate::core::{ConfigManager, StateManager};
 use crate::cli::{AddArgs, AddType, Arch, InstallArgs, RemoveArgs, TuiArgs, UpdateArgs};
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
-use minreq;
 use ratatui;
 use ratatui::{
     backend::CrosstermBackend,
@@ -21,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 use tracing::info;
 
-pub async fn execute(args: TuiArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
+pub async fn execute(args: TuiArgs, config: &mut ConfigManager, state: &mut StateManager) -> Result<()> {
     info!("Starting TUI");
 
     if args.check_deps {
@@ -213,7 +212,7 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         let url = url.clone();
         let token = token_clone.clone();
         async move {
-            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            let mut req = crate::core::registries::github_get(&url);
             if let Some(token) = token {
                 req = req.with_header("Authorization", format!("Bearer {}", token));
             }
@@ -289,7 +288,7 @@ fn copy_to_clipboard(text: &str) -> Result<()> {
 async fn run_pending(
     pending: Pending,
     app: &mut App,
-    config: &ConfigManager,
+    config: &mut ConfigManager,
     state: &mut StateManager,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<()> {
@@ -310,6 +309,7 @@ async fn run_pending(
                     dry_run: false,
                     force: false,
                     skip_deps: false,
+                    timeout: None,
                     arch: crate::cli::Arch::Auto,
                     // The TUI already asked for confirmation, so the command
                     // must not prompt again.
@@ -364,7 +364,7 @@ async fn run_pending(
 
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    config: &ConfigManager,
+    config: &mut ConfigManager,
     state: &mut StateManager,
 ) -> Result<()> {
     let mut app = App {
@@ -519,7 +519,7 @@ impl App {
 async fn handle_search_input(
     key: KeyCode,
     app: &mut App,
-    config: &ConfigManager,
+    config: &mut ConfigManager,
 ) -> Result<()> {
     match key {
         KeyCode::Esc => {
@@ -566,7 +566,7 @@ async fn handle_search_input(
 async fn handle_search_results(
     key: KeyCode,
     app: &mut App,
-    config: &ConfigManager,
+    config: &mut ConfigManager,
     state: &mut StateManager,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<()> {
@@ -634,6 +634,7 @@ async fn handle_search_results(
                 force: false,
                 download_only: false,
                 skip_deps: false,
+                timeout: None,
                 arch: Arch::Auto,
                 yes: true,
                 reset: false,
@@ -664,7 +665,7 @@ async fn handle_search_results(
 async fn handle_key_event(
     key: KeyCode,
     app: &mut App,
-    config: &ConfigManager,
+    config: &mut ConfigManager,
     state: &mut StateManager,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<()> {

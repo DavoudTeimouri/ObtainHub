@@ -147,6 +147,7 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
                             force: false,
                             download_only: false,
                             skip_deps: false,
+                            timeout: None,
                             arch: crate::cli::Arch::Auto,
                             yes: false,
                             reset: false,

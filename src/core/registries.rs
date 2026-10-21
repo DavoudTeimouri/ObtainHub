@@ -1,7 +1,68 @@
 use crate::core::ConfigManager;
+use crate::cli::Arch;
 use anyhow::{Context, Result};
 use minreq;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+/// The HTTP timeout for this run, in seconds.
+///
+/// `ohub <command> --timeout N` sets it; every request reads it from here, so
+/// the flag reaches all of them without threading a parameter through every
+/// signature. Set once from the config at start-up, overridden by the flag.
+static REQUEST_TIMEOUT: AtomicU64 = AtomicU64::new(30);
+
+/// Set the request timeout for this run. The last call wins.
+pub fn set_request_timeout(seconds: u64) {
+    REQUEST_TIMEOUT.store(seconds, Ordering::Relaxed);
+}
+
+/// The request timeout for this run.
+pub fn request_timeout() -> Duration {
+    Duration::from_secs(REQUEST_TIMEOUT.load(Ordering::Relaxed))
+}
+
+/// A GitHub API GET with this run's timeout already applied.
+pub fn github_get(url: &str) -> minreq::Request {
+    minreq::get(url)
+        .with_timeout(request_timeout().as_secs())
+        .with_header("User-Agent", "ObtainHub/3.0.0")
+}
+
+/// The asset-name tokens that identify an architecture.
+///
+/// `Auto` follows the machine the binary runs on. The list is deliberately
+/// generous - release assets are named by many different projects.
+pub fn arch_tokens(arch: &Arch) -> &'static [&'static str] {
+    match arch {
+        Arch::Auto => match std::env::consts::ARCH {
+            "aarch64" => &["aarch64", "arm64"],
+            "x86" => &["i686", "i386", "32-bit", "32bit"],
+            _ => &["x86_64", "x64", "amd64", "64-bit", "64bit", "win64", "win-x64"],
+        },
+        Arch::X64 => &["x86_64", "x64", "amd64", "64-bit", "64bit", "win64", "win-x64"],
+        Arch::Arm64 => &["aarch64", "arm64"],
+        Arch::X86 => &["i686", "i386", "32-bit", "32bit", "x86"],
+    }
+}
+
+/// Whether an asset name belongs to the requested architecture.
+pub fn matches_arch(asset_name: &str, arch: &Arch) -> bool {
+    let name = asset_name.to_lowercase();
+    if matches!(arch, Arch::X86) {
+        // "x86" is a substring of "x86_64" - a 64-bit name is not a 32-bit one.
+        if name.contains("x86_64")
+            || name.contains("x64")
+            || name.contains("amd64")
+            || name.contains("64-bit")
+            || name.contains("64bit")
+        {
+            return false;
+        }
+    }
+    arch_tokens(arch).iter().any(|t| name.contains(t))
+}
 
 /// Registry release information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,11 +126,11 @@ impl Registry {
         }
     }
     
-    pub fn select_asset(&self, release: &RegistryRelease) -> Result<RegistryAsset> {
+    pub fn select_asset(&self, release: &RegistryRelease, arch: &Arch) -> Result<RegistryAsset> {
         match self {
-            Registry::GitHub(r) => r.select_asset(release),
-            Registry::CratesIo(r) => r.select_asset(release),
-            Registry::Generic(r) => r.select_asset(release),
+            Registry::GitHub(r) => r.select_asset(release, arch),
+            Registry::CratesIo(r) => r.select_asset(release, arch),
+            Registry::Generic(r) => r.select_asset(release, arch),
         }
     }
     
@@ -110,7 +171,7 @@ impl GitHubRegistry {
     ) -> Result<RegistryRelease> {
         let repo = Self::get_repo_from_package(package_name);
         let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-        let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let mut req = github_get(&url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {}", token));
         }
@@ -126,7 +187,7 @@ impl GitHubRegistry {
     ) -> Result<RegistryRelease> {
         let repo = Self::get_repo_from_package(package_name);
         let url = format!("https://api.github.com/repos/{}/releases/tags/{}", repo, tag);
-        let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let mut req = github_get(&url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {}", token));
         }
@@ -134,21 +195,15 @@ impl GitHubRegistry {
         Ok(resp)
     }
     
-    pub fn select_asset(&self, release: &RegistryRelease) -> Result<RegistryAsset> {
+    pub fn select_asset(&self, release: &RegistryRelease, arch: &Arch) -> Result<RegistryAsset> {
         let target_os = std::env::consts::OS;
-        let target_arch = std::env::consts::ARCH;
-        
+
         for asset in &release.assets {
             let name = asset.name.to_lowercase();
             let os_match = (target_os == "windows" && (name.ends_with(".zip") || name.ends_with(".exe")))
                 || (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage")))
                 || (target_os == "macos" && (name.ends_with(".tar.gz") || name.ends_with(".dmg") || name.ends_with(".zip")));
-            let arch_match = name.contains(target_arch)
-                || name.contains("x86_64")
-                || name.contains("amd64")
-                || name.contains("aarch64")
-                || name.contains("arm64");
-            if os_match && arch_match {
+            if os_match && matches_arch(&name, arch) {
                 return Ok(asset.clone());
             }
         }
@@ -174,15 +229,14 @@ impl GitHubRegistry {
         asset: &RegistryAsset,
         dest: &std::path::Path,
         token: Option<&str>,
-        config: &ConfigManager,
+        _config: &ConfigManager,
     ) -> Result<()> {
-        let mut req = minreq::get(&asset.browser_download_url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let mut req = github_get(&asset.browser_download_url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {}", token));
         }
         
         let response = req
-            .with_timeout(config.get().timeout_seconds)
             .send()
             .context("Failed to send request")?;
         
@@ -230,8 +284,7 @@ impl CratesIoRegistry {
         _token: Option<&str>,
     ) -> Result<RegistryRelease> {
         let url = format!("https://crates.io/api/v1/crates/{}", package_name);
-        let resp = minreq::get(&url)
-            .with_header("User-Agent", "ObtainHub/3.0.0")
+        let resp = github_get(&url)
             .send()?;
         
         #[derive(Deserialize)]
@@ -294,8 +347,7 @@ impl CratesIoRegistry {
     ) -> Result<RegistryRelease> {
         let version = tag.trim_start_matches('v');
         let url = format!("https://crates.io/api/v1/crates/{}/{}", package_name, version);
-        let resp = minreq::get(&url)
-            .with_header("User-Agent", "ObtainHub/3.0.0")
+        let resp = github_get(&url)
             .send()?;
         
         #[derive(Deserialize)]
@@ -339,7 +391,7 @@ impl CratesIoRegistry {
         })
     }
     
-    pub fn select_asset(&self, release: &RegistryRelease) -> Result<RegistryAsset> {
+    pub fn select_asset(&self, release: &RegistryRelease, _arch: &Arch) -> Result<RegistryAsset> {
         release.assets.first().cloned()
             .ok_or_else(|| anyhow::anyhow!("No assets available"))
     }
@@ -349,12 +401,11 @@ impl CratesIoRegistry {
         asset: &RegistryAsset,
         dest: &std::path::Path,
         _token: Option<&str>,
-        config: &ConfigManager,
+        _config: &ConfigManager,
     ) -> Result<()> {
-        let req = minreq::get(&asset.browser_download_url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let req = github_get(&asset.browser_download_url);
         
         let response = req
-            .with_timeout(config.get().timeout_seconds)
             .send()
             .context("Failed to send request")?;
         
@@ -404,7 +455,7 @@ impl GenericHttpRegistry {
         token: Option<&str>,
     ) -> Result<RegistryRelease> {
         let url = format!("{}/packages/{}/latest", self.base_url, package_name);
-        let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let mut req = github_get(&url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {}", token));
         }
@@ -419,7 +470,7 @@ impl GenericHttpRegistry {
         token: Option<&str>,
     ) -> Result<RegistryRelease> {
         let url = format!("{}/packages/{}/versions/{}", self.base_url, package_name, tag);
-        let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let mut req = github_get(&url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {}", token));
         }
@@ -427,7 +478,7 @@ impl GenericHttpRegistry {
         Ok(resp)
     }
     
-    pub fn select_asset(&self, release: &RegistryRelease) -> Result<RegistryAsset> {
+    pub fn select_asset(&self, release: &RegistryRelease, _arch: &Arch) -> Result<RegistryAsset> {
         release.assets.first().cloned()
             .ok_or_else(|| anyhow::anyhow!("No assets available"))
     }
@@ -437,15 +488,14 @@ impl GenericHttpRegistry {
         asset: &RegistryAsset,
         dest: &std::path::Path,
         token: Option<&str>,
-        config: &ConfigManager,
+        _config: &ConfigManager,
     ) -> Result<()> {
-        let mut req = minreq::get(&asset.browser_download_url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let mut req = github_get(&asset.browser_download_url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {}", token));
         }
         
         let response = req
-            .with_timeout(config.get().timeout_seconds)
             .send()
             .context("Failed to send request")?;
         
@@ -506,7 +556,7 @@ pub async fn fetch_release_notes(
             let url = url.clone();
             let token = token_clone.clone();
             async move {
-                let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+                let mut req = github_get(&url);
                 if let Some(token) = token {
                     req = req.with_header("Authorization", format!("Bearer {}", token));
                 }
@@ -578,5 +628,19 @@ mod tests {
             format_release_notes("a/b", Err(anyhow::anyhow!("rate limited"))),
             "a/b: could not fetch the release notes: rate limited\n"
         );
+    }
+
+    #[test]
+    fn arch_matching_separates_32_and_64_bit_names() {
+        // "x86" is a substring of "x86_64", so a 64-bit name must not match x86.
+        assert!(matches_arch("app-x86_64.zip", &Arch::X64));
+        assert!(!matches_arch("app-x86_64.zip", &Arch::X86));
+        assert!(matches_arch("app-x64.zip", &Arch::X64));
+        assert!(!matches_arch("app-x64.zip", &Arch::X86));
+        assert!(matches_arch("app-i686.zip", &Arch::X86));
+        assert!(!matches_arch("app-i686.zip", &Arch::X64));
+        assert!(matches_arch("app-arm64.zip", &Arch::Arm64));
+        assert!(!matches_arch("app-arm64.zip", &Arch::X64));
+        assert!(matches_arch("app-win64.zip", &Arch::X64));
     }
 }

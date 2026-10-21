@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.62-rc1] - 2026-10-21
+Wires up three more flags that were accepted but did nothing, and fixes an
+architecture bug in the asset selection.
+
+### Fixed
+- `--arch` was ignored by `install`, `update` and `rollback`: the asset was picked by the machine's architecture, not the one you asked for. It is honoured now, and `rollback` gained the flag it was missing. The old matcher also accepted an arm64 asset on an x64 machine - that cannot happen any more.
+- `ohub check --timeout N` was accepted and did nothing. The timeout is now one setting for the whole run: every GitHub call uses it, and the value is validated (10-300 seconds).
+- `ohub add --add-type zip` printed "not yet implemented". It extracts the archive into the managed tree and tracks it.
+- `ohub add --as-source` printed that it "would need config manager mutable access". The source is registered now.
+
+### Added
+- `--timeout` on `install` and `update` (the `check` flag existed and did nothing).
+- `--arch` on `rollback`.
+
 ## [v3.0.61-rc1] - 2026-10-21
 Wires up the flags that were accepted but did nothing, and makes the backup
 restore do its job.

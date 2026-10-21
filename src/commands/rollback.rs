@@ -98,7 +98,7 @@ pub async fn execute(
     };
 
     // Pick the installer asset for that release.
-    let asset = crate::commands::update::select_installer_asset(&release, args.quiet)?;
+    let asset = crate::commands::update::select_installer_asset(&release, &args.arch, args.quiet)?;
 
     println!("Reinstalling {} {}...", args.repo, prev_version);
 
@@ -111,10 +111,10 @@ pub async fn execute(
         token,
         config,
         state,
-        true,
         Some(asset),
         args.quiet,
         Some(entry.version.clone()),
+        &args.arch,
     )
     .await?;
 

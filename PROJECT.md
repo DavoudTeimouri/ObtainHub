@@ -400,8 +400,8 @@ rejection.
 | 3 | `uninstall --purge` stub | **Done** — drops state metadata + group entries |
 | 4 | Shared download/extract module | Open — deliberately, see rule 10 |
 | 5 | Error messages | Partial — EPIPE panic in `completion` fixed |
-| 6 | Configurable API timeout | Open — timeout is config-only, no CLI override |
-| 7 | Consistent arch selection | Open |
+| 6 | Configurable API timeout | **Done** — `--timeout` on check / install / update; one setting for the whole run |
+| 7 | Consistent arch selection | **Done** — `install` / `update` / `rollback` honour `--arch` |
 | 8 | Config validation | **Done** — `sanitize()` + 2 tests |
 | 9 | TUI discoverability | Closed — header already lists keybindings |
 | 10 | Search pagination | Open |

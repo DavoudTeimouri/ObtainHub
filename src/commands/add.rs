@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use tracing::info;
 use walkdir::WalkDir;
 
-pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
+pub async fn execute(args: AddArgs, config: &mut ConfigManager, state: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Adding {} to management (type: {:?})", args.repo, args.add_type);
 
     let install_dir = config.get().install_dir.clone();
@@ -34,7 +34,7 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
                 let token = token.map(|s| s.to_string());
                 async move {
                     let url = format!("https://api.github.com/repos/{}", repo);
-                    let mut req = minreq::get(&url).with_header("User-Agent", "ohub");
+                    let mut req = crate::core::registries::github_get(&url);
                     if let Some(token) = token {
                         req = req.with_header("Authorization", format!("Bearer {}", token));
                     }
@@ -90,13 +90,69 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
             println!("Added {} to management at {}", args.repo, install_path.display());
             println!("Run 'ohub install {}' to download and install the repository", args.repo);
             
-            // Also register as source if requested
+            // Also register the repo as a manifest source if requested
             if args.as_source {
-                println!("Note: --as-source flag noted. Source registration would need config manager mutable access.");
+                let src = crate::core::config::ManifestSource {
+                    name: repo_name.clone(),
+                    url: args.repo.clone(),
+                    enabled: true,
+                    headers: std::collections::HashMap::new(),
+                    src_type: "github".to_string(),
+                    hooks: std::collections::HashMap::new(),
+                    priority: None,
+                    auto_sync: false,
+                    registry_type: "github".to_string(),
+                    package_name: Some(args.repo.clone()),
+                };
+                config.get_mut().manifest_sources.push(src);
+                config.save()?;
+                println!("Registered '{}' as a manifest source", repo_name);
             }
         }
         AddType::Zip => {
-            println!("ZIP archive mode: not yet implemented. Use 'ohub install' with --file for zip installs.");
+            // A local archive: extract it into the managed tree and track it.
+            let archive = PathBuf::from(&args.repo);
+            if !archive.exists() {
+                anyhow::bail!("Archive '{}' does not exist.", args.repo);
+            }
+            let dest = args
+                .location
+                .clone()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| install_dir.join("portable").join(&repo_name));
+            if dest.exists() {
+                anyhow::bail!(
+                    "Destination {} already exists - remove it or pick another --location.",
+                    dest.display()
+                );
+            }
+            let bytes = fs::read(&archive)?;
+            let file_name = archive
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            crate::core::assets::extract_archive(&file_name, &bytes, &dest)?;
+            println!("Extracted {} to {}", archive.display(), dest.display());
+
+            let repo = crate::core::state::InstalledRepo {
+                repo: args.repo.clone(),
+                version: "local".to_string(),
+                install_path: dest.clone(),
+                installed_at: chrono::Utc::now(),
+                updated_at: None,
+                checksum: None,
+                metadata: serde_json::Value::Null,
+                previous_version: None,
+                previous_install_path: None,
+                dependencies: Vec::new(),
+                is_dependency: false,
+                ..Default::default()
+            };
+
+            state.add_installed(repo);
+            state.save()?;
+
+            println!("Added {} to management at {}", args.repo, dest.display());
         }
         AddType::Folder => {
             let folder_path = PathBuf::from(&args.repo);

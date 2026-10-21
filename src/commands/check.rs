@@ -2,7 +2,6 @@ use crate::core::{ConfigManager, StateManager};
 use crate::cli::CheckArgs;
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
-use minreq;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
@@ -72,6 +71,10 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
     let token = config.get().github_token.as_deref();
     let retry_config = RetryConfig::from_config(config);
+
+    if let Some(timeout) = args.timeout {
+        crate::core::registries::set_request_timeout(timeout);
+    }
 
     let theme = ColorfulTheme::default();
 
@@ -698,6 +701,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                 dry_run: false,
                 force: false,
                 skip_deps: false,
+                timeout: None,
                 arch: args.arch,
                 yes: args.yes,
                 reset: false,
@@ -737,7 +741,7 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         let url = url.clone();
         let token = token_clone.clone();
         async move {
-            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            let mut req = crate::core::registries::github_get(&url);
             if let Some(token) = token {
                 req = req.with_header("Authorization", format!("Bearer {}", token));
             }
@@ -930,7 +934,7 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
             let url = url.clone();
             let token = token_clone.clone();
             async move {
-                let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+                let mut req = crate::core::registries::github_get(&url);
                 if let Some(token) = token {
                     req = req.with_header("Authorization", format!("Bearer {}", token));
                 }

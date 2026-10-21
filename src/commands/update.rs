@@ -1,8 +1,7 @@
 use crate::core::{ConfigManager, StateManager, run_installer};
-use crate::cli::UpdateArgs;
+use crate::cli::{Arch, UpdateArgs};
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
-use minreq;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use tracing::info;
@@ -94,7 +93,7 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
         let url = url.clone();
         let token = token_clone.clone();
         async move {
-            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            let mut req = crate::core::registries::github_get(&url);
             if let Some(token) = token {
                 req = req.with_header("Authorization", format!("Bearer {token}"));
             }
@@ -136,7 +135,7 @@ pub(crate) async fn fetch_release_by_tag(
         let url = url.clone();
         let token = token_clone.clone();
         async move {
-            let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+            let mut req = crate::core::registries::github_get(&url);
             if let Some(token) = token {
                 req = req.with_header("Authorization", format!("Bearer {token}"));
             }
@@ -171,6 +170,10 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     let install_dir = config.get().install_dir.clone();
     let download_dir = config.get().download_dir.clone();
     let mut reporter = Reporter::new(args.quiet, args.log.as_deref());
+
+    if let Some(timeout) = args.timeout {
+        crate::core::registries::set_request_timeout(timeout);
+    }
     reporter.say(&format!("Install directory: {}", install_dir.display()));
     reporter.say(&format!("Download directory: {}", download_dir.display()));
 
@@ -220,7 +223,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                             if crate::core::normalize_version(&dep_latest) != crate::core::normalize_version(&dep_entry.version) {
                                 reporter.say(&format!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest));
                                 if !args.dry_run {
-                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, true, None, args.quiet, Some(dep_entry.version.clone())).await {
+                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, None, args.quiet, Some(dep_entry.version.clone()), &args.arch).await {
                                         Ok(_) => reporter.say(&format!("    Updated dependency {} to {}", dep, dep_latest)),
                                         Err(e) => reporter.err(&format!("    Failed to update dependency {}: {}", dep, e)),
                                     }
@@ -260,8 +263,8 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
 
                 // Perform update (reinstall with new version)
                 // Interactive asset selection: only .exe (setup) and .msi, correct architecture
-                let selected_asset = select_installer_asset(&release, args.quiet)?;
-                match install_release(repo_name, &latest_version, &release, token, config, state, args.skip_deps, Some(selected_asset), args.quiet, Some(current_version.to_string())).await {
+                let selected_asset = select_installer_asset(&release, &args.arch, args.quiet)?;
+                match install_release(repo_name, &latest_version, &release, token, config, state, Some(selected_asset), args.quiet, Some(current_version.to_string()), &args.arch).await {
                     Ok(_) => {
                         updated.push((repo_name.clone(), current_version.clone(), latest_version.clone()));
                         reporter.say(&format!("  Updated to {}", latest_version));
@@ -323,28 +326,22 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
 }
 
 /// Interactive asset selection for update: only .exe (setup) and .msi files,
-/// matched to current architecture. MSI preferred over EXE. Other file types
-/// (.zip, .tar.gz, etc.) are hidden. Falls back to all installers if no
+/// matched to the requested architecture. MSI preferred over EXE. Other file
+/// types (.zip, .tar.gz, etc.) are hidden. Falls back to all installers if no
 /// arch-specific match is found (asset naming varies across repos).
-pub(crate) fn select_installer_asset(release: &GitHubRelease, quiet: bool) -> Result<GitHubAsset> {
-    let target_arch = std::env::consts::ARCH;
-
-    // Filter: only .exe and .msi files, matching current architecture
-    let arch_tokens = [
-        target_arch,
-        "x86_64", "x64", "amd64", "64-bit", "64bit",
-        "aarch64", "arm64",
-        "win64", "windows", "win-x64",
-    ];
-
+pub(crate) fn select_installer_asset(
+    release: &GitHubRelease,
+    arch: &Arch,
+    quiet: bool,
+) -> Result<GitHubAsset> {
+    // Filter: only .exe and .msi files, matching the requested architecture
     let arch_matching: Vec<&GitHubAsset> = release
         .assets
         .iter()
         .filter(|a| {
             let name = a.name.to_lowercase();
             let is_installer = name.ends_with(".exe") || name.ends_with(".msi");
-            let arch_match = arch_tokens.iter().any(|t| name.contains(t));
-            is_installer && arch_match
+            is_installer && crate::core::registries::matches_arch(&name, arch)
         })
         .collect();
 
@@ -393,8 +390,8 @@ pub(crate) fn select_installer_asset(release: &GitHubRelease, quiet: bool) -> Re
 
     let choice = Select::with_theme(&theme)
         .with_prompt(format!(
-            "Select installer asset for {} (arch: {})",
-            release.tag_name, target_arch
+            "Select installer asset for {} (arch: {:?})",
+            release.tag_name, arch
         ))
         .items(&items)
         .default(0)
@@ -416,10 +413,10 @@ pub(crate) async fn install_release(
     token: Option<&str>,
     config: &ConfigManager,
     state: &mut StateManager,
-    _skip_deps: bool,
     selected_asset: Option<GitHubAsset>,
     quiet: bool,
     previous_version: Option<String>,
+    arch: &Arch,
 ) -> Result<()> {
     // Use interactively selected asset, or fall back to auto-select
     let asset = match selected_asset {
@@ -440,7 +437,7 @@ pub(crate) async fn install_release(
                 zipball_url: release.zipball_url.clone(),
                 tarball_url: release.tarball_url.clone(),
             };
-            let selected = install_select_asset(install_rel)?;
+            let selected = install_select_asset(install_rel, arch)?;
             GitHubAsset {
                 name: selected.name,
                 browser_download_url: selected.browser_download_url,
@@ -503,7 +500,7 @@ pub(crate) async fn install_release(
         }
 
         // Download with progress bar
-        let mut req = minreq::get(download_url).with_header("User-Agent", "ObtainHub/3.0.0");
+        let mut req = crate::core::registries::github_get(download_url);
         if let Some(token) = token {
             req = req.with_header("Authorization", format!("Bearer {token}"));
         }

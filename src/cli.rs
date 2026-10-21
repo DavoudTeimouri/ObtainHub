@@ -189,7 +189,11 @@ pub struct InstallArgs {
     /// Skip dependency checks
     #[arg(long)]
     pub skip_deps: bool,
-    
+
+    /// HTTP request timeout in seconds (10-300)
+    #[arg(long, value_parser = clap::value_parser!(u64).range(10..=300))]
+    pub timeout: Option<u64>,
+
     /// Architecture to select
     #[arg(long, value_enum, default_value = "auto")]
     pub arch: Arch,
@@ -274,8 +278,8 @@ pub struct CheckArgs {
     #[arg(long, value_enum, default_value = "auto")]
     pub arch: Arch,
     
-    /// Per-repo search timeout in seconds (10-300)
-    #[arg(long)]
+    /// HTTP request timeout in seconds (10-300)
+    #[arg(long, value_parser = clap::value_parser!(u64).range(10..=300))]
     pub timeout: Option<u64>,
     
     /// Show release notes for available updates
@@ -339,6 +343,10 @@ pub struct UpdateArgs {
     #[arg(long)]
     pub skip_deps: bool,
 
+    /// HTTP request timeout in seconds (10-300)
+    #[arg(long, value_parser = clap::value_parser!(u64).range(10..=300))]
+    pub timeout: Option<u64>,
+
     /// Architecture to select
     #[arg(long, value_enum, default_value = "auto")]
     pub arch: Arch,
@@ -381,6 +389,10 @@ pub struct RollbackArgs {
     /// Suppress progress output; print only the result
     #[arg(long, short)]
     pub quiet: bool,
+
+    /// Architecture to select
+    #[arg(long, value_enum, default_value = "auto")]
+    pub arch: Arch,
 }
 
 #[derive(Args, Debug)]
