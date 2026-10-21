@@ -959,3 +959,119 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         .style(Style::default().fg(Color::Gray));
     f.render_widget(footer, chunks[3]);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+
+    fn app_info(name: &str, current: &str, latest: &str, status: &str) -> AppInfo {
+        AppInfo {
+            name: name.to_string(),
+            current_version: current.to_string(),
+            latest_version: latest.to_string(),
+            status: status.to_string(),
+            repo: format!("owner/{name}"),
+            install_path: format!("C:\\Program Files\\{name}"),
+        }
+    }
+
+    fn app_with(apps: Vec<AppInfo>) -> App {
+        let mut app = App {
+            apps: Vec::new(),
+            table_state: TableState::default(),
+            selected_index: None,
+            should_quit: false,
+            status_message: String::new(),
+            show_help: false,
+            filter_text: String::new(),
+            filtered_indices: Vec::new(),
+            show_details: false,
+            mode: Mode::List,
+            search_input: String::new(),
+            search_results: Vec::new(),
+            search_state: ListState::default(),
+            retry_config: RetryConfig::default(),
+            clear_screen: false,
+        };
+        app.apps = apps;
+        app.apply_filter();
+        app
+    }
+
+    /// Render the TUI into a buffer and return the text it painted.
+    fn render(app: &mut App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf.get(x, y).symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn every_app_gets_its_own_row() {
+        let mut app = app_with(vec![
+            app_info("OnionHop", "3.8.6", "3.9", "Update"),
+            app_info("AetherGUI", "0.7.0", "0.7.0", "Current"),
+            app_info("Obsidian", "1.5.0", "1.5.0", "Current"),
+        ]);
+        let text = render(&mut app, 100, 20);
+        // Each app must be on its own line, not squeezed together.
+        for name in ["OnionHop", "AetherGUI", "Obsidian"] {
+            assert!(text.contains(name), "{} missing from the table", name);
+        }
+        let onion_line = text.lines().find(|l| l.contains("OnionHop")).unwrap();
+        let aether_line = text.lines().find(|l| l.contains("AetherGUI")).unwrap();
+        assert_ne!(onion_line, aether_line, "apps share a row");
+    }
+
+    #[test]
+    fn apps_needing_an_update_are_marked() {
+        let mut app = app_with(vec![
+            app_info("OnionHop", "3.8.6", "3.9", "Update"),
+            app_info("AetherGUI", "0.7.0", "0.7.0", "Current"),
+        ]);
+        let text = render(&mut app, 100, 20);
+        let onion_line = text.lines().find(|l| l.contains("OnionHop")).unwrap();
+        assert!(onion_line.contains('^'), "no update marker: {}", onion_line);
+        let aether_line = text.lines().find(|l| l.contains("AetherGUI")).unwrap();
+        assert!(!aether_line.contains('^'), "false update marker: {}", aether_line);
+        assert!(text.contains("1 need an update"), "no update count in the title");
+    }
+
+    #[test]
+    fn the_table_fills_the_main_area() {
+        // The list used to be squeezed into a 3-row strip, so only one app
+        // was visible at a time.
+        let mut app = app_with(vec![
+            app_info("App1", "1.0", "1.0", "Current"),
+            app_info("App2", "1.0", "1.0", "Current"),
+            app_info("App3", "1.0", "1.0", "Current"),
+            app_info("App4", "1.0", "1.0", "Current"),
+        ]);
+        let text = render(&mut app, 100, 20);
+        for name in ["App1", "App2", "App3", "App4"] {
+            assert!(text.contains(name), "{} not visible", name);
+        }
+    }
+
+    #[test]
+    fn the_filter_narrows_the_table() {
+        let mut app = app_with(vec![
+            app_info("OnionHop", "3.8.6", "3.9", "Update"),
+            app_info("Obsidian", "1.5.0", "1.5.0", "Current"),
+        ]);
+        app.filter_text = "onion".to_string();
+        app.apply_filter();
+        let text = render(&mut app, 100, 20);
+        assert!(text.contains("OnionHop"));
+        assert!(!text.contains("Obsidian"), "filter did not narrow the list");
+    }
+}
