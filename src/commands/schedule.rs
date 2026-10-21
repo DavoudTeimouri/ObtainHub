@@ -1,69 +1,219 @@
 use crate::core::{ConfigManager, StateManager};
-use crate::cli::{ScheduleArgs, ScheduleAction};
+use crate::cli::{Arch, CheckArgs, ScheduleArgs, ScheduleAction};
 use anyhow::Result;
+use std::fs;
+use std::path::PathBuf;
 use tracing::info;
 
-pub async fn execute(args: ScheduleArgs, config: &mut ConfigManager, _state: &StateManager) -> Result<()> {
-    info!("Schedule command: {:?}", args.action);
+/// The name of the Windows Task Scheduler task ObtainHub creates.
+/// `ohub cleanup tasks` looks for the same name.
+#[allow(dead_code)]
+const TASK_NAME: &str = "ObtainHubScheduledCheck";
 
-    let config_data = config.get_mut();
+/// Where the scheduled run writes its report.
+fn schedule_log_path() -> PathBuf {
+    let mut dir = dirs::data_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default());
+    dir.push("obtainhub");
+    let _ = fs::create_dir_all(&dir);
+    dir.push("schedule.log");
+    dir
+}
+
+/// The `schtasks` schedule and modifier for an interval in hours.
+/// Only the Windows task-scheduler path calls it.
+#[allow(dead_code)]
+fn schedule_parts(interval_hours: u64) -> Result<(&'static str, Option<u64>)> {
+    match interval_hours {
+        0 => Err(anyhow::anyhow!(
+            "The schedule interval must be at least 1 hour"
+        )),
+        // /MO with /SC HOURLY accepts 1-23.
+        1..=23 => Ok(("HOURLY", Some(interval_hours))),
+        24 => Ok(("DAILY", None)),
+        // Every N days.
+        h if h % 24 == 0 && h / 24 <= 31 => Ok(("DAILY", Some(h / 24))),
+        h => Err(anyhow::anyhow!(
+            "Unsupported schedule interval of {h} hours - use 1-23 (hourly), 24 (daily), or a multiple of 24 up to 744"
+        )),
+    }
+}
+
+#[cfg(windows)]
+fn create_task(interval_hours: u64) -> Result<()> {
+    use std::process::Command;
+
+    let exe = std::env::current_exe()?;
+    let log = schedule_log_path();
+    let action = format!(
+        "\"{}\" check --quiet --log \"{}\"",
+        exe.display(),
+        log.display()
+    );
+    let (schedule, modifier) = schedule_parts(interval_hours)?;
+
+    let mut args = vec![
+        "/Create".to_string(),
+        "/TN".to_string(),
+        TASK_NAME.to_string(),
+        "/TR".to_string(),
+        action,
+        "/SC".to_string(),
+        schedule.to_string(),
+        "/F".to_string(),
+    ];
+    if let Some(m) = modifier {
+        args.push("/MO".to_string());
+        args.push(m.to_string());
+    }
+
+    let output = Command::new("schtasks").args(&args).output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "Could not create the scheduled task: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn create_task(_interval_hours: u64) -> Result<()> {
+    anyhow::bail!("Scheduled checks need the Windows Task Scheduler")
+}
+
+#[cfg(windows)]
+fn delete_task() -> Result<()> {
+    use std::process::Command;
+
+    let output = Command::new("schtasks")
+        .args(["/Delete", "/TN", TASK_NAME, "/F"])
+        .output()?;
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        // A task that is already gone is not a failure.
+        if !message.to_lowercase().contains("cannot find")
+            && !message.to_lowercase().contains("not found")
+        {
+            anyhow::bail!("Could not remove the scheduled task: {message}");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn delete_task() -> Result<()> {
+    anyhow::bail!("Scheduled checks need the Windows Task Scheduler")
+}
+
+#[cfg(windows)]
+fn show_task_status() -> Result<()> {
+    use std::process::Command;
+
+    let output = Command::new("schtasks")
+        .args(["/Query", "/TN", TASK_NAME, "/FO", "LIST"])
+        .output()?;
+    if !output.status.success() {
+        println!("Task '{TASK_NAME}' is not registered with the Task Scheduler");
+        return Ok(());
+    }
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn show_task_status() -> Result<()> {
+    Ok(())
+}
+
+pub async fn execute(
+    args: ScheduleArgs,
+    config: &mut ConfigManager,
+    state: &mut StateManager,
+) -> Result<()> {
+    info!("Schedule command: {:?}", args.action);
 
     match args.action {
         ScheduleAction::Enable => {
-            config_data.schedule.enabled = true;
+            let interval_hours = config.get().schedule.interval_hours;
+            create_task(interval_hours)?;
+            config.get_mut().schedule.enabled = true;
             config.save()?;
-            println!("Scheduled checks enabled");
-            
-            // Note: Actual Windows Task Scheduler / cron job creation would require
-            // platform-specific code. For now, just update config.
-            #[cfg(windows)]
-            {
-                println!("Note: Windows Task Scheduler integration not yet implemented");
-            }
-            #[cfg(unix)]
-            {
-                println!("Note: Cron job creation not yet implemented");
-            }
+            println!("Scheduled checks enabled every {interval_hours} hours");
+            println!("Report: {}", schedule_log_path().display());
         }
         ScheduleAction::Disable => {
-            config_data.schedule.enabled = false;
+            delete_task()?;
+            config.get_mut().schedule.enabled = false;
             config.save()?;
             println!("Scheduled checks disabled");
-            
-            #[cfg(windows)]
-            {
-                println!("Note: Windows Task Scheduler removal not yet implemented");
-            }
-            #[cfg(unix)]
-            {
-                println!("Note: Cron job removal not yet implemented");
-            }
         }
         ScheduleAction::Status => {
-            println!("Scheduled checks: {}", if config_data.schedule.enabled { "ENABLED" } else { "DISABLED" });
+            let config_data = config.get();
+            println!(
+                "Scheduled checks: {}",
+                if config_data.schedule.enabled {
+                    "ENABLED"
+                } else {
+                    "DISABLED"
+                }
+            );
             println!("Interval: {} hours", config_data.schedule.interval_hours);
             println!("Notify on update: {}", config_data.schedule.notify_on_update);
             println!("Run on startup: {}", config_data.schedule.run_on_startup);
-            
-            if config_data.schedule.enabled {
-                if let Some(last_run) = config_data.schedule.last_run {
-                    println!("Last run: {}", last_run.format("%Y-%m-%d %H:%M:%S UTC"));
-                } else {
-                    println!("Last run: never");
-                }
+            if let Some(last_run) = config_data.schedule.last_run {
+                println!("Last run: {}", last_run.format("%Y-%m-%d %H:%M:%S UTC"));
+            } else {
+                println!("Last run: never");
             }
+            show_task_status()?;
         }
         ScheduleAction::Run { prerelease } => {
-            println!("[*] Running scheduled check... (prerelease: {})", prerelease);
-            // This would trigger the check command for all installed apps
-            // For now, just note it's not fully integrated
-            println!("Note: Full scheduled check integration pending");
-            
-            // Update last_run timestamp
-            config_data.schedule.last_run = Some(chrono::Utc::now());
+            // The same thing the scheduled task does, so a manual run and a
+            // scheduled run leave the same record behind.
+            let log = schedule_log_path();
+            let check_args = CheckArgs {
+                repo: None,
+                outdated_only: false,
+                prerelease,
+                yes: false,
+                all: false,
+                candidates: false,
+                reset: false,
+                arch: Arch::Auto,
+                timeout: None,
+                notes: false,
+                force: false,
+                quiet: false,
+                dry_run: false,
+                log: Some(log.display().to_string()),
+            };
+            crate::commands::check::execute(check_args, config, state).await?;
+            config.get_mut().schedule.last_run = Some(chrono::Utc::now());
             config.save()?;
+            println!("Report written to {}", log.display());
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn intervals_map_to_schtasks_arguments() {
+        // /MO with /SC HOURLY only accepts 1-23.
+        assert_eq!(schedule_parts(1).unwrap(), ("HOURLY", Some(1)));
+        assert_eq!(schedule_parts(23).unwrap(), ("HOURLY", Some(23)));
+        // A whole day is the default daily schedule.
+        assert_eq!(schedule_parts(24).unwrap(), ("DAILY", None));
+        // Multiples of 24 become every N days.
+        assert_eq!(schedule_parts(48).unwrap(), ("DAILY", Some(2)));
+        assert_eq!(schedule_parts(744).unwrap(), ("DAILY", Some(31)));
+        // Everything else is refused rather than silently rounded.
+        assert!(schedule_parts(0).is_err());
+        assert!(schedule_parts(25).is_err());
+        assert!(schedule_parts(999).is_err());
+    }
 }

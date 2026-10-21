@@ -5,6 +5,8 @@ use anyhow::Result;
 use minreq;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::time::Duration;
 use tracing::info;
 use comfy_table::{Table, Cell};
@@ -33,6 +35,7 @@ struct GitHubAsset {
 
 pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
     info!("Checking for updates");
+    let mut log_lines: Vec<String> = Vec::new();
 
     // Say what the scan does before doing it - "--all" and "--candidates"
     // read the whole uninstall registry, which is not obvious from the name.
@@ -599,6 +602,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         table.set_header(vec!["Repository", "Current", "Latest"]);
         for (repo, current_ver, latest_ver) in &outdated {
             table.add_row(vec![Cell::new(repo), Cell::new(current_ver), Cell::new(latest_ver)]);
+            log_lines.push(format!("  {repo} {current_ver} -> {latest_ver}"));
         }
         println!("{}", table);
         println!();
@@ -616,35 +620,58 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         println!("Errors ({}):", errors.len());
         for (repo, error) in &errors {
             println!("  {}: {}", repo, error);
+            log_lines.push(format!("  ERROR {repo}: {error}"));
         }
         println!();
     }
 
     // One closing line so the result is obvious without reading the tables.
-    if !args.quiet && !args.outdated_only {
-        if args.all || args.candidates {
-            println!(
+    if !args.outdated_only {
+        let summary = if args.all || args.candidates {
+            format!(
                 "Summary: {} managed by ObtainHub, {} not managed, {} outdated, {} up to date.",
                 managed_count,
                 unmanaged_count,
                 outdated.len(),
                 current.len()
-            );
-            if unmanaged_count > 0 && !args.candidates {
-                println!(
-                    "  The {} unmanaged app(s) are listed above - pick the ones you want to manage.",
-                    unmanaged_count
-                );
-            }
+            )
         } else {
-            println!(
+            format!(
                 "Summary: {} checked, {} outdated, {} up to date.",
                 managed_count,
                 outdated.len(),
                 current.len()
-            );
+            )
+        };
+        log_lines.push(summary.clone());
+        if !args.quiet {
+            println!("{summary}");
+            if args.all || args.candidates {
+                if unmanaged_count > 0 && !args.candidates {
+                    println!(
+                        "  The {} unmanaged app(s) are listed above - pick the ones you want to manage.",
+                        unmanaged_count
+                    );
+                }
+            }
+            println!();
         }
-        println!();
+    }
+
+    // A scheduled run leaves a record behind: the report goes to the log file
+    // even when the console output is suppressed.
+    if let Some(log_path) = &args.log {
+        if let Some(parent) = std::path::Path::new(log_path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)?;
+        writeln!(file, "--- {} ---", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"))?;
+        for line in &log_lines {
+            writeln!(file, "{line}")?;
+        }
     }
 
     // Offer to update the outdated apps straight away.

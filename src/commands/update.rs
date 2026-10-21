@@ -220,7 +220,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                             if crate::core::normalize_version(&dep_latest) != crate::core::normalize_version(&dep_entry.version) {
                                 reporter.say(&format!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest));
                                 if !args.dry_run {
-                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, args.force, true, None, args.quiet, Some(dep_entry.version.clone())).await {
+                                    match install_release(dep, &dep_latest, &dep_release, token, config, state, true, None, args.quiet, Some(dep_entry.version.clone())).await {
                                         Ok(_) => reporter.say(&format!("    Updated dependency {} to {}", dep, dep_latest)),
                                         Err(e) => reporter.err(&format!("    Failed to update dependency {}: {}", dep, e)),
                                     }
@@ -241,8 +241,16 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                 let latest_version = release.tag_name.clone();
                 let latest_norm = crate::core::normalize_version(&latest_version);
                 let current_norm = crate::core::normalize_version(current_version);
-                if latest_norm != current_norm {
-                    reporter.say(&format!("  Update available: {} -> {}", current_version, latest_version));
+                if latest_norm == current_norm && !args.force {
+                    already_current.push(repo_name.clone());
+                    reporter.say("  Already at latest version");
+                } else {
+                    if latest_norm == current_norm {
+                        // --force reinstalls the version that is already there.
+                        reporter.say(&format!("  Force reinstalling {current_version}"));
+                    } else {
+                        reporter.say(&format!("  Update available: {} -> {}", current_version, latest_version));
+                    }
 
                     if args.dry_run {
                         updated.push((repo_name.clone(), current_version.clone(), latest_version));
@@ -252,7 +260,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                     // Perform update (reinstall with new version)
                     // Interactive asset selection: only .exe (setup) and .msi, correct architecture
                     let selected_asset = select_installer_asset(&release, args.quiet)?;
-                    match install_release(repo_name, &latest_version, &release, token, config, state, args.force, args.skip_deps, Some(selected_asset), args.quiet, Some(current_version.to_string())).await {
+                    match install_release(repo_name, &latest_version, &release, token, config, state, args.skip_deps, Some(selected_asset), args.quiet, Some(current_version.to_string())).await {
                         Ok(_) => {
                             updated.push((repo_name.clone(), current_version.clone(), latest_version.clone()));
                             reporter.say(&format!("  Updated to {}", latest_version));
@@ -262,9 +270,6 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                             reporter.err(&format!("  Failed: {}", e));
                         }
                     }
-                } else {
-                    already_current.push(repo_name.clone());
-                    reporter.say("  Already at latest version");
                 }
             }
             Ok(None) => {
@@ -393,7 +398,7 @@ pub(crate) fn select_installer_asset(release: &GitHubRelease, quiet: bool) -> Re
     }
 }
 
-// ponytail: 11 parameters is over the 7-argument comfort line. Bundling them
+// ponytail: 10 parameters is over the 7-argument comfort line. Bundling them
 // into an options struct is the upgrade path once a third caller appears.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn install_release(
@@ -403,7 +408,6 @@ pub(crate) async fn install_release(
     token: Option<&str>,
     config: &ConfigManager,
     state: &mut StateManager,
-    _force: bool,
     _skip_deps: bool,
     selected_asset: Option<GitHubAsset>,
     quiet: bool,

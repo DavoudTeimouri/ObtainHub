@@ -107,10 +107,17 @@ ohub uninstall BurntSushi/ripgrep --purge --yes   # also drop metadata + group e
 ohub remove BurntSushi/ripgrep --yes             # untrack, keep files
 
 # Groups
-ohub group create dev
-ohub group add dev BurntSushi/ripgrep
+ohub group add dev BurntSushi/ripgrep BurntSushi/fd
 ohub group list
-ohub group install dev           # install all apps in group
+ohub group update dev           # update every app in the group
+ohub group check dev            # check every app in the group
+ohub group uninstall dev --force
+
+# Scheduled checks (Windows Task Scheduler)
+ohub schedule enable            # register the scheduled task
+ohub schedule status            # config + the task's next run time
+ohub schedule run               # do the check now, write the report
+ohub schedule disable
 
 # Shell completions
 ohub completion fish > ~/.config/fish/completions/ohub.fish
@@ -172,10 +179,10 @@ ohub config set key value # Set value
 |---------|---------|
 | `ohub search <query>` | Search GitHub repositories by keyword, language, stars. Results offer to add or install. |
 | `ohub install <owner/repo>` | Install an app from a GitHub release. Supports `--version`, `--arch`, `--file` (local archive), `--url` (direct download), `--dry-run`. |
-| `ohub check` | Check all managed repositories for updates. Compares installed version (from state.json) against latest GitHub release tag. |
+| `ohub check` | Check all managed repositories for updates. Compares installed version (from state.json) against latest GitHub release tag. `--log <PATH>` appends a run report to a file (used by the scheduled task). |
 | `ohub check --all` | **Discovery mode.** Scans ALL installed Windows programs (registry `Uninstall` keys), separates managed vs unmanaged, offers to add unmanaged ones with GitHub candidate repos, then checks all managed repos for updates. Existing `state.json` versions are synced with actual registry `DisplayVersion` values. |
 | `ohub check --candidates` | **Candidate mode.** Shows unmanaged installed apps sorted by name. First presents a vendor exclusion list (Microsoft, Adobe, Oracle, etc. pre-selected) so GitHub search stays efficient. Then searches GitHub for candidate repos for each remaining app, lets you select which to manage, and offers manual `owner/repo` entry if no candidates found. |
-| `ohub update <owner/repo>` | Update a managed repository to its latest version. Without args, updates all managed repos. Supports `--dry-run`, `--force`. `--quiet` suppresses progress output, `--log <PATH>` appends a run report to a file. |
+| `ohub update <owner/repo>` | Update a managed repository to its latest version. Without args, updates all managed repos. `--force` reinstalls even when the app is already on the latest version. Supports `--dry-run`. `--quiet` suppresses progress output, `--log <PATH>` appends a run report to a file. |
 | `ohub rollback <owner/repo>` | Reinstall the previously installed version of a managed app from its GitHub release tag. Supports `--yes` (skip confirmation), `--quiet`. |
 | `ohub list` | Show installed repositories with version, install path, and install date. The path is the app's **real install folder** on disk, resolved from the Windows uninstall registry: `InstallLocation` first, then `DisplayIcon` (the program's own exe path), then the folder holding the uninstaller. The resolved path is written back to `state.json`, so it stays correct for the TUI and `ohub uninstall` too. |
 | `ohub uninstall <owner/repo>` | Uninstall an app. Runs the app's own registered uninstaller (from the Windows uninstall registry) with elevation, then removes leftovers. Use `--yes` to skip confirmation, `--purge` to also remove metadata. |
@@ -185,6 +192,8 @@ ohub config set key value # Set value
 | `ohub config` | Get/set configuration keys (github_token, install_dir, etc.). |
 | `ohub doctor` | Diagnose installation issues: directory existence/writability, proxy, GitHub token and rate limit, PATH. `--fix` repairs what it can, `--strict` exits non-zero when issues remain. |
 | `ohub tui` | Interactive table of the managed apps - one row per app with Installed / Latest / Status columns, and `^` marking the apps that need an update. Press `?` for the full key list. |
+| `ohub group <add\|list\|remove\|delete\|install\|update\|check\|uninstall>` | Manage groups of repos. A group is a named list of `owner/repo` entries; the bulk actions run the real install / update / check / uninstall command for every member, one at a time. |
+| `ohub schedule <enable\|disable\|status\|run>` | Schedule automatic update checks. `enable` registers a Windows Task Scheduler task (`ObtainHubScheduledCheck`) that runs `ohub check --quiet --log` on the configured interval; `status` shows the config plus the task's next run time; `run` does the check now and writes the same report the scheduled task would. |
 
 ### Version comparison
 Version strings are normalized before comparison: the `v`/`V` prefix is stripped, so `v3.0.32` matches `3.0.32`.

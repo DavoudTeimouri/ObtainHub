@@ -112,7 +112,6 @@ pub async fn execute(
         config,
         state,
         true,
-        true,
         Some(asset),
         args.quiet,
         Some(entry.version.clone()),

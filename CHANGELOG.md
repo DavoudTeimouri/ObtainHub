@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.59-rc1] - 2026-10-21
+Finishes the three half-built commands.
+
+### Added
+- `ohub group install|update|check|uninstall` now run the real command for every member of the group, one at a time, instead of printing "Bulk X integration pending". The group config model was already there - only the loop was missing.
+- `ohub schedule enable` registers a real Windows Task Scheduler task (`ObtainHubScheduledCheck`) that runs `ohub check --quiet --log` on the configured interval. `disable` removes it, `status` shows the task's next run time, and `run` does the check now and writes the same report the scheduled task would. The task name is the one `ohub cleanup tasks` already looks for.
+- `ohub check --log <PATH>` appends a run report (outdated apps, errors, summary) to a file. The report is written even when the console output is suppressed, so a scheduled run leaves a record.
+
+### Fixed
+- `ohub update --force` was passed down to the installer and then ignored, so it did nothing. It now reinstalls the app even when it is already on the latest version, and says so (`Force reinstalling 3.9`).
+- The dead `force` parameter of `install_release` was removed rather than left as a no-op.
+
+### Changed
+- `ohub group` and `ohub schedule` take a mutable state manager, so the bulk actions can install, update and uninstall for real.
+- README: the group and schedule commands are documented, and the wrong `ohub group create` example is now `ohub group add`.
+
 ## [v3.0.58-rc1] - 2026-10-21
 TUI feature batch.
 

@@ -293,6 +293,10 @@ pub struct CheckArgs {
         /// Dry run - show what would be done without making changes
         #[arg(long)]
         pub dry_run: bool,
+
+        /// Append a run report to this file (scheduled runs leave a record behind)
+        #[arg(long, value_name = "PATH")]
+        pub log: Option<String>,
 }
 
 #[derive(Args, Debug)]
