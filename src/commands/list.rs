@@ -5,6 +5,10 @@ use tracing::info;
 use comfy_table::{Table, Cell};
 use std::path::PathBuf;
 
+/// One row of the `ohub list` output: repository, version, install path,
+/// install date, last update, checksum.
+type ListRow = (String, String, PathBuf, String, Option<String>, Option<String>);
+
 pub async fn execute(args: ListArgs, _config: &ConfigManager, state: &mut StateManager) -> Result<()> {
     info!("Listing installed repositories");
 
@@ -21,7 +25,7 @@ pub async fn execute(args: ListArgs, _config: &ConfigManager, state: &mut StateM
 
     // Resolve every app against the registry, and collect the ones whose
     // recorded path is wrong so it can be corrected below.
-    let mut rows: Vec<(String, String, PathBuf, String, Option<String>, Option<String>)> = Vec::new();
+    let mut rows: Vec<ListRow> = Vec::new();
     let mut fixes: Vec<crate::core::state::InstalledRepo> = Vec::new();
     for repo in state.list_installed() {
         let path = find_entry_for_repo(&registry, &repo.repo, Some(&repo.version))

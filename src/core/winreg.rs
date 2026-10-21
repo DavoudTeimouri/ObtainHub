@@ -111,8 +111,8 @@ impl UninstallEntry {
         // path may contain spaces ("C:\Program Files\App\uninstall.exe") - so
         // take the whole quoted string, not just the first word. Unquoted
         // paths run into the uninstaller's arguments, so cut at the exe.
-        let exe = if s.starts_with('"') {
-            s[1..].split('"').next().unwrap_or("")
+        let exe = if let Some(rest) = s.strip_prefix('"') {
+            rest.split('"').next().unwrap_or("")
         } else {
             match s.find(".exe") {
                 Some(i) => &s[..i + 4],
