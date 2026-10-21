@@ -236,7 +236,7 @@ A command needs `&mut` only when it writes config.
 | `search` | GitHub search; `--min-stars`, `--active-only`, `--sort-stars`, `--language`, `--case-insensitive`, `--dry-run`. After the table, offers to add selected repos to managed list or install them immediately. |
 | `install` | `--file` local archive, `--url` direct download, `--dry-run`. Falls back to GitHub search candidates when exact repo not found. |
 | `check` | `--all` enumerates installed Windows software and skips ObtainHub itself. `--candidates` offers candidate repos for unmanaged apps. Version comparison strips `v`/`V` prefix. |
-| `list` | `--format json` |
+| `list` | `--format json`. The Path column is the app's **real** install folder, read from the Windows uninstall registry at list time (`core::winreg::find_entry_for_repo`), falling back to `state.json` when Windows does not know the app. |
 | `update` | `--dry-run`, `--force`, one repo or all. Defaults to managed repositories only (from state.json). Version comparison strips `v`/`V` prefix. |
 | `uninstall` | `--yes`, `--purge` (drops state metadata + group membership) |
 | `remove` | untrack, keep files |
@@ -248,7 +248,7 @@ A command needs `&mut` only when it writes config.
 | `state` | export / import |
 | `apps` | backup / restore app folders |
 | `cleanup` | leftovers and scheduled tasks |
-| `tui` | ratatui + crossterm; keybindings shown in the header |
+| `tui` | ratatui + crossterm; keybindings shown in the header. Two constraints: the app list is rendered into `chunks[2]` (the filter bar row collapses to 0 when no filter is active), and any command that prints to stdout must set `app.clear_screen = true` so the main loop wipes the alternate screen before the next draw. |
 | `config` | get / set / list |
 | `backup`, `restore` | backup and restore |
 | `self-update` | updates ohub; downloads installer (`.exe`/`.msi`) or portable `.zip`. Runs MSI/EXE silently, extracts zip. Checksum verified against release `SHA256SUMS`. Ed25519 signature if present (`--skip-signature` to bypass). |
