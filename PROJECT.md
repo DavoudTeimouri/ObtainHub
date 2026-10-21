@@ -7,7 +7,7 @@ file disagree, the code is the bug.
 **Start at `AGENTS.md`** — it is the entry point and points here.
 This file also owns the **changelog template** (§0).
 
-Last verified against: `main` @ `e6f7159` (v3.0.51-rc1).
+Last verified against: `main` @ `f4b640a` (v3.0.60-rc1).
 
 ---
 
@@ -378,10 +378,11 @@ rejection.
 - Deliberate shortcuts get a `ponytail:` comment naming the ceiling and the
   upgrade path. Examples: `update.rs` checksum note, `completion.rs` EPIPE note,
   `update.rs::install_release` (11 parameters), `cli.rs::SourceAction` (232-byte enum).
-- Non-trivial logic ships one assert-based test. Current suite: 21 tests —
-  6 in `src/commands/install.rs`, 4 in `src/core/winreg.rs`, 4 in
-  `src/core/config.rs`, 3 in `src/commands/self_update.rs`, 3 in
-  `src/commands/check.rs`, 1 in `src/utils/retry.rs`.
+- Non-trivial logic ships one assert-based test. Current suite: 36 tests —
+  10 in `src/core/winreg.rs`, 8 in `src/commands/tui.rs`, 6 in
+  `src/commands/install.rs`, 4 in `src/core/config.rs`, 3 in
+  `src/commands/self_update.rs`, 3 in `src/commands/check.rs`, 1 each in
+  `src/utils/retry.rs` and `src/commands/schedule.rs`.
 - Build artifacts are gitignored: `ObtainHub.msi`,
   `installer/ObtainHub-Setup.exe`, `installer/ohub.exe`.
 
