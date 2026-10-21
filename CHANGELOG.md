@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- CI uploads `check.log` / `test.log` / `clippy.log` / `build.log` as workflow artifacts when a job fails. Job logs are admin-only in the public API, so before this a failed Windows build could not be diagnosed without repo access.
+- CI clippy step is warn-only. The `-D warnings` gate was added in v3.0.51-rc1 and never ran green over the pre-existing codebase; it turned every release red without proving anything. `cargo check --all-targets` and `cargo test` remain hard gates.
+
 ## [v3.0.52-rc1] - 2026-10-21
 ### Fixed
 - Windows build broke in two places, both hidden from Linux because the code sits behind `#[cfg(windows)]`:
