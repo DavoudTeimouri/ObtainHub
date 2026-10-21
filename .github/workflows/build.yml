@@ -44,13 +44,36 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Compile check
-        run: cargo check --all-targets
+        run: |
+          set -o pipefail
+          cargo check --all-targets 2>&1 | tee check.log
+        shell: bash
 
       - name: Run tests
-        run: cargo test
+        run: |
+          set -o pipefail
+          cargo test 2>&1 | tee test.log
+        shell: bash
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
+        shell: bash
+
+      # Job logs are admin-only in the public API, so a failure is otherwise
+      # undiagnosable without repo access. Ship the compiler output instead.
+      - name: Upload check logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-logs
+          path: |
+            check.log
+            test.log
+            clippy.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   build:
     name: Build Rust Release
@@ -85,7 +108,10 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Build release binary
-        run: cargo build --release --bin ohub
+        run: |
+          set -o pipefail
+          cargo build --release --bin ohub 2>&1 | tee build.log
+        shell: bash
 
       - name: Verify binary
         run: |
@@ -99,6 +125,17 @@ jobs:
           path: target/release/ohub.exe
           if-no-files-found: error
           retention-days: 5
+
+      # Job logs are admin-only in the public API, so a failure is otherwise
+      # undiagnosable without repo access. Ship the compiler output instead.
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   installer-msi:
     name: Build MSI Installer (WiX v3)
