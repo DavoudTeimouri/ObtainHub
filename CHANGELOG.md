@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.54-rc1] - 2026-10-21
+### Fixed
+- `ohub list` showed ObtainHub's own download folder instead of where the app actually lives. The path is now read from the Windows uninstall registry (`C:\Users\x\AppData\Local\Programs\OnionHop V3\`), falling back to the stored path when Windows does not know the app.
+- `ohub add` now records the app's real install folder instead of `repos\<owner>\<repo>\`. The "path already exists" prompt only fires for folders inside ObtainHub's own tree.
+- TUI: the app list was rendered into a 3-row strip when no filter was active, so only one app was visible at a time. The list now gets the whole main area and the filter bar row collapses when not filtering.
+- TUI: install/remove printed to stdout, which landed inside the alternate screen and left the command output mixed into the UI. The screen is now wiped and repainted after those actions.
+- TUI: up-to-date apps were shown as "Update" because the GitHub tag (`v3.9`) and the installed version (`3.9`) were compared as raw strings. Versions are now normalized before comparing.
+- `ohub update` stored the raw tag (`v3.9`) as the installed version, which then differed from the registry version. The stored version is now normalized.
+- `ohub rollback` looked up the release tag as `3.8.6` when the tag on GitHub is `v3.8.6`. It now tries both forms.
+
+### Changed
+- `ohub check --all` and `ohub check --candidates` now print what they are about to do before doing it, so the purpose of a full registry scan is obvious.
+- `normalize_version()` moved to `core::state` and is shared by check, update and tui instead of being copied three times.
+
 ## [v3.0.53-rc1] - 2026-10-21
 ### Changed
 - CI uploads `check.log` / `test.log` / `clippy.log` / `build.log` as workflow artifacts when a job fails. Job logs are admin-only in the public API, so before this a failed Windows build could not be diagnosed without repo access.

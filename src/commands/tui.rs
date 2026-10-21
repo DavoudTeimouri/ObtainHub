@@ -86,6 +86,9 @@ struct App {
     search_results: Vec<String>,
     search_state: ListState,
     retry_config: RetryConfig,
+    /// Set when an action printed to stdout, which lands in the alternate
+    /// screen and corrupts the display. The main loop wipes the screen.
+    clear_screen: bool,
 }
 
 #[derive(Clone)]
@@ -159,6 +162,7 @@ async fn run_app<B: ratatui::backend::Backend>(
         search_results: Vec::new(),
         search_state: ListState::default(),
         retry_config: RetryConfig::from_config(config),
+        clear_screen: false,
     };
 
     // Load initial data
@@ -171,6 +175,13 @@ async fn run_app<B: ratatui::backend::Backend>(
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
                 handle_key_event(key.code, &mut app, config, state).await?;
+
+                // install/remove print to stdout, which lands inside the
+                // alternate screen. Wipe it and let the next draw repaint.
+                if app.clear_screen {
+                    app.clear_screen = false;
+                    terminal.clear()?;
+                }
             }
         }
     }
@@ -207,11 +218,17 @@ impl App {
                 "?".to_string()
             };
 
+            // GitHub tags carry a "v" prefix ("v3.9") while the installed
+            // version usually does not ("3.9"). Compare them normalized or
+            // every app looks outdated.
+            let current_norm = crate::core::normalize_version(&current_version);
+            let latest_norm = crate::core::normalize_version(&latest_version);
+
             let status = if current_version.is_empty() || current_version == "unknown" {
                 "Unmanaged".to_string()
             } else if latest_version == "?" {
                 "Unknown".to_string()
-            } else if latest_version == current_version {
+            } else if latest_norm == current_norm {
                 "Current".to_string()
             } else {
                 "Update".to_string()
@@ -379,6 +396,7 @@ async fn handle_search_results(
         KeyCode::Char('i') => {
             let Some(repo) = selected else { return Ok(()) };
             app.status_message = format!("Installing {repo}...");
+            app.clear_screen = true;
             let args = InstallArgs {
                 repo: repo.clone(),
                 version: None,
@@ -474,6 +492,7 @@ async fn handle_key_event(
                     let repo_name = app_info.repo.clone();
                     let app_name = app_info.name.clone();
                     app.status_message = format!("Updating {app_name}...");
+                    app.clear_screen = true;
                     let update_args = UpdateArgs {
                         repo: Some(repo_name),
                         prerelease: false,
@@ -517,6 +536,7 @@ async fn handle_key_event(
                 let repo_name = app_info.repo.clone();
                 let app_name = app_info.name.clone();
                 app.status_message = format!("Removing {app_name}...");
+                app.clear_screen = true;
                 match crate::commands::remove::execute(
                     RemoveArgs {
                         repo: repo_name,
@@ -569,12 +589,15 @@ async fn handle_key_event(
 }
 
 fn ui(f: &mut ratatui::Frame, app: &mut App) {
+    let show_filter = !app.filter_text.is_empty() && app.mode == Mode::List;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([
             Constraint::Length(3),
-            Constraint::Length(3),
+            // The filter bar only exists while filtering; collapse the row
+            // otherwise so the app list gets the whole main area.
+            if show_filter { Constraint::Length(3) } else { Constraint::Length(0) },
             Constraint::Min(0),
             Constraint::Length(3),
         ])
@@ -604,7 +627,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(header, chunks[0]);
 
     // Filter input bar
-    if !app.filter_text.is_empty() && app.mode == Mode::List {
+    if show_filter {
         let filter_bar = Paragraph::new(format!("Filter: {}", app.filter_text))
             .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
             .block(Block::default().borders(Borders::ALL).title("Filter"));
@@ -746,7 +769,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             .style(Style::default().fg(Color::White))
             .block(Block::default().borders(Borders::ALL).title("Help - Press '?' to close"))
             .wrap(Wrap { trim: true });
-        f.render_widget(help, if !app.filter_text.is_empty() { chunks[2] } else { chunks[1] });
+        f.render_widget(help, chunks[2]);
     } else {
         // App list (filtered)
         let visible_indices: Vec<usize> = app.filtered_indices.to_vec();
@@ -763,9 +786,15 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
                 ListItem::new(Line::from(vec![
                     Span::styled(&a.name, Style::default().add_modifier(Modifier::BOLD)),
                     Span::raw("  "),
-                    Span::raw(format!("v{} ", a.current_version)),
-                    if a.latest_version != "?" && a.latest_version != a.current_version {
-                        Span::styled(format!("→ v{} ", a.latest_version), Style::default().fg(Color::Cyan))
+                    Span::raw(format!("v{} ", crate::core::normalize_version(&a.current_version))),
+                    if a.latest_version != "?"
+                        && crate::core::normalize_version(&a.latest_version)
+                            != crate::core::normalize_version(&a.current_version)
+                    {
+                        Span::styled(
+                            format!("→ v{} ", crate::core::normalize_version(&a.latest_version)),
+                            Style::default().fg(Color::Cyan),
+                        )
                     } else {
                         Span::raw("     ")
                     },
@@ -781,7 +810,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
             .highlight_symbol("► ");
 
-        f.render_stateful_widget(list, if !app.filter_text.is_empty() { chunks[2] } else { chunks[1] }, &mut app.list_state);
+        f.render_stateful_widget(list, chunks[2], &mut app.list_state);
     }
 
     // Footer / status

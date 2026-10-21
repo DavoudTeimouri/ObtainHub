@@ -34,6 +34,27 @@ struct GitHubAsset {
 pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateManager) -> Result<()> {
     info!("Checking for updates");
 
+    // Say what the scan does before doing it - "--all" and "--candidates"
+    // read the whole uninstall registry, which is not obvious from the name.
+    if !args.quiet {
+        if args.all {
+            println!("ohub check --all - full system scan");
+            println!("  1. Reads every program Windows has installed (uninstall registry)");
+            println!("  2. Splits them into managed by ObtainHub vs not managed");
+            println!("  3. Refreshes each managed app's version from the registry");
+            println!("  4. Lists the unmanaged ones so you can add them");
+            println!("  5. Checks the managed ones for updates");
+            println!();
+        } else if args.candidates {
+            println!("ohub check --candidates - find GitHub repos for unmanaged apps");
+            println!("  1. Reads every program Windows has installed (uninstall registry)");
+            println!("  2. Skips the vendors you exclude (Microsoft, Adobe, ...)");
+            println!("  3. Searches GitHub for a matching repo for each remaining app");
+            println!("  4. Lets you pick which ones to manage");
+            println!();
+        }
+    }
+
     let token = config.get().github_token.as_deref();
     let retry_config = RetryConfig::from_config(config);
 
@@ -56,7 +77,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
         pb.finish_with_message(format!("Scanned {} installed programs.", all.len()));
         if !skipped.is_empty() {
-            println!("  {} not managed by ObtainHub (no GitHub origin).", skipped.len());
+            println!("  {} of them are not managed by ObtainHub.", skipped.len());
         }
         (matched, skipped)
     } else {
@@ -104,7 +125,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         match fetch_latest_release(&repo.repo, token, &retry_config).await {
             Ok(Some(release)) => {
                 let latest_version = release.tag_name;
-                if normalize_version(&latest_version) != normalize_version(&repo.version) {
+                if crate::core::normalize_version(&latest_version) != crate::core::normalize_version(&repo.version) {
                     outdated.push((repo.repo.clone(), repo.version.clone(), latest_version));
                 } else {
                     current.push(repo.repo.clone());
@@ -523,7 +544,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             match fetch_latest_release(&repo.repo, token, &retry_config).await {
                 Ok(Some(release)) => {
                     let latest_version = release.tag_name;
-                    if normalize_version(&latest_version) != normalize_version(&repo.version) {
+                    if crate::core::normalize_version(&latest_version) != crate::core::normalize_version(&repo.version) {
                         outdated.push((repo.repo.clone(), repo.version.clone(), latest_version));
                     } else {
                         current.push(repo.repo.clone());
@@ -875,12 +896,6 @@ async fn find_candidate_repos(name: &str, token: Option<&str>, retry_config: &Re
     }
 
     Ok(all_candidates)
-}
-
-fn normalize_version(v: &str) -> String {
-    let v = v.trim();
-    let v = v.strip_prefix('v').or_else(|| v.strip_prefix('V')).unwrap_or(v);
-    v.to_string()
 }
 
 fn clean_app_name(name: &str) -> String {

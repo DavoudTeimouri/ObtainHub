@@ -143,6 +143,29 @@ pub fn detect_install_change(
     best.map(|(_, e)| e.clone())
 }
 
+/// Find the uninstall entry that belongs to a managed repository.
+///
+/// The repo id is `owner/Product`; Windows records the product under its
+/// display name, which is often the product name plus a version suffix
+/// ("OnionHop V3"). Match on the product part and prefer the shortest
+/// display name, so "OnionHop V3" wins over "OnionHop V3 Helper".
+pub fn find_entry_for_repo<'a>(
+    entries: &'a [UninstallEntry],
+    repo: &str,
+) -> Option<&'a UninstallEntry> {
+    let product = repo.rsplit('/').next().unwrap_or(repo).trim().to_lowercase();
+    if product.is_empty() {
+        return None;
+    }
+    entries
+        .iter()
+        .filter(|e| {
+            let name = e.display_name.to_lowercase();
+            !name.is_empty() && (name == product || name.contains(&product))
+        })
+        .min_by_key(|e| e.display_name.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +214,17 @@ mod tests {
         ];
         let found = detect_install_change(&before, &after, &["OnionHop".to_string()]);
         assert_eq!(found.unwrap().display_name, "OnionHop V3");
+    }
+
+    #[test]
+    fn finds_entry_by_repo_product_name() {
+        let entries = vec![
+            entry("Some Other Tool", "1.0", "C:/x/u.exe"),
+            entry("OnionHop V3", "3.9", "C:/p/unins000.exe"),
+        ];
+        let found = find_entry_for_repo(&entries, "center2055/OnionHop").unwrap();
+        assert_eq!(found.display_name, "OnionHop V3");
+        assert_eq!(found.install_dir().unwrap(), std::path::PathBuf::from("C:/p"));
+        assert!(find_entry_for_repo(&entries, "someone/Nothing").is_none());
     }
 }

@@ -7,6 +7,6 @@ pub mod winreg;
 pub mod elevate;
 
 pub use config::ConfigManager;
-pub use state::StateManager;
-pub use winreg::{scan_uninstall_entries, detect_install_change};
+pub use state::{normalize_version, StateManager};
+pub use winreg::{scan_uninstall_entries, detect_install_change, find_entry_for_repo};
 pub use elevate::{run_installer, run_uninstaller};

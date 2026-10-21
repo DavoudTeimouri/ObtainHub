@@ -67,6 +67,26 @@ pub async fn execute(
     )
     .await?
     {
+        Some(r) => Some(r),
+        None => {
+            // The stored version has no "v" prefix but the GitHub tag usually
+            // does ("3.8.6" vs "v3.8.6"). Try the other form.
+            let tagged = format!("v{prev_version}");
+            if tagged == prev_version {
+                None
+            } else {
+                crate::commands::update::fetch_release_by_tag(
+                    &args.repo,
+                    &tagged,
+                    token,
+                    retry_config,
+                )
+                .await?
+            }
+        }
+    };
+
+    let release = match release {
         Some(r) => r,
         None => {
             return Err(anyhow::anyhow!(

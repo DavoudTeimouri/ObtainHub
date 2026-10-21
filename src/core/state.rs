@@ -4,6 +4,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use dirs;
 
+/// Strip a leading `v`/`V` so `v3.9` and `3.9` compare equal.
+pub fn normalize_version(v: &str) -> String {
+    let v = v.trim();
+    let v = v.strip_prefix('v').or_else(|| v.strip_prefix('V')).unwrap_or(v);
+    v.to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct State {
     pub installed: HashMap<String, InstalledRepo>,

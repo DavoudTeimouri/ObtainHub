@@ -1,4 +1,4 @@
-use crate::core::{ConfigManager, StateManager};
+use crate::core::{ConfigManager, StateManager, find_entry_for_repo, scan_uninstall_entries};
 use crate::cli::{AddArgs, AddType};
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
@@ -12,7 +12,17 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
 
     let install_dir = config.get().install_dir.clone();
     let repo_name = args.name.unwrap_or_else(|| args.repo.split('/').next_back().unwrap_or(&args.repo).to_string());
-    let install_path = args.path.map(PathBuf::from).unwrap_or_else(|| install_dir.join(&repo_name));
+    // Prefer the app's real location on disk - Windows knows where its own
+    // installer put it. Fall back to ObtainHub's managed folder.
+    let install_path = match &args.path {
+        Some(p) => PathBuf::from(p),
+        None => {
+            let entries = scan_uninstall_entries();
+            find_entry_for_repo(&entries, &args.repo)
+                .and_then(|e| e.install_dir())
+                .unwrap_or_else(|| install_dir.join(&repo_name))
+        }
+    };
 
     // Handle different add types
     match args.add_type {
@@ -45,7 +55,9 @@ pub async fn execute(args: AddArgs, config: &ConfigManager, state: &mut StateMan
             }
 
             // Standard GitHub repo add
-            if install_path.exists() && !args.yes {
+            // Only ask before creating a folder inside ObtainHub's own tree.
+            // A real app folder is expected to exist already.
+            if install_path.exists() && !args.yes && install_path.starts_with(&install_dir) {
                 println!("Path {} already exists. Add anyway? [y/N] ", install_path.display());
                 let mut input = String::new();
                 std::io::stdin().read_line(&mut input)?;

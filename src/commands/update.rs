@@ -164,12 +164,6 @@ pub(crate) async fn fetch_release_by_tag(
     Ok(result)
 }
 
-fn normalize_version(v: &str) -> String {
-    let v = v.trim();
-    let v = v.strip_prefix('v').or_else(|| v.strip_prefix('V')).unwrap_or(v);
-    v.to_string()
-}
-
 pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut StateManager, retry_config: &RetryConfig) -> Result<()> {
     info!("Updating repositories");
 
@@ -223,7 +217,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                     match fetch_latest_release(dep, token, retry_config).await {
                         Ok(Some(dep_release)) => {
                             let dep_latest = dep_release.tag_name.clone();
-                            if normalize_version(&dep_latest) != normalize_version(&dep_entry.version) {
+                            if crate::core::normalize_version(&dep_latest) != crate::core::normalize_version(&dep_entry.version) {
                                 reporter.say(&format!("    Dependency update available: {} -> {}", dep_entry.version, dep_latest));
                                 if !args.dry_run {
                                     match install_release(dep, &dep_latest, &dep_release, token, config, state, args.force, true, None, args.quiet, Some(dep_entry.version.clone())).await {
@@ -245,8 +239,8 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
         match fetch_latest_release(repo_name, token, retry_config).await {
             Ok(Some(release)) => {
                 let latest_version = release.tag_name.clone();
-                let latest_norm = normalize_version(&latest_version);
-                let current_norm = normalize_version(current_version);
+                let latest_norm = crate::core::normalize_version(&latest_version);
+                let current_norm = crate::core::normalize_version(current_version);
                 if latest_norm != current_norm {
                     reporter.say(&format!("  Update available: {} -> {}", current_version, latest_version));
 
@@ -602,7 +596,9 @@ pub(crate) async fn install_release(
     // Update state
     let new_repo = crate::core::state::InstalledRepo {
         repo: repo.to_string(),
-        version: version.to_string(),
+        // Store the version without the "v" tag prefix, so it matches what
+        // the Windows registry reports and what the old version was.
+        version: crate::core::normalize_version(version),
         install_path: detected_install_dir.unwrap_or_else(|| install_dir.clone()),
         installed_at: chrono::Utc::now(),
         updated_at: Some(chrono::Utc::now()),

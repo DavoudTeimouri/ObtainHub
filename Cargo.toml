@@ -1,6 +1,6 @@
 [package]
 name = "obtainhub"
-version = "3.0.53-rc1"
+version = "3.0.54-rc1"
 edition = "2021"
 license = "MIT"
 description = "ObtainHub - GitHub repository search and management CLI"
