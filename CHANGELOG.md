@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.58-rc1] - 2026-10-21
+TUI feature batch.
+
+### Added
+- TUI: mark apps with `Space` and update them together with `U`, or update every outdated app with `A`. Marked rows show `[x]`, the panel title counts them.
+- TUI: `s` cycles the status filter - all / outdated / current / unknown - and the panel title says which one is active.
+- TUI: `R` refreshes only the selected app. `r` still refreshes every app, which is one GitHub call per app.
+- TUI: `n` shows the release notes of the selected app in the details panel.
+- TUI: `y` copies the selected app's install path to the Windows clipboard.
+- Update and remove now ask for confirmation: the status line shows what will happen (`Update OnionHop 3.8.6 -> 3.9?`), `Enter` confirms, `Esc` or any other key cancels.
+- README: a table of the TUI keys.
+
+### Changed
+- The version comparison that decides the Status column lives in one place (`status_for`), so the TUI list, the `^` marker, the update counters and the status filter can no longer disagree about what needs an update.
+
 ## [v3.0.57-rc1] - 2026-10-21
 Clean CI on the tag. The binary is behaviour-identical to v3.0.56-rc1 - the
 only changes are two clippy fixes and the TUI regression tests.

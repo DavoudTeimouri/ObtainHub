@@ -118,6 +118,15 @@ struct App {
     /// Set when an action printed to stdout, which lands in the alternate
     /// screen and corrupts the display. The main loop wipes the screen.
     clear_screen: bool,
+    /// Apps the user marked with Space, as indices into `apps`.
+    selected: Vec<usize>,
+    /// Which statuses the list shows.
+    status_filter: StatusFilter,
+    /// A destructive action waiting for Enter.
+    pending: Option<Pending>,
+    /// Release notes for the app the details panel is showing, with the repo
+    /// they belong to, so moving the cursor does not show the wrong notes.
+    notes: Option<(String, String)>,
 }
 
 #[derive(Clone)]
@@ -128,6 +137,67 @@ struct AppInfo {
     status: String,
     repo: String,
     install_path: String,
+}
+
+impl AppInfo {
+    /// Does this app have a newer release than the installed version?
+    ///
+    /// The status column already says "Update", but it is only as good as the
+    /// version comparison that produced it, so the check is repeated here for
+    /// the marker and the counters.
+    fn needs_update(&self) -> bool {
+        self.status == "Update"
+            || self.status == "Outdated"
+            || (self.latest_version != "?"
+                && crate::core::normalize_version(&self.latest_version)
+                    != crate::core::normalize_version(&self.current_version))
+    }
+}
+
+/// Which apps the list shows.
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum StatusFilter {
+    All,
+    Outdated,
+    Current,
+    Unknown,
+}
+
+impl StatusFilter {
+    fn next(self) -> Self {
+        match self {
+            Self::All => Self::Outdated,
+            Self::Outdated => Self::Current,
+            Self::Current => Self::Unknown,
+            Self::Unknown => Self::All,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Outdated => "outdated",
+            Self::Current => "current",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    fn matches(self, app: &AppInfo) -> bool {
+        match self {
+            Self::All => true,
+            Self::Outdated => app.needs_update(),
+            Self::Current => app.status == "Current",
+            Self::Unknown => app.status == "Unknown" || app.status == "Unmanaged",
+        }
+    }
+}
+
+/// An action waiting for the user to confirm it with Enter.
+enum Pending {
+    /// Update these (name, repo) pairs.
+    Update { targets: Vec<(String, String)> },
+    /// Stop managing this app, leaving its files alone.
+    Remove { name: String, repo: String },
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -171,6 +241,175 @@ async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &Re
     Ok(result)
 }
 
+/// The status column for an app, from its installed and latest versions.
+fn status_for(current_version: &str, latest_version: &str) -> String {
+    if current_version.is_empty() || current_version == "unknown" {
+        "Unmanaged".to_string()
+    } else if latest_version == "?" {
+        "Unknown".to_string()
+    } else if crate::core::normalize_version(latest_version)
+        == crate::core::normalize_version(current_version)
+    {
+        "Current".to_string()
+    } else {
+        "Update".to_string()
+    }
+}
+
+/// The release notes (body) of a repo's latest release.
+async fn fetch_release_notes(
+    repo: &str,
+    token: Option<&str>,
+    retry_config: &RetryConfig,
+) -> Result<Option<String>> {
+    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+    let token_clone = token.map(|s| s.to_string());
+
+    let result = execute_with_retry(
+        retry_config,
+        || {
+            let url = url.clone();
+            let token = token_clone.clone();
+            async move {
+                let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+                if let Some(token) = token {
+                    req = req.with_header("Authorization", format!("Bearer {}", token));
+                }
+                let resp = req.send()?;
+
+                if resp.status_code == 404 {
+                    return Ok(None);
+                }
+                if resp.status_code == 403 {
+                    return Err(anyhow::anyhow!(
+                        "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+                    ));
+                }
+                if !(resp.status_code >= 200 && resp.status_code < 300) {
+                    return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
+                }
+
+                let body = resp.as_bytes().to_vec();
+                if body.is_empty() {
+                    return Ok(None);
+                }
+                let json: serde_json::Value = serde_json::from_slice(&body)?;
+                Ok(json["body"].as_str().map(|s| s.to_string()))
+            }
+        },
+        "fetch_release_notes",
+    )
+    .await?;
+
+    Ok(result)
+}
+
+/// Put a string on the Windows clipboard.
+fn copy_to_clipboard(text: &str) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new("clip")
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Could not start 'clip': {e}"))?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("'clip' has no stdin"))?;
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(|e| anyhow::anyhow!("Could not write to the clipboard: {e}"))?;
+        drop(stdin);
+        let _ = child.wait();
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        anyhow::bail!("Clipboard access is only supported on Windows")
+    }
+}
+
+/// Carry out an action the user confirmed.
+async fn run_pending(
+    pending: Pending,
+    app: &mut App,
+    config: &ConfigManager,
+    state: &mut StateManager,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+) -> Result<()> {
+    let retry = app.retry_config.clone();
+    match pending {
+        Pending::Update { targets } => {
+            let n = targets.len();
+            app.status_message = format!("Updating {n} app(s)...");
+            app.clear_screen = true;
+            // Give the command a normal terminal to print in - otherwise its
+            // output lands in the alternate screen.
+            suspend_tui(terminal)?;
+            let mut failed: Vec<String> = Vec::new();
+            for (name, repo) in &targets {
+                let update_args = UpdateArgs {
+                    repo: Some(repo.clone()),
+                    prerelease: false,
+                    dry_run: false,
+                    force: false,
+                    skip_deps: false,
+                    arch: crate::cli::Arch::Auto,
+                    // The TUI already asked for confirmation, so the command
+                    // must not prompt again.
+                    yes: true,
+                    reset: false,
+                    interactive: false,
+                    notes: false,
+                    quiet: true,
+                    log: None,
+                };
+                if let Err(e) =
+                    crate::commands::update::execute(update_args, config, state, &retry).await
+                {
+                    failed.push(format!("{name}: {e}"));
+                }
+            }
+            resume_tui(terminal)?;
+            app.selected.clear();
+            let reload = app.retry_config.clone();
+            app.load_apps(config, state, &reload).await;
+            app.status_message = if failed.is_empty() {
+                format!("Updated {n} app(s)")
+            } else {
+                format!("{} of {n} failed: {}", failed.len(), failed.join("; "))
+            };
+        }
+        Pending::Remove { name, repo } => {
+            app.status_message = format!("Removing {name}...");
+            app.clear_screen = true;
+            suspend_tui(terminal)?;
+            let result = crate::commands::remove::execute(
+                RemoveArgs {
+                    repo,
+                    yes: true,
+                    dry_run: false,
+                },
+                config,
+                state,
+            )
+            .await;
+            resume_tui(terminal)?;
+            let reload = app.retry_config.clone();
+            app.load_apps(config, state, &reload).await;
+            app.status_message = match result {
+                Ok(()) => format!("Removed {name}"),
+                Err(e) => format!("Remove failed: {e}"),
+            };
+        }
+    }
+    Ok(())
+}
+
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     config: &ConfigManager,
@@ -192,6 +431,10 @@ async fn run_app(
         search_state: ListState::default(),
         retry_config: RetryConfig::from_config(config),
         clear_screen: false,
+        selected: Vec::new(),
+        status_filter: StatusFilter::All,
+        pending: None,
+        notes: None,
     };
 
     // Load initial data
@@ -251,20 +494,9 @@ impl App {
             };
 
             // GitHub tags carry a "v" prefix ("v3.9") while the installed
-            // version usually does not ("3.9"). Compare them normalized or
-            // every app looks outdated.
-            let current_norm = crate::core::normalize_version(&current_version);
-            let latest_norm = crate::core::normalize_version(&latest_version);
-
-            let status = if current_version.is_empty() || current_version == "unknown" {
-                "Unmanaged".to_string()
-            } else if latest_version == "?" {
-                "Unknown".to_string()
-            } else if latest_norm == current_norm {
-                "Current".to_string()
-            } else {
-                "Update".to_string()
-            };
+            // version usually does not ("3.9"). status_for normalizes before
+            // comparing, or every app looks outdated.
+            let status = status_for(&current_version, &latest_version);
 
             let install_path = crate::core::find_entry_for_repo(
                 &registry,
@@ -293,18 +525,19 @@ impl App {
 
     fn apply_filter(&mut self) {
         self.filtered_indices.clear();
-        if self.filter_text.is_empty() {
-            self.filtered_indices = (0..self.apps.len()).collect();
-        } else {
-            let ft = self.filter_text.to_lowercase();
-            for (i, app) in self.apps.iter().enumerate() {
-                if app.name.to_lowercase().contains(&ft)
-                    || app.repo.to_lowercase().contains(&ft)
-                    || app.status.to_lowercase().contains(&ft)
-                {
-                    self.filtered_indices.push(i);
-                }
+        let ft = self.filter_text.to_lowercase();
+        for (i, app) in self.apps.iter().enumerate() {
+            if !self.status_filter.matches(app) {
+                continue;
             }
+            if !ft.is_empty()
+                && !(app.name.to_lowercase().contains(&ft)
+                    || app.repo.to_lowercase().contains(&ft)
+                    || app.status.to_lowercase().contains(&ft))
+            {
+                continue;
+            }
+            self.filtered_indices.push(i);
         }
         // Clamp selection to valid range
         if self.filtered_indices.is_empty() {
@@ -492,6 +725,15 @@ async fn handle_key_event(
         Mode::List => {}
     }
 
+    // A pending action owns the keyboard until it is confirmed or cancelled.
+    if let Some(pending) = app.pending.take() {
+        if key == KeyCode::Enter {
+            return run_pending(pending, app, config, state, terminal).await;
+        }
+        app.status_message = "Cancelled".to_string();
+        return Ok(());
+    }
+
     // While a filter is active every printable key belongs to the filter, so
     // the command keys are guarded off and only the navigation and control
     // keys stay live.
@@ -563,84 +805,145 @@ async fn handle_key_event(
             app.should_quit = true;
         }
         KeyCode::Char('u') if !filtering => {
-            let selected = app.selected_app().cloned();
-            if let Some(app_info) = selected {
-                if app_info.status == "Update" || app_info.status == "Outdated" {
-                    let repo_name = app_info.repo.clone();
-                    let app_name = app_info.name.clone();
-                    app.status_message = format!("Updating {app_name}...");
-                    app.clear_screen = true;
-                    let update_args = UpdateArgs {
-                        repo: Some(repo_name),
-                        prerelease: false,
-                        dry_run: false,
-                        force: false,
-                        skip_deps: false,
-                        arch: crate::cli::Arch::Auto,
-                        yes: false,
-                        reset: false,
-                        interactive: false,
-                        notes: false,
-                        // The TUI owns the screen - update output would corrupt it.
-                        quiet: true,
-                        log: None,
-                    };
-                    // Give the command a normal terminal to print in -
-                    // otherwise its output lands in the alternate screen.
-                    suspend_tui(terminal)?;
-                    let result = crate::commands::update::execute(
-                        update_args,
-                        config,
-                        state,
-                        &app.retry_config,
-                    )
-                    .await;
-                    resume_tui(terminal)?;
-                    match result {
-                        Ok(_) => {
-                            app.status_message = format!("Updated {app_name}");
-                            let retry_config_clone = app.retry_config.clone();
-                            app.load_apps(config, state, &retry_config_clone).await;
-                        }
-                        Err(e) => {
-                            app.status_message = format!("Update failed: {e}");
-                        }
-                    }
-                } else {
-                    app.status_message = format!("{} is already current", app_info.name);
+            let Some(app_info) = app.selected_app().cloned() else {
+                return Ok(());
+            };
+            if !app_info.needs_update() {
+                app.status_message = format!("{} is already current", app_info.name);
+                return Ok(());
+            }
+            app.status_message = format!(
+                "Update {} {} -> {}? Enter to confirm, Esc to cancel",
+                app_info.name,
+                crate::core::normalize_version(&app_info.current_version),
+                crate::core::normalize_version(&app_info.latest_version)
+            );
+            app.pending = Some(Pending::Update {
+                targets: vec![(app_info.name.clone(), app_info.repo.clone())],
+            });
+        }
+        KeyCode::Char('U') if !filtering => {
+            let targets: Vec<(String, String)> = app
+                .selected
+                .iter()
+                .filter_map(|&i| app.apps.get(i))
+                .map(|a| (a.name.clone(), a.repo.clone()))
+                .collect();
+            if targets.is_empty() {
+                app.status_message = "No apps marked - press Space to mark one".to_string();
+                return Ok(());
+            }
+            let n = targets.len();
+            app.status_message =
+                format!("Update {n} marked app(s)? Enter to confirm, Esc to cancel");
+            app.pending = Some(Pending::Update { targets });
+        }
+        KeyCode::Char('A') if !filtering => {
+            let targets: Vec<(String, String)> = app
+                .filtered_indices
+                .iter()
+                .filter_map(|&i| app.apps.get(i))
+                .filter(|a| a.needs_update())
+                .map(|a| (a.name.clone(), a.repo.clone()))
+                .collect();
+            if targets.is_empty() {
+                app.status_message = "Nothing to update".to_string();
+                return Ok(());
+            }
+            let n = targets.len();
+            app.status_message =
+                format!("Update {n} outdated app(s)? Enter to confirm, Esc to cancel");
+            app.pending = Some(Pending::Update { targets });
+        }
+        KeyCode::Char(' ') if !filtering => {
+            let Some(&idx) = app.selected_index.and_then(|i| app.filtered_indices.get(i)) else {
+                return Ok(());
+            };
+            let name = app.apps[idx].name.clone();
+            match app.selected.iter().position(|&i| i == idx) {
+                Some(pos) => {
+                    app.selected.remove(pos);
+                    app.status_message = format!("Unmarked {name}");
+                }
+                None => {
+                    app.selected.push(idx);
+                    app.status_message = format!("Marked {name}");
                 }
             }
         }
-        KeyCode::Char('x') if !filtering => {
-            let selected = app.selected_app().cloned();
-            if let Some(app_info) = selected {
-                let repo_name = app_info.repo.clone();
-                let app_name = app_info.name.clone();
-                app.status_message = format!("Removing {app_name}...");
-                app.clear_screen = true;
-                suspend_tui(terminal)?;
-                let result = crate::commands::remove::execute(
-                    RemoveArgs {
-                        repo: repo_name,
-                        yes: true,
-                        dry_run: false,
-                    },
-                    config,
-                    state,
-                )
-                .await;
-                resume_tui(terminal)?;
-                match result {
-                    Ok(_) => {
-                        app.status_message = format!("Removed {app_name}");
-                        let retry_config_clone = app.retry_config.clone();
-                        app.load_apps(config, state, &retry_config_clone).await;
-                    }
-                    Err(e) => {
-                        app.status_message = format!("Remove failed: {e}");
-                    }
+        KeyCode::Char('s') if !filtering => {
+            app.status_filter = app.status_filter.next();
+            app.apply_filter();
+            app.status_message = format!(
+                "Showing {} ({})",
+                app.status_filter.label(),
+                app.filtered_indices.len()
+            );
+        }
+        KeyCode::Char('R') if !filtering => {
+            let Some(&idx) = app.selected_index.and_then(|i| app.filtered_indices.get(i)) else {
+                return Ok(());
+            };
+            let repo = app.apps[idx].repo.clone();
+            let name = app.apps[idx].name.clone();
+            app.status_message = format!("Refreshing {name}...");
+            let token = config.get().github_token.as_deref();
+            let retry = app.retry_config.clone();
+            match fetch_latest_release(&repo, token, &retry).await {
+                Ok(Some(latest)) => {
+                    let current = app.apps[idx].current_version.clone();
+                    app.apps[idx].latest_version = latest.clone();
+                    app.apps[idx].status = status_for(&current, &latest);
+                    app.status_message = format!("{name}: {}", app.apps[idx].status);
                 }
+                Ok(None) => {
+                    app.apps[idx].latest_version = "?".to_string();
+                    app.apps[idx].status = status_for(&app.apps[idx].current_version.clone(), "?");
+                    app.status_message = format!("{name}: no release found");
+                }
+                Err(e) => app.status_message = format!("Refresh failed: {e}"),
             }
+        }
+        KeyCode::Char('n') if !filtering => {
+            let Some(app_info) = app.selected_app().cloned() else {
+                return Ok(());
+            };
+            app.status_message = format!("Loading release notes for {}...", app_info.name);
+            let token = config.get().github_token.as_deref();
+            let retry = app.retry_config.clone();
+            match fetch_release_notes(&app_info.repo, token, &retry).await {
+                Ok(Some(notes)) => {
+                    app.notes = Some((app_info.repo.clone(), notes));
+                    app.show_details = true;
+                    app.status_message = format!("Release notes for {}", app_info.name);
+                }
+                Ok(None) => {
+                    app.status_message = format!("No release notes for {}", app_info.name)
+                }
+                Err(e) => app.status_message = format!("Could not load release notes: {e}"),
+            }
+        }
+        KeyCode::Char('y') if !filtering => {
+            let Some(app_info) = app.selected_app().cloned() else {
+                return Ok(());
+            };
+            match copy_to_clipboard(&app_info.install_path) {
+                Ok(()) => app.status_message = "Install path copied to the clipboard".to_string(),
+                Err(e) => app.status_message = format!("Could not copy the path: {e}"),
+            }
+        }
+        KeyCode::Char('x') if !filtering => {
+            let Some(app_info) = app.selected_app().cloned() else {
+                return Ok(());
+            };
+            app.status_message = format!(
+                "Stop managing {}? Its files stay on disk. Enter to confirm, Esc to cancel",
+                app_info.name
+            );
+            app.pending = Some(Pending::Remove {
+                name: app_info.name.clone(),
+                repo: app_info.repo.clone(),
+            });
         }
         KeyCode::Char('/') if !filtering => {
             app.filter_text = String::new();
@@ -703,9 +1006,9 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         }
         Mode::List => {
             if !app.filter_text.is_empty() {
-                format!("Filter: '{}'   [u] update  [x] remove  [?] help  [q] quit", app.filter_text)
+                format!("Filter: '{}'   [Enter] apply  [Esc] cancel  [?] help  [q] quit", app.filter_text)
             } else {
-                "ObtainHub   [u] update  [x] remove  [a] add  [/] filter  [?] help  [q] quit"
+                "ObtainHub   [u] update  [x] remove  [Space] mark  [A] update all  [?] help  [q] quit"
                     .to_string()
             }
         }
@@ -750,7 +1053,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_stateful_widget(list, chunks[2], &mut app.search_state);
     } else if app.show_details {
         if let Some(app_info) = app.selected_app() {
-            let details = vec![
+            let mut details = vec![
                 Line::from(vec![Span::styled("Name: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&app_info.name)]),
                 Line::from(vec![Span::styled("Repository: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&app_info.repo)]),
                 Line::from(vec![Span::styled("Current version: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&app_info.current_version)]),
@@ -762,8 +1065,22 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
                 })]),
                 Line::from(vec![Span::styled("Install path: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&app_info.install_path)]),
                 Line::from(""),
-                Line::from(vec![Span::styled("Press 'u' to update, 'x' to remove, 'Enter' to close", Style::default().fg(Color::Gray))]),
             ];
+            // Release notes belong to one repo - showing them for any other
+            // app would be worse than showing none.
+            if let Some((repo, body)) = &app.notes {
+                if repo == &app_info.repo {
+                    details.push(Line::from(vec![Span::styled(
+                        "Release notes:",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    )]));
+                    for line in body.lines() {
+                        details.push(Line::from(line.to_string()));
+                    }
+                    details.push(Line::from(""));
+                }
+            }
+            details.push(Line::from(vec![Span::styled("Press 'u' to update, 'x' to remove, 'n' for notes, 'Enter' to close", Style::default().fg(Color::Gray))]));
             let details_block = Paragraph::new(details)
                 .style(Style::default().fg(Color::White))
                 .block(Block::default().borders(Borders::ALL).title("App Details - Press 'Enter' to close"))
@@ -794,15 +1111,43 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             ]),
             Line::from(vec![
                 Span::styled("  r", Style::default().fg(Color::Yellow)),
-                Span::raw("  - Refresh app list"),
+                Span::raw("  - Refresh every app (one GitHub call each)"),
+            ]),
+            Line::from(vec![
+                Span::styled("  R", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Refresh the selected app only"),
             ]),
             Line::from(vec![
                 Span::styled("  u", Style::default().fg(Color::Yellow)),
                 Span::raw("  - Update selected app (if update available)"),
             ]),
             Line::from(vec![
+                Span::styled("  Space", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Mark the selected app for a bulk update"),
+            ]),
+            Line::from(vec![
+                Span::styled("  U", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Update every marked app"),
+            ]),
+            Line::from(vec![
+                Span::styled("  A", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Update every outdated app"),
+            ]),
+            Line::from(vec![
                 Span::styled("  x", Style::default().fg(Color::Yellow)),
                 Span::raw("  - Remove selected app from management"),
+            ]),
+            Line::from(vec![
+                Span::styled("  s", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Cycle the status filter (all/outdated/current/unknown)"),
+            ]),
+            Line::from(vec![
+                Span::styled("  n", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Show the release notes of the selected app"),
+            ]),
+            Line::from(vec![
+                Span::styled("  y", Style::default().fg(Color::Yellow)),
+                Span::raw("  - Copy the install path to the clipboard"),
             ]),
             Line::from(vec![
                 Span::styled("  a", Style::default().fg(Color::Yellow)),
@@ -873,15 +1218,9 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         // App list (filtered) - a table, so every app gets one row with
         // aligned columns and the whole list is visible at a glance.
         let visible_indices: Vec<usize> = app.filtered_indices.to_vec();
-        let has_update = |a: &AppInfo| {
-            a.status == "Update" || a.status == "Outdated"
-                || (a.latest_version != "?"
-                    && crate::core::normalize_version(&a.latest_version)
-                        != crate::core::normalize_version(&a.current_version))
-        };
         let update_count = visible_indices
             .iter()
-            .filter(|&&idx| has_update(&app.apps[idx]))
+            .filter(|&&idx| app.apps[idx].needs_update())
             .count();
 
         let rows: Vec<Row> = visible_indices
@@ -895,7 +1234,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
                     }
                     _ => Style::default().fg(Color::Yellow),
                 };
-                let latest = if has_update(a) {
+                let latest = if a.needs_update() {
                     // Arrow marks the apps that need an update.
                     Span::styled(
                         format!("{} ^", crate::core::normalize_version(&a.latest_version)),
@@ -908,6 +1247,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
                     )
                 };
                 Row::new(vec![
+                    Cell::from(if app.selected.contains(&idx) { "[x]" } else { "   " }),
                     Cell::from(a.name.clone()),
                     Cell::from(crate::core::normalize_version(&a.current_version)),
                     Cell::from(latest),
@@ -918,6 +1258,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             .collect();
 
         let header = Row::new(vec![
+            Cell::from(""),
             Cell::from("App"),
             Cell::from("Installed"),
             Cell::from("Latest"),
@@ -926,19 +1267,21 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         ])
         .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
 
-        let title = if update_count > 0 {
-            format!(
-                "Managed Apps ({}) - {} need an update (^)",
-                visible_indices.len(),
-                update_count
-            )
-        } else {
-            format!("Managed Apps ({})", visible_indices.len())
-        };
+        let mut title = format!("Managed Apps ({})", visible_indices.len());
+        if app.status_filter != StatusFilter::All {
+            title.push_str(&format!(" - showing {}", app.status_filter.label()));
+        }
+        if update_count > 0 {
+            title.push_str(&format!(" - {update_count} need an update (^)"));
+        }
+        if !app.selected.is_empty() {
+            title.push_str(&format!(" - {} marked", app.selected.len()));
+        }
 
         let table = Table::new(
             rows,
             [
+                Constraint::Length(4),
                 Constraint::Min(16),
                 Constraint::Length(9),
                 Constraint::Length(9),
@@ -993,6 +1336,10 @@ mod tests {
             search_state: ListState::default(),
             retry_config: RetryConfig::default(),
             clear_screen: false,
+            selected: Vec::new(),
+            status_filter: StatusFilter::All,
+            pending: None,
+            notes: None,
         };
         app.apps = apps;
         app.apply_filter();
@@ -1073,5 +1420,54 @@ mod tests {
         let text = render(&mut app, 100, 20);
         assert!(text.contains("OnionHop"));
         assert!(!text.contains("Obsidian"), "filter did not narrow the list");
+    }
+
+    #[test]
+    fn the_status_filter_narrows_the_table() {
+        let mut app = app_with(vec![
+            app_info("OnionHop", "3.8.6", "3.9", "Update"),
+            app_info("Obsidian", "1.5.0", "1.5.0", "Current"),
+        ]);
+        app.status_filter = StatusFilter::Outdated;
+        app.apply_filter();
+        let text = render(&mut app, 100, 20);
+        assert!(text.contains("OnionHop"));
+        assert!(
+            !text.contains("Obsidian"),
+            "the outdated filter kept a current app"
+        );
+    }
+
+    #[test]
+    fn marked_apps_show_a_marker() {
+        let mut app = app_with(vec![
+            app_info("OnionHop", "3.8.6", "3.9", "Update"),
+            app_info("Obsidian", "1.5.0", "1.5.0", "Current"),
+        ]);
+        app.selected.push(0);
+        let text = render(&mut app, 100, 20);
+        let onion_line = text.lines().find(|l| l.contains("OnionHop")).unwrap();
+        assert!(onion_line.contains("[x]"), "no marker: {onion_line}");
+        let obsidian_line = text.lines().find(|l| l.contains("Obsidian")).unwrap();
+        assert!(!obsidian_line.contains("[x]"), "marker on an unmarked app");
+    }
+
+    #[test]
+    fn the_title_shows_the_filter_and_the_marked_count() {
+        let mut app = app_with(vec![app_info("OnionHop", "3.8.6", "3.9", "Update")]);
+        app.status_filter = StatusFilter::Outdated;
+        app.apply_filter();
+        app.selected.push(0);
+        let text = render(&mut app, 100, 20);
+        assert!(text.contains("showing outdated"), "no filter in the title");
+        assert!(text.contains("1 marked"), "no marked count in the title");
+    }
+
+    #[test]
+    fn versions_are_normalized_before_the_status_is_decided() {
+        assert_eq!(status_for("3.9", "v3.9"), "Current");
+        assert_eq!(status_for("3.8.6", "v3.9"), "Update");
+        assert_eq!(status_for("3.9", "?"), "Unknown");
+        assert_eq!(status_for("unknown", "v1.0"), "Unmanaged");
     }
 }

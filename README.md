@@ -130,6 +130,31 @@ ohub info BurntSushi/ripgrep
 ohub tui                         # Press '?' for help, 'j/k' to navigate
 ```
 
+### TUI keys
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` or `↓` / `↑` | Move the selection |
+| `Space` | Mark the app for a bulk update |
+| `U` | Update every marked app |
+| `A` | Update every outdated app |
+| `u` | Update the selected app |
+| `x` | Stop managing the selected app (its files stay on disk) |
+| `s` | Cycle the status filter: all / outdated / current / unknown |
+| `R` | Refresh the selected app only (one GitHub call) |
+| `r` | Refresh every app (one GitHub call each) |
+| `n` | Show the release notes of the selected app |
+| `y` | Copy the install path to the clipboard |
+| `a` | Search GitHub, then add or install a repository |
+| `/` | Filter by name / repo / status |
+| `c` | Clear the filter |
+| `Enter` | App details, or apply the filter |
+| `?` / `h` / `F1` | Help |
+| `q` / `Esc` | Quit |
+
+Update and remove ask for confirmation first: the status line shows what will
+happen, `Enter` confirms, `Esc` or any other key cancels.
+
 ## Configuration
 
 Config file: `%APPDATA%\ObtainHub\config.toml` (Windows) or `$XDG_CONFIG_HOME/ObtainHub/config.toml` (Unix)
@@ -159,7 +184,7 @@ ohub config set key value # Set value
 | `ohub self-update` | Check for and install a new ohub release. Renames running `ohub.exe` before launching installer so the file can be replaced. Launches MSI/EXE installers elevated via PowerShell `Start-Process -Verb RunAs`. Use `--skip-signature` to bypass signature check, `--prerelease` for release candidates. |
 | `ohub config` | Get/set configuration keys (github_token, install_dir, etc.). |
 | `ohub doctor` | Diagnose installation issues: directory existence/writability, proxy, GitHub token and rate limit, PATH. `--fix` repairs what it can, `--strict` exits non-zero when issues remain. |
-| `ohub tui` | Interactive table of the managed apps - one row per app with Installed / Latest / Status columns, and `^` marking the apps that need an update. Keys: `j`/`k` or arrows to move, `u` update, `x` remove, `a` search and add, `/` filter, `Enter` details, `r` refresh, `?` help, `q` quit. |
+| `ohub tui` | Interactive table of the managed apps - one row per app with Installed / Latest / Status columns, and `^` marking the apps that need an update. Press `?` for the full key list. |
 
 ### Version comparison
 Version strings are normalized before comparison: the `v`/`V` prefix is stripped, so `v3.0.32` matches `3.0.32`.
