@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v3.0.53-rc1] - 2026-10-21
 ### Changed
 - CI uploads `check.log` / `test.log` / `clippy.log` / `build.log` as workflow artifacts when a job fails. Job logs are admin-only in the public API, so before this a failed Windows build could not be diagnosed without repo access.
 - Clippy is a hard gate again (`-D warnings`) now that the lint backlog is cleared.
