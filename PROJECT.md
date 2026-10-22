@@ -7,7 +7,7 @@ file disagree, the code is the bug.
 **Start at `AGENTS.md`** — it is the entry point and points here.
 This file also owns the **changelog template** (§0).
 
-Last verified against: `main` @ `494ed42` (v3.0.65).
+Last verified against: `main` @ `1f8aa41` (v3.0.66-rc1).
 
 ---
 
@@ -435,7 +435,7 @@ rejection.
 
 ## 11. Work tracking
 
-`PLAN.md` holds the numbered improvement plan. Status as of `494ed42`:
+`PLAN.md` holds the numbered improvement plan. Status as of `1f8aa41`:
 
 | # | Item | State |
 |---|---|---|
