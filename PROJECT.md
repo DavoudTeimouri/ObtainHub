@@ -7,7 +7,7 @@ file disagree, the code is the bug.
 **Start at `AGENTS.md`** — it is the entry point and points here.
 This file also owns the **changelog template** (§0).
 
-Last verified against: `main` @ `43c8309` (v3.0.65-rc1).
+Last verified against: `main` @ `494ed42` (v3.0.65).
 
 ---
 
@@ -54,6 +54,20 @@ sequence of patch releases each fixing the last one's bug.
 `prerelease` from the `-` in the tag). It only becomes a full release after you
 have installed it and confirmed it works. Never cut a final tag on untested
 code.
+
+**The final release carries the whole candidate cycle.** A `vX.Y.Z` release
+folds every `-rc` changelog section that came before it into one section -
+the final release's notes are the union of the candidates', grouped by the
+categories above. That is what happened for v3.0.65, the first final release:
+50 `## [vX.Y.Z-rc1]` sections became one `## [v3.0.65]` section with 307
+bullets. The candidate releases are then deleted, so the releases page shows
+the final release only.
+
+**Deleting a release's tag turns the release into a draft.** The object
+survives, but it disappears from the releases page and its assets stop being
+publicly downloadable. So the order is: cut the final tag, wait for the
+release, verify it, and only then delete the candidate releases and their
+tags. Deleting a tag while its own release job is still running races it.
 
 **Do not force-move a tag you have published.** Force-moving
 `v3.0.5` was needed while nothing had downloaded it. Once users have the
@@ -410,7 +424,7 @@ rejection.
 
 ## 11. Work tracking
 
-`PLAN.md` holds the numbered improvement plan. Status as of `43c8309`:
+`PLAN.md` holds the numbered improvement plan. Status as of `494ed42`:
 
 | # | Item | State |
 |---|---|---|
