@@ -47,12 +47,23 @@ declared but never acted on.
 - `ohub rollback` looked up the release tag as `3.8.6` when the tag on GitHub is `v3.8.6`. It now tries both forms.
 - 75 clippy findings cleared across 16 files: needless borrows, redundant field names, no-op `..Default::default()` struct updates, `sort_by` → `sort_by_key`, `iter().any()` → `contains()`, `iter().cloned().collect()` → `to_vec()`, `Iterator::last` → `next_back`, collapsible `if` blocks and match arms, unnecessary casts, a dead `GitHubRepoInfo` struct, and an unused type parameter on the TUI draw function.
 - Windows build broke in two places, both hidden from Linux because the code sits behind `#[cfg(windows)]`:
+  - `src/core/elevate.rs` called `Result::context()` — a trait method — but only imported `anyhow::Result` (E0599). `anyhow::Context` is now imported under `#[cfg(windows)]`.
+  - `src/commands/check.rs` moved `entry.display_name` out of the registry entry and then borrowed the whole entry again for `entry.install_dir()` (E0382: borrow of partially moved value). The install path and uninstaller are now read before the move.
 - The v3.0.50-rc1 and v3.0.51-rc1 releases never published an installer: the Windows CI build failed on the same errors, so no MSI or NSIS EXE was attached. Use v3.0.52-rc1 instead.
 - `ohub check` ran its self-update check against a throwaway `ConfigManager`/`StateManager`, so the user's GitHub token was ignored and every self-update check hit the anonymous 60 req/hr limit. It now uses the real config and state.
 - `ohub update` reported success when an installer failed because the app was still running. The Windows uninstall registry is now snapshotted before and after the installer runs, and the result is verified against it.
 - `ohub update` prints a progress bar while downloading and shows the download directory it actually uses.
 - `ohub update` sets `install_path` to install directory (`repos\owner\repo\`) instead of downloaded setup file (`repos\owner\repo\OnionHop-Setup-v3.exe`). `ohub list` Path column now shows the install folder, not the downloaded .exe/.msi file.
 - Consistent 403 error message across ALL commands: "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+  - check (check.rs, find_candidate_repos)
+  - update (update.rs, find_candidate_repos)
+  - self_update (self_update.rs - releases/latest, releases list, tags)
+  - install (install.rs - fetch_repo_info, fetch_latest_release, fetch_release_by_tag, search_github_repos)
+  - info (info.rs)
+  - source (source.rs)
+  - tui (tui.rs)
+  - add (add.rs)
+  - search (search.rs)
 - `ohub update` showed wrong directory (download_dir instead of install_dir where files are actually stored)
 - CI compile error E0716: `format!()` temporary dropped before `Command::args()` used it in `run_installer` (update.rs) and self-update elevation (self_update.rs). Now binds `format!()` result to a named variable before passing its reference to `.args()`.
 - `ohub update` 403 error now says "rate limited or access denied" with token hint
@@ -139,24 +150,26 @@ declared but never acted on.
 - Check command: added `--quiet` flag to suppress non-error output
 - NSIS "Installer corrupted: invalid opcode" — replaced `Exch $R0` with `Push $R0` in `PathHasEntry` / `un.PathHasEntry` to avoid NSIS 3.13 stack-exchange bug triggered by compiler optimization `+2`
 - NSIS pinned to 3.11 with SourceForge fallback (fixes "Installer corrupted: invalid opcode")
-- The NSIS installer failed on Windows with "Installer corrupted: invalid
-- The build toolchain was unpinned. `winget install NSIS.NSIS` resolves to
-- Checksum verification never verified anything. `verify_checksum` looked for a
-- `self-update` downloaded a release asset and overwrote the running binary with
-- `config get github_token` printed the token verbatim, leaking it into shell
-- `backup` and `reset --backup` embedded the plaintext GitHub token in the archive.
-- `reset --move-token` and `--keep-token` were stubs that printed "not implemented".
+- The NSIS installer failed on Windows with "Installer corrupted: invalid opcode" before showing any dialog. v3.0.4 and v3.0.5 were both built with NSIS 3.13, which winget installs by default. The published file was not corrupt in transit: its SHA-256 matched the published `SHA256SUMS`, the MZ header was intact, the `NullsoftInst` magic sat at the expected offset, and the sizes matched what CI built. The fault was in how 3.13 emitted this script.
+- The build toolchain was unpinned. `winget install NSIS.NSIS` resolves to whatever "latest" is, so the NSIS version could change between runs with no diff to review. NSIS is now pinned to 3.11, the installer download is verified by SHA-256 before use, and the build asserts `makensis -VERSION` reports 3.11 before running.
+- Checksum verification never verified anything. `verify_checksum` looked for a `<archive>.sha256` file inside the newly created install directory, where nothing ever writes one, so every install warned and returned `Ok`. `install` now reads a digest published with the release (`<name>.sha256`, `SHA256SUMS`, `checksums.txt`) and compares against it; `install --file` and `--url` read a sidecar next to the archive. Mismatches abort the install.
+- `self-update` downloaded a release asset and overwrote the running binary with nothing verified. It now requires a published digest and refuses to run when none exists, failing closed.
+- `config get github_token` printed the token verbatim, leaking it into shell history and CI logs. It now returns `[stored]`.
+- `backup` and `reset --backup` embedded the plaintext GitHub token in the archive. Both strip it and report that they did.
+- `reset --move-token` and `--keep-token` were stubs that printed "not implemented". The token is now captured before the reset: `--keep-token` restores it, `--move-token` writes it to the given path with 0600 on Unix.
 - Mutual refusal was dead code in both directions.
-- `check --all` sent every installed Windows program's `DisplayName` to the GitHub
-- Silent-install conflict handling never compiled: `StrCmp $Silent 1` was rejected
-- Silent-install conflict handling never compiled. `StrCmp $Silent 1` was rejected
-- Version numbers had drifted: the v3.0.1 tag was cut while `Cargo.toml`,
-- MSI build: `installer/setup.wxs` was missing `Platform="x64"`, so ICE80 rejected
-- Zip-slip: `install.rs` joined attacker-controlled zip entry names onto the
-- `uninstall --purge` now drops the repository's state metadata and its membership
-- `update` installs to `config.install_dir` instead of a hardcoded
+  - NSIS looked for the MSI under `Uninstall\{UpgradeCode}`, but Windows Installer registers under the ProductCode and `setup.wxs` uses `Id="*"`, so that key holds a different GUID on every build. NSIS now detects the MSI through its stable marker `HKLM\Software\ObtainHub\PathInstalled`, and clears that marker on uninstall.
+  - The MSI searched `Uninstall\{...}_is1`, but NSIS only appends `_is1` when the app id is not already a GUID. The key never existed, so the search could not match. Fixed the key and restored the launch Condition.
+- `check --all` sent every installed Windows program's `DisplayName` to the GitHub releases API. `NVIDIA Corporation` is not `owner/repo`, so every lookup 404'd and the request volume exhausted the unauthenticated rate limit. Only programs tracked in `state.json` are now queried; the rest are reported as skipped.
+- Silent-install conflict handling never compiled: `StrCmp $Silent 1` was rejected as an unknown variable, so the auto-uninstall-MSI and upgrade-in-place branches were silently dropped. Replaced with the `IfSilent` instruction.
+- Silent-install conflict handling never compiled. `StrCmp $Silent 1` was rejected by makensis as an unknown variable, and the compiler silently ignored both occurrences, so the auto-uninstall-MSI and upgrade-in-place branches were dropped from the binary. Replaced with the `IfSilent` instruction.
+- Version numbers had drifted: the v3.0.1 tag was cut while `Cargo.toml`, `installer/ObtainHub.nsi`, and `installer/setup.wxs` all still said 3.0.0, so the published installers reported the wrong version. All four sites are now bumped together and `PROJECT.md` §2 records the rule.
+- MSI build: `installer/setup.wxs` was missing `Platform="x64"`, so ICE80 rejected the package (LGHT0204) because `PathEnvironment` and `MainExecutable` are both `Win64="yes"`. Removed the 32-bit `RegistrySearch` too — a 64-bit package cannot carry a 32-bit Locator (LGHT1076).
+- Zip-slip: `install.rs` joined attacker-controlled zip entry names onto the install directory without validation, so an entry named `../../evil.exe` wrote outside it. Reachable via `install` and `install --url`, which fetch archives from the internet. `update.rs` had the same hole through `archive.extract()`. Both now normalize the path through `Path::components()` before the containment check, with three tests covering parent traversal, absolute paths, and normal entries.
+- `uninstall --purge` now drops the repository's state metadata and its membership in any group, instead of printing "not yet fully implemented".
+- `update` installs to `config.install_dir` instead of a hardcoded `ObtainHub/repos` path, so a custom install directory is respected.
 - `ohub completion` no longer panics on a broken pipe (`ohub completion fish | head`).
-- Config values that would hang or divide by zero (`parallel_downloads`,
+- Config values that would hang or divide by zero (`parallel_downloads`, `timeout_seconds`, `update_check_interval_hours`, `schedule.interval_hours`) are reset to defaults on load and on save.
 - NSIS installer corruption: replaced `/SOLID LZMA` with per-file LZMA/zlib and CRCCheck on to avoid CRC bug
 - MSI build: removed unsupported `Platform` and `Schedule` attributes from WiX XML
 - Missing imports in TUI modules: `anyhow::Result` in `src/tui/mod.rs`; `ratatui::Frame`, `ratatui::Terminal`, `ratatui::backend::CrosstermBackend` in `src/commands/tui.rs`; `tracing::subscriber::registry` in `src/core/logger.rs`
@@ -260,9 +273,9 @@ declared but never acted on.
 - Added `dialoguer` and `console` dependencies for interactive prompts
 - RC build for v3.0.9 with all v3.0.8 features
 - RC build for v3.0.8 with all v3.0.7 features
-- Releases now publish `SHA256SUMS` alongside both installers, which is what makes
+- Releases now publish `SHA256SUMS` alongside both installers, which is what makes self-update's verification satisfiable.
 - Tests for the digest parsers and the manifest filename match: 13 total.
-- `PROJECT.md`: living reference for installer invariants, GUID requirements,
+- `PROJECT.md`: living reference for installer invariants, GUID requirements, filesystem layout, config contract, and security posture.
 - `CONTRIBUTING.md`: build, test, installer, and release procedure.
 - README: examples for every major command; corrected config path.
 - Complete rewrite from Python to Rust (ObtainHub-rs merged into main)
@@ -293,6 +306,10 @@ declared but never acted on.
 - Self-update signature verification with Ed25519 (Plan #11)
 - `--skip-signature` flag for self-update (emergency bypass)
 - Dependency tracking for installed apps (Plan #13)
+  - `dependencies` field in state for declaring repo dependencies
+  - Auto-update of dependencies during `ohub update` (with `--skip-deps` to opt out)
+  - Uninstall protects dependencies with `--force` override
+  - `--dependencies` flag for `ohub install` to declare deps at install time
 
 ### Changed
 - `ohub config auth` reports where the token actually lives: "credential store", "config file" or "not set".
@@ -313,7 +330,7 @@ declared but never acted on.
 - `check.rs` registry scan now delegates to `core::winreg` (removed ~40 lines of duplicated code).
 - NSIS pinned to 3.11 with SourceForge fallback
 - Updated CHANGELOG for RC release
-- The release job now checks out the repository. It previously ran the
+- The release job now checks out the repository. It previously ran the changelog extraction against an empty workspace, so `awk: cannot open file 'CHANGELOG.md'` failed every release.
 - NSIS installer now builds with zero warnings (was 2).
 - The NSIS installer builds with zero warnings (was 2).
 - ObtainHub-rs repository deleted after migration (code now in main repo)
@@ -321,5 +338,13 @@ declared but never acted on.
 - Installer scripts: NSIS uses zlib compression with CRC; WiX uses standard heat/candle/light
 - Version: bumped to 3.0.0 for major rewrite
 
+### Removed
+- Standalone ohub.exe from releases (only installers)
+- Python implementation and related scripts
+- ObtainHub-rs submodule/repository
+
 ### Security
 - The token no longer lands in a config backup (`ohub config backup`, `ohub reset --backup`) or in a restored config file.
+
+### Notes
+- This is a release candidate. Install `ObtainHub-Setup.exe` and confirm it completes before v3.0.6 is cut.
