@@ -287,10 +287,21 @@ impl ConfigManager {
     }
     
     pub fn save(&self) -> Result<()> {
+        self.save_at(&self.config_path)
+    }
+
+    /// Write the config to an arbitrary path.
+    ///
+    /// The restore command uses it to put a restored config somewhere other
+    /// than the live one.
+    pub fn save_at(&self, path: &Path) -> Result<()> {
         let mut config = self.config.clone();
         Self::sanitize(&mut config);
         let content = toml::to_string_pretty(&config)?;
-        std::fs::write(&self.config_path, content)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
         Ok(())
     }
     

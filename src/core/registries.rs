@@ -235,48 +235,18 @@ impl GitHubRegistry {
         token: Option<&str>,
         config: &ConfigManager,
     ) -> Result<()> {
-        // With a bandwidth limit the file is fetched in chunks, one chunk per
-        // second, so the transfer really is paced. `minreq` buffers the whole
-        // body, so a single request cannot be slowed down.
-        if let Some(limit_kbps) = config.get().download_bandwidth_limit {
-            if limit_kbps > 0 && asset.size > 0 {
-                return download_paced(asset, dest, token, limit_kbps).await;
-            }
-        }
-
-        let mut req = github_get(&asset.browser_download_url);
-        if let Some(token) = token {
-            req = req.with_header("Authorization", format!("Bearer {}", token));
-        }
-
-        let response = req
-            .send()
-            .context("Failed to send request")?;
-
-        let total_size = response
-            .headers
-            .get("content-length")
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
-        
-        let pb = indicatif::ProgressBar::new(total_size);
-        pb.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-        pb.set_message(asset.name.clone());
-        
-        let bytes = response.as_bytes();
-        
-        for chunk in bytes.chunks(8192) {
-            pb.inc(chunk.len() as u64);
-        }
-        
-        pb.finish_with_message(format!("Downloaded {}", asset.name));
-        std::fs::write(dest, bytes).context("Failed to write download")?;
-        Ok(())
+        crate::core::download::to_file(
+            &crate::core::download::Download {
+                url: &asset.browser_download_url,
+                dest,
+                token,
+                label: &asset.name,
+                size: Some(asset.size),
+                quiet: false,
+            },
+            config,
+        )
+        .await
     }
 }
 
@@ -422,38 +392,22 @@ impl CratesIoRegistry {
         asset: &RegistryAsset,
         dest: &std::path::Path,
         _token: Option<&str>,
-        _config: &ConfigManager,
+        config: &ConfigManager,
     ) -> Result<()> {
-        let req = github_get(&asset.browser_download_url);
-        
-        let response = req
-            .send()
-            .context("Failed to send request")?;
-        
-        let total_size = response
-            .headers
-            .get("content-length")
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
-        
-        let pb = indicatif::ProgressBar::new(total_size);
-        pb.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-        pb.set_message(asset.name.clone());
-        
-        let bytes = response.as_bytes();
-        
-        for chunk in bytes.chunks(8192) {
-            pb.inc(chunk.len() as u64);
-        }
-        
-        pb.finish_with_message(format!("Downloaded {}", asset.name));
-        std::fs::write(dest, bytes).context("Failed to write download")?;
-        Ok(())
+        // The GitHub token is not sent to crates.io. It is a GitHub credential
+        // and crates.io has no use for it.
+        crate::core::download::to_file(
+            &crate::core::download::Download {
+                url: &asset.browser_download_url,
+                dest,
+                token: None,
+                label: &asset.name,
+                size: Some(asset.size),
+                quiet: false,
+            },
+            config,
+        )
+        .await
     }
 }
 
@@ -511,87 +465,19 @@ impl GenericHttpRegistry {
         token: Option<&str>,
         config: &ConfigManager,
     ) -> Result<()> {
-        // With a bandwidth limit the file is fetched in chunks, one chunk per
-        // second, so the transfer really is paced. `minreq` buffers the whole
-        // body, so a single request cannot be slowed down.
-        if let Some(limit_kbps) = config.get().download_bandwidth_limit {
-            if limit_kbps > 0 && asset.size > 0 {
-                return download_paced(asset, dest, token, limit_kbps).await;
-            }
-        }
-
-        let mut req = github_get(&asset.browser_download_url);
-        if let Some(token) = token {
-            req = req.with_header("Authorization", format!("Bearer {}", token));
-        }
-
-        let response = req
-            .send()
-            .context("Failed to send request")?;
-
-        let total_size = response
-            .headers
-            .get("content-length")
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
-        
-        let pb = indicatif::ProgressBar::new(total_size);
-        pb.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-        pb.set_message(asset.name.clone());
-        
-        let bytes = response.as_bytes();
-        
-        for chunk in bytes.chunks(8192) {
-            pb.inc(chunk.len() as u64);
-        }
-        
-        pb.finish_with_message(format!("Downloaded {}", asset.name));
-        std::fs::write(dest, bytes).context("Failed to write download")?;
-        Ok(())
+        crate::core::download::to_file(
+            &crate::core::download::Download {
+                url: &asset.browser_download_url,
+                dest,
+                token,
+                label: &asset.name,
+                size: Some(asset.size),
+                quiet: false,
+            },
+            config,
+        )
+        .await
     }
-}
-
-/// Download an asset at a limited rate.
-///
-/// The chunk is as many bytes as the limit allows in one second and the next
-/// chunk starts a second later, so the average rate is the configured one. The
-/// server has to support Range requests; without them the download cannot be
-/// paced and the caller is told so.
-async fn download_paced(
-    asset: &RegistryAsset,
-    dest: &std::path::Path,
-    token: Option<&str>,
-    limit_kbps: u64,
-) -> Result<()> {
-    let chunk_size = limit_kbps.saturating_mul(1024).max(1);
-    let mut bytes: Vec<u8> = Vec::with_capacity(asset.size as usize);
-    let mut start: u64 = 0;
-    while start < asset.size {
-        let end = (start + chunk_size - 1).min(asset.size - 1);
-        let mut req = github_get(&asset.browser_download_url);
-        req = req.with_header("Range", format!("bytes={start}-{end}"));
-        if let Some(token) = token {
-            req = req.with_header("Authorization", format!("Bearer {}", token));
-        }
-        let response = req.send().context("Failed to send request")?;
-        if response.status_code != 206 {
-            anyhow::bail!(
-                "The server does not support range requests, so the download cannot be rate limited"
-            );
-        }
-        bytes.extend_from_slice(response.as_bytes());
-        start = end + 1;
-        if start < asset.size {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-    }
-    std::fs::write(dest, &bytes).context("Failed to write download")?;
-    Ok(())
 }
 
 /// Factory for creating registry instances

@@ -3,7 +3,7 @@ use crate::cli::RestoreArgs;
 use anyhow::Result;
 use serde::Deserialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::info;
 use zip::ZipArchive;
 use sha2::Digest;
@@ -53,10 +53,19 @@ pub async fn execute(args: RestoreArgs, config: &mut ConfigManager, state: &mut 
     // Restore config if requested
     if args.config {
         *config.get_mut() = backup_data.config.clone();
-        config.save()?;
-        println!("Config restored");
+        match args.target_config.as_deref() {
+            Some(dir) => {
+                let path = Path::new(dir).join("config.toml");
+                config.save_at(&path)?;
+                println!("Config restored to {}", path.display());
+            }
+            None => {
+                config.save()?;
+                println!("Config restored");
+            }
+        }
     }
-    
+
     // Restore state (installed repos)
     if args.state {
         let state_guard = state.get_mut();
@@ -64,21 +73,37 @@ pub async fn execute(args: RestoreArgs, config: &mut ConfigManager, state: &mut 
         for repo in &backup_data.installed_repos {
             state_guard.installed.insert(repo.repo.clone(), repo.clone());
         }
-        state.save()?;
-        println!("State restored: {} repositories", backup_data.installed_repos.len());
+        match args.target_state.as_deref() {
+            Some(dir) => {
+                let path = Path::new(dir).join("state.json");
+                state.save_at(&path)?;
+                println!(
+                    "State restored to {}: {} repositories",
+                    path.display(),
+                    backup_data.installed_repos.len()
+                );
+            }
+            None => {
+                state.save()?;
+                println!("State restored: {} repositories", backup_data.installed_repos.len());
+            }
+        }
     }
-    
+
     // Restore repo archives if requested
     if args.repos && !backup_data.repo_archives.is_empty() {
         // Re-open archive for repo extraction
         let backup_file2 = fs::File::open(backup_path)?;
         let mut archive2 = ZipArchive::new(backup_file2)?;
-        
-        let install_root = dirs::data_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join("obtainhub")
-            .join("installed");
-        
+
+        // The apps go where the config in effect says they go.
+        let install_root = restore_install_root(
+            args.config,
+            args.state,
+            &backup_data.config.install_dir,
+            &config.get().install_dir,
+        );
+
         fs::create_dir_all(&install_root)?;
         
         for ra in &backup_data.repo_archives {
@@ -117,6 +142,25 @@ pub async fn execute(args: RestoreArgs, config: &mut ConfigManager, state: &mut 
     Ok(())
 }
 
+/// Where the restored apps go.
+///
+/// The config in effect decides. When the config or the state is restored,
+/// that is the backed up config's install_dir - the paths the restored state
+/// points at. Restoring into a directory the tool never looks at would make
+/// the apps invisible to `ohub list` and `ohub uninstall`.
+fn restore_install_root(
+    restore_config: bool,
+    restore_state: bool,
+    backup_install_dir: &Path,
+    current_install_dir: &Path,
+) -> PathBuf {
+    if restore_config || restore_state {
+        backup_install_dir.to_path_buf()
+    } else {
+        current_install_dir.to_path_buf()
+    }
+}
+
 fn extract_zip_archive(archive_path: &Path, output_dir: &Path) -> Result<()> {
     let file = fs::File::open(archive_path)?;
     let mut archive = ZipArchive::new(file)?;
@@ -149,4 +193,39 @@ fn calculate_sha256(path: &Path) -> Result<String> {
         hasher.update(&buffer[..n]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_restored_config_decides_where_the_apps_go() {
+        let backup = Path::new("/backup/repos");
+        let current = Path::new("/current/repos");
+        assert_eq!(
+            restore_install_root(true, false, backup, current),
+            PathBuf::from("/backup/repos")
+        );
+    }
+
+    #[test]
+    fn a_restored_state_decides_where_the_apps_go() {
+        let backup = Path::new("/backup/repos");
+        let current = Path::new("/current/repos");
+        assert_eq!(
+            restore_install_root(false, true, backup, current),
+            PathBuf::from("/backup/repos")
+        );
+    }
+
+    #[test]
+    fn without_a_config_or_state_the_current_install_dir_is_used() {
+        let backup = Path::new("/backup/repos");
+        let current = Path::new("/current/repos");
+        assert_eq!(
+            restore_install_root(false, false, backup, current),
+            PathBuf::from("/current/repos")
+        );
+    }
 }

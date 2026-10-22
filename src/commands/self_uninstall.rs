@@ -87,7 +87,7 @@ pub async fn execute(args: SelfUninstallArgs, _config: &ConfigManager, _state: &
 
     if let Some(backup_path) = &args.backup {
         println!("Backup saved to: {}", backup_path);
-        println!("To restore, run: ohub self-uninstall --restore {}", backup_path);
+        println!("To restore, run: ohub restore {}", backup_path);
     }
 
     Ok(())

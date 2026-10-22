@@ -2,6 +2,56 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.66-rc1] - 2026-10-22
+Eight flags that were accepted and did nothing, a restore that put the apps
+in a directory the tool never looks at, and one download implementation
+instead of four.
+
+### Fixed
+- `ohub restore` extracted the apps into `%APPDATA%\obtainhub\installed` while
+  `ohub install` uses `config.install_dir`. The restored apps were invisible
+  to `ohub list` and `ohub uninstall`. The apps now go where the config in
+  effect says they go: the backed up config's `install_dir` when the config
+  or the state is restored, the current one otherwise.
+- `ohub self-uninstall --backup` printed "To restore, run: ohub self-uninstall
+  --restore <file>". That flag did nothing: the command ignored it and
+  uninstalled the tool instead of restoring it. The message now names the
+  command that works, `ohub restore <file>`.
+- `ohub update` verified the digest of the bytes it had in memory and only
+  then wrote the file. The digest is now checked against the file on disk,
+  and a file that does not match is deleted instead of left for the next run
+  to install.
+
+### Added
+- `--verbose` turns the log level up to debug. `RUST_LOG` still wins when it
+  is set.
+- `--no-color` drops the colours from the progress bar. `indicatif` has no
+  `NO_COLOR` support, so the plain template is used instead.
+
+### Changed
+- Every download goes through one implementation now (`core::download`). The
+  registry path, `install --url` and `update` had four copies of it.
+- The bandwidth limit (`download_bandwidth_limit`) applies to every download.
+  Before, only the registry path honoured it: `install --url` and `update`
+  downloaded at full speed.
+- A download that cannot be rate limited now names the URL and says why: the
+  server does not support range requests.
+- Download failures name the URL and the path they were writing to, instead
+  of "Failed to send request".
+
+### Removed
+- `search --include-inactive` and `search --case-insensitive`. Both were
+  accepted and did nothing, and both claimed a default that does not exist:
+  the search already includes inactive repositories, and GitHub's search is
+  already case-insensitive.
+- `self-uninstall --target-config`, `--target-state`, `--target-downloads`
+  and `--no-token`. They belonged to a restore path that was never
+  implemented. `--target-config` and `--target-state` now belong to
+  `ohub restore`, where they work: the restored `config.toml` and
+  `state.json` are written into the directory you name instead of the live
+  one.
+- `self-uninstall --restore`. `ohub restore` is the command that restores.
+
 ## [v3.0.65] - 2026-10-21
 The first final release. It carries every change from the release-candidate
 cycle (v3.0.15-rc1 through v3.0.65-rc1): the commands that were

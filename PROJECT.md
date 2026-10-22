@@ -55,6 +55,17 @@ sequence of patch releases each fixing the last one's bug.
 have installed it and confirmed it works. Never cut a final tag on untested
 code.
 
+**Every version ships as a candidate first.** This is the standing rule, not a
+habit: no version is cut as a final release until its `-rc1` has been
+installed on Windows and confirmed working. The sequence is
+
+1. `vX.Y.Z-rc1` is tagged and published.
+2. The user installs it and reports that it works.
+3. Only then is `vX.Y.Z` tagged, and the candidate release is deleted.
+
+The final release folds the candidate's changelog section into its own, so
+the notes of a version are complete on the release page.
+
 **The final release carries the whole candidate cycle.** A `vX.Y.Z` release
 folds every `-rc` changelog section that came before it into one section -
 the final release's notes are the union of the candidates', grouped by the
@@ -248,7 +259,7 @@ A command needs `&mut` only when it writes config.
 
 | Command | Notes |
 |---|---|
-| `search` | GitHub search; `--min-stars`, `--active-only`, `--sort-stars`, `--language`, `--case-insensitive`, `--dry-run`. After the table, offers to add selected repos to managed list or install them immediately. |
+| `search` | GitHub search; `--min-stars`, `--active-only`, `--sort-stars`, `--language`, `--dry-run`. The search is already case-insensitive and already includes inactive repositories. After the table, offers to add selected repos to managed list or install them immediately. |
 | `install` | `--file` local archive, `--url` direct download, `--dry-run`. Falls back to GitHub search candidates when exact repo not found. |
 | `check` | `--all` enumerates installed Windows software and skips ObtainHub itself. `--candidates` offers candidate repos for unmanaged apps. Version comparison strips `v`/`V` prefix. |
 | `list` | `--format json`. The Path column is the app's **real** install folder, read from the Windows uninstall registry at list time (`core::winreg::find_entry_for_repo`), falling back to `state.json` when Windows does not know the app. |
@@ -265,7 +276,7 @@ A command needs `&mut` only when it writes config.
 | `cleanup` | leftovers and scheduled tasks |
 | `tui` | ratatui + crossterm; keybindings shown in the header. Two constraints: the app list is rendered into `chunks[2]` (the filter bar row collapses to 0 when no filter is active), and any command that prints to stdout must set `app.clear_screen = true` so the main loop wipes the alternate screen before the next draw. |
 | `config` | get / set / list |
-| `backup`, `restore` | backup and restore |
+| `backup`, `restore` | backup and restore. The apps go where the config in effect says they go, and `--target-config` / `--target-state` write the restored files into the directory you name. |
 | `self-update` | updates ohub; downloads installer (`.exe`/`.msi`) or portable `.zip`. Runs MSI/EXE silently, extracts zip. Checksum verified against release `SHA256SUMS`. Ed25519 signature if present (`--skip-signature` to bypass). |
 | `completion` | bash, elvish, fish, powershell, zsh |
 | `doctor` | environment diagnostics |
@@ -431,8 +442,8 @@ rejection.
 | 1 | `update.rs` hardcoded install dir | **Done** — uses `config.install_dir` |
 | 2 | Checksum verification | **Done** in `install.rs` and `update.rs` |
 | 3 | `uninstall --purge` stub | **Done** — drops state metadata + group entries |
-| 4 | Shared download/extract module | Open — deliberately, see rule 10 |
-| 5 | Error messages | Partial — EPIPE panic in `completion` fixed |
+| 4 | Shared download/extract module | **Done** — one `core::download` for the registry path, `install --url` and `update` |
+| 5 | Error messages | Partial — the download path names the URL and the target path; the rest is still generic |
 | 6 | Configurable API timeout | **Done** — `--timeout` on check / install / update; one setting for the whole run |
 | 7 | Consistent arch selection | **Done** — `install` / `update` / `rollback` honour `--arch` |
 | 8 | Config validation | **Done** — `sanitize()` + 2 tests |

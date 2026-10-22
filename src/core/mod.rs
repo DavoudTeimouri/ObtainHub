@@ -2,6 +2,7 @@ pub mod config;
 pub mod state;
 pub mod logger;
 pub mod assets;
+pub mod download;
 pub mod registries;
 pub mod winreg;
 pub mod elevate;

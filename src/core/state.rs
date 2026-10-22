@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use dirs;
 
 /// Strip a leading `v`/`V` so `v3.9` and `3.9` compare equal.
@@ -77,11 +77,22 @@ impl StateManager {
     }
     
     pub fn save(&self) -> Result<()> {
+        self.save_at(&self.state_path)
+    }
+
+    /// Write the state to an arbitrary path.
+    ///
+    /// The restore command uses it to put a restored state somewhere other
+    /// than the live one.
+    pub fn save_at(&self, path: &Path) -> Result<()> {
         let content = serde_json::to_string_pretty(&self.state)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         // Atomic write
-        let tmp_path = self.state_path.with_extension("tmp");
+        let tmp_path = path.with_extension("tmp");
         std::fs::write(&tmp_path, content)?;
-        std::fs::rename(tmp_path, &self.state_path)?;
+        std::fs::rename(tmp_path, path)?;
         Ok(())
     }
     

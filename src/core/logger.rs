@@ -1,9 +1,11 @@
 use anyhow::Result;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-pub fn init() -> Result<()> {
+/// Start logging. `verbose` turns the level up to debug; `RUST_LOG` still
+/// wins when it is set.
+pub fn init(verbose: bool) -> Result<()> {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+        .unwrap_or_else(|_| EnvFilter::new(if verbose { "debug" } else { "info" }));
     
     tracing_subscriber::registry()
         .with(filter)

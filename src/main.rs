@@ -10,11 +10,14 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    logger::init()?;
-    
     let cli = Cli::parse();
-    
+
+    // Initialize logging. `--verbose` turns the level up to debug.
+    logger::init(cli.verbose)?;
+
+    // The progress bar drops its colours. The TUI keeps its own.
+    crate::core::download::set_no_color(cli.no_color);
+
     // Initialize config and state
     let mut config_manager = config::ConfigManager::new()?;
     let mut state_manager = state::StateManager::new()?;

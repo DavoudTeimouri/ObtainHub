@@ -15,8 +15,8 @@ pub struct Cli {
     /// Enable verbose logging
     #[arg(short, long, global = true)]
     pub verbose: bool,
-    
-    /// Disable colored output
+
+    /// Disable the coloured progress bar
     #[arg(long, global = true)]
     pub no_color: bool,
     
@@ -127,10 +127,6 @@ pub struct SearchArgs {
     #[arg(long)]
     pub active_only: bool,
 
-    /// Include archived/inactive repos (default: true when --active-only not used)
-    #[arg(long, conflicts_with = "active_only")]
-    pub include_inactive: bool,
-
     /// Sort by stars (default: best match)
     #[arg(long)]
     pub sort_stars: bool,
@@ -142,10 +138,6 @@ pub struct SearchArgs {
     /// Language filter
     #[arg(long)]
     pub language: Option<String>,
-
-    /// Case-insensitive search
-    #[arg(long)]
-    pub case_insensitive: bool,
 
     /// Dry run - show query without executing
     #[arg(long)]
@@ -539,26 +531,6 @@ pub struct SelfUninstallArgs {
     /// Skip confirmation prompt
     #[arg(short, long)]
     pub yes: bool,
-    
-    /// Restore from a backup zip instead of uninstalling
-    #[arg(long)]
-    pub restore: Option<String>,
-    
-    /// Target config directory for restore (default: current)
-    #[arg(long)]
-    pub target_config: Option<String>,
-    
-    /// Target state directory for restore (default: current)
-    #[arg(long)]
-    pub target_state: Option<String>,
-    
-    /// Target downloads directory for restore (default: current)
-    #[arg(long)]
-    pub target_downloads: Option<String>,
-    
-    /// Don't restore GitHub token to keyring
-    #[arg(long)]
-    pub no_token: bool,
 }
 
 #[derive(Args, Debug)]
@@ -801,7 +773,17 @@ pub struct RestoreArgs {
     /// Restore repository archives
     #[arg(long)]
     pub repos: bool,
-    
+
+    /// Write the restored config.toml into this directory instead of the
+    /// live config directory
+    #[arg(long)]
+    pub target_config: Option<String>,
+
+    /// Write the restored state.json into this directory instead of the live
+    /// state directory
+    #[arg(long)]
+    pub target_state: Option<String>,
+
     /// Force restore (overwrite existing)
     #[arg(long)]
     pub force: bool,

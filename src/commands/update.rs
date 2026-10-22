@@ -5,17 +5,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use tracing::info;
-use indicatif::{ProgressBar, ProgressStyle};
 use dialoguer::{Select, theme::ColorfulTheme};
 
 use crate::commands::install::{fetch_published_checksum, GitHubRelease as InstallGitHubRelease, GitHubAsset as InstallGitHubAsset, select_asset as install_select_asset};
-use sha2::{Digest, Sha256};
-
-fn calculate_sha256_bytes(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
-}
 
 /// Prints progress to stdout (unless quiet) and appends everything to an
 /// optional log file, so scheduled runs leave a record behind.
@@ -482,7 +474,7 @@ pub(crate) async fn install_release(
         if existing_size > 0 {
             total_size = existing_size;
             let existing_bytes = std::fs::read(&asset_path)?;
-            let existing_hash = calculate_sha256_bytes(&existing_bytes);
+            let existing_hash = crate::core::assets::calculate_sha256_bytes(&existing_bytes);
             if let Some(expected) = &expected_hash {
                 if expected.eq_ignore_ascii_case(&existing_hash) {
                     if !quiet {
@@ -501,40 +493,31 @@ pub(crate) async fn install_release(
         }
 
         // Download with progress bar
-        let mut req = crate::core::registries::github_get(download_url);
-        if let Some(token) = token {
-            req = req.with_header("Authorization", format!("Bearer {token}"));
-        }
+        crate::core::download::to_file(
+            &crate::core::download::Download {
+                url: download_url,
+                dest: &asset_path,
+                token,
+                label: &asset.name,
+                size: Some(asset.size),
+                quiet,
+            },
+            config,
+        )
+        .await?;
 
-        let response = req.send()?;
-        total_size = response
-            .as_bytes()
-            .len() as u64;
-        let bytes = response.as_bytes().to_vec();
-
-        let pb = if quiet {
-            ProgressBar::hidden()
-        } else {
-            ProgressBar::new(total_size)
-        };
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-        pb.set_message(format!("Downloading {}", asset.name));
-        pb.finish_with_message(format!("Downloaded {} ({} bytes)", asset.name, total_size));
+        total_size = std::fs::metadata(&asset_path)?.len();
 
         if let Some(expected) = expected_hash {
-            let actual = calculate_sha256_bytes(&bytes);
+            let bytes = std::fs::read(&asset_path)?;
+            let actual = crate::core::assets::calculate_sha256_bytes(&bytes);
             if !expected.eq_ignore_ascii_case(&actual) {
+                // A file that does not match the published digest is worse than
+                // no file: it would be installed on the next run.
+                let _ = std::fs::remove_file(&asset_path);
                 return Err(anyhow::anyhow!("Checksum mismatch for {}", asset.name));
             }
         }
-
-        // Write file
-        std::fs::write(&asset_path, &bytes)?;
     }
 
     // Verify file was actually written (catches locked-file / permission failures)
