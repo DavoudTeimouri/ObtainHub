@@ -5,6 +5,21 @@ use clap_complete::Shell;
 #[command(
     name = "ohub",
     version,
+    long_version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        "\nA Windows app installer and manager, driven by GitHub releases.",
+        "\n",
+        "\nRepository:  ", env!("CARGO_PKG_REPOSITORY"),
+        "\nLicense:     ", env!("CARGO_PKG_LICENSE"),
+        "\nAuthor:      ", env!("CARGO_PKG_AUTHORS"),
+        "\nPlatform:    Windows 10+ (x86_64)",
+        "\nBuilt:       ", env!("VERGEN_BUILD_TIMESTAMP"),
+        "\nRust:        ", env!("VERGEN_RUSTC_SEMVER"),
+        "\n",
+        "\nDocs:        https://github.com/DavoudTeimouri/ObtainHub#readme",
+        "\nInstall:     ObtainHub-Setup.exe (or ObtainHub.msi for managed machines)",
+        "\nEvery command has examples: ohub <command> --help",
+    ),
     about = "ObtainHub - GitHub repository search and management CLI",
     long_about = "Search, install, and manage GitHub repositories from the command line.\n\nRepository: https://github.com/DavoudTeimouri/ObtainHub"
 )]
@@ -31,6 +46,156 @@ pub enum OutputFormat {
     Json,
     Yaml,
 }
+
+
+// Examples shown after each command's options. Kept in one place so the
+// help text is easy to review and change without hunting through the
+// argument structs.
+
+const EX_SEARCH: &str = "\
+Examples:
+  ohub search firefox
+  ohub search \"image viewer\" --min-stars 100 --language rust
+  ohub search notepad --sort-stars --limit 5";
+
+const EX_INSTALL: &str = "\
+Examples:
+  ohub install firefox
+  ohub install owner/repo --tag v1.2.3
+  ohub install owner/repo --file C:\\Downloads\\app.zip
+  ohub install --url https://example.com/app.zip owner/repo";
+
+const EX_CHECK: &str = "\
+Examples:
+  ohub check
+  ohub check owner/repo --notes
+  ohub check --outdated-only --dry-run";
+
+const EX_LIST: &str = "\
+Examples:
+  ohub list
+  ohub list --detail
+  ohub list --status outdated";
+
+const EX_UPDATE: &str = "\
+Examples:
+  ohub update
+  ohub update owner/repo
+  ohub update --dry-run";
+
+const EX_UNINSTALL: &str = "\
+Examples:
+  ohub uninstall owner/repo
+  ohub uninstall owner/repo --purge --yes";
+
+const EX_REMOVE: &str = "\
+Examples:
+  ohub remove owner/repo
+  ohub remove owner/repo --dry-run";
+
+const EX_ADD: &str = "\
+Examples:
+  ohub add owner/repo
+  ohub add owner/repo --name myapp
+  ohub add C:\\Tools\\myapp --add-type folder";
+
+const EX_SOURCE: &str = "\
+Examples:
+  ohub source list
+  ohub source add mysource https://example.com/manifest.json
+  ohub source verify mysource";
+
+const EX_SELF_UNINSTALL: &str = "\
+Examples:
+  ohub self-uninstall --backup D:\\ohub-backup.zip
+  ohub self-uninstall --yes";
+
+const EX_SCHEDULE: &str = "\
+Examples:
+  ohub schedule enable
+  ohub schedule status
+  ohub schedule run";
+
+const EX_GROUP: &str = "\
+Examples:
+  ohub group add work firefox notepad
+  ohub group install work
+  ohub group list";
+
+const EX_SHIM: &str = "\
+Examples:
+  ohub shim add myapp
+  ohub shim list
+  ohub shim path";
+
+const EX_STATE: &str = "\
+Examples:
+  ohub state export D:\\ohub-state.json
+  ohub state import D:\\ohub-state.json --dry-run
+  ohub state validate";
+
+const EX_APPS: &str = "\
+Examples:
+  ohub apps backup -a myapp -a notepad -o D:\\apps.zip
+  ohub apps restore -i D:\\apps.zip --dry-run";
+
+const EX_CLEANUP: &str = "\
+Examples:
+  ohub cleanup all --dry-run
+  ohub cleanup downloads --force";
+
+const EX_TUI: &str = "\
+Examples:
+  ohub tui
+  ohub tui --check-deps";
+
+const EX_CONFIG: &str = "\
+Examples:
+  ohub config show
+  ohub config set parallel_downloads 8
+  ohub config auth
+  ohub config path";
+
+const EX_BACKUP: &str = "\
+Examples:
+  ohub backup -o D:\\ohub-backup.zip
+  ohub backup --include-repos -o D:\\ohub-full.zip";
+
+const EX_RESTORE: &str = "\
+Examples:
+  ohub restore D:\\ohub-backup.zip --config --state
+  ohub restore D:\\ohub-full.zip --repos
+  ohub restore D:\\ohub-backup.zip --config --target-config D:\\tmp";
+
+const EX_SELF_UPDATE: &str = "\
+Examples:
+  ohub self-update --check-only
+  ohub self-update
+  ohub self-update --prerelease";
+
+const EX_ROLLBACK: &str = "\
+Examples:
+  ohub rollback owner/repo
+  ohub rollback owner/repo --yes";
+
+const EX_COMPLETION: &str = "\
+Examples:
+  ohub completion powershell
+  ohub completion bash";
+
+const EX_DOCTOR: &str = "\
+Examples:
+  ohub doctor
+  ohub doctor --fix";
+
+const EX_INFO: &str = "\
+Examples:
+  ohub info owner/repo";
+
+const EX_RESET: &str = "\
+Examples:
+  ohub reset --backup D:\\ohub-state.zip
+  ohub reset --keep-token";
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
@@ -114,6 +279,7 @@ pub enum Commands {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_SEARCH)]
 pub struct SearchArgs {
     /// Search query
     #[arg(value_name = "QUERY")]
@@ -153,6 +319,7 @@ pub struct SearchArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_INSTALL)]
 pub struct InstallArgs {
     /// Repository to install (owner/repo)
     #[arg(value_name = "REPO")]
@@ -237,6 +404,7 @@ pub enum TokenSource {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_CHECK)]
 pub struct CheckArgs {
     /// Check specific repository (default: all)
     #[arg(value_name = "REPO")]
@@ -296,6 +464,7 @@ pub struct CheckArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_LIST)]
 pub struct ListArgs {
     /// Show detailed info
     #[arg(long)]
@@ -314,6 +483,7 @@ pub enum InstallStatus {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_UPDATE)]
 pub struct UpdateArgs {
     /// Specific repository to update (default: all)
     #[arg(value_name = "REPO")]
@@ -369,6 +539,7 @@ pub struct UpdateArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_ROLLBACK)]
 pub struct RollbackArgs {
     /// Repository to rollback (owner/repo)
     #[arg(value_name = "REPO")]
@@ -388,6 +559,7 @@ pub struct RollbackArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_UNINSTALL)]
 pub struct UninstallArgs {
     /// Repository to uninstall (owner/repo)
     #[arg(value_name = "REPO")]
@@ -407,6 +579,7 @@ pub struct UninstallArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_REMOVE)]
 pub struct RemoveArgs {
     /// Repository to remove from management (owner/repo)
     #[arg(value_name = "REPO")]
@@ -422,6 +595,7 @@ pub struct RemoveArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_ADD)]
 pub struct AddArgs {
     /// Repository to add (owner/repo)
     #[arg(value_name = "REPO")]
@@ -468,6 +642,7 @@ pub enum AddType {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_SOURCE)]
 pub struct SourceArgs {
     #[command(subcommand)]
     pub action: SourceAction,
@@ -519,6 +694,7 @@ pub enum SourceAction {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_SELF_UNINSTALL)]
 pub struct SelfUninstallArgs {
     /// Create backup zip before uninstalling
     #[arg(long)]
@@ -534,6 +710,7 @@ pub struct SelfUninstallArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_SCHEDULE)]
 pub struct ScheduleArgs {
     #[command(subcommand)]
     pub action: ScheduleAction,
@@ -555,6 +732,7 @@ pub enum ScheduleAction {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_GROUP)]
 pub struct GroupArgs {
     #[command(subcommand)]
     pub action: GroupAction,
@@ -581,6 +759,7 @@ pub enum GroupAction {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_SHIM)]
 pub struct ShimArgs {
     #[command(subcommand)]
     pub action: ShimAction,
@@ -605,6 +784,7 @@ pub enum ShimAction {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_STATE)]
 pub struct StateArgs {
     #[command(subcommand)]
     pub action: StateAction,
@@ -623,6 +803,7 @@ pub enum StateAction {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_APPS)]
 pub struct AppsArgs {
     #[command(subcommand)]
     pub action: AppsAction,
@@ -658,6 +839,7 @@ pub enum AppsAction {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_CLEANUP)]
 pub struct CleanupArgs {
     #[command(subcommand)]
     pub action: CleanupAction,
@@ -704,6 +886,7 @@ pub enum CleanupAction {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_TUI)]
 pub struct TuiArgs {
     /// Check dependencies and exit
     #[arg(long)]
@@ -711,6 +894,7 @@ pub struct TuiArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_CONFIG)]
 pub struct ConfigArgs {
     #[command(subcommand)]
     pub action: ConfigAction,
@@ -746,6 +930,7 @@ pub enum ConfigAction {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_BACKUP)]
 pub struct BackupArgs {
     /// Output file path
     #[arg(short, long)]
@@ -757,6 +942,7 @@ pub struct BackupArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_RESTORE)]
 pub struct RestoreArgs {
     /// Backup file to restore from
     #[arg(value_name = "FILE")]
@@ -790,6 +976,7 @@ pub struct RestoreArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_SELF_UPDATE)]
 pub struct SelfUpdateArgs {
     /// Check only, don't install
     #[arg(long)]
@@ -817,6 +1004,7 @@ pub struct SelfUpdateArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_COMPLETION)]
 pub struct CompletionArgs {
     /// Shell to generate completions for
     #[arg(value_enum)]
@@ -824,6 +1012,7 @@ pub struct CompletionArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_DOCTOR)]
 pub struct DoctorArgs {
     /// Fix issues automatically
     #[arg(long)]
@@ -835,6 +1024,7 @@ pub struct DoctorArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_INFO)]
 pub struct InfoArgs {
     /// Repository name (owner/repo)
     #[arg(value_name = "REPO")]
@@ -842,6 +1032,7 @@ pub struct InfoArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(after_help = EX_RESET)]
 pub struct ResetArgs {
     /// Directory to backup state and config files
     #[arg(long)]

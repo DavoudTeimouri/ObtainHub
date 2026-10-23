@@ -2,10 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.0.66-rc1] - 2026-10-22
+## [v3.0.66-rc2] - 2026-10-22
 Eight flags that were accepted and did nothing, a restore that put the apps
 in a directory the tool never looks at, and one download implementation
-instead of four.
+instead of four. Plus a `--version` that says something useful and examples
+in every command's help.
 
 ### Fixed
 - `ohub restore` extracted the apps into `%APPDATA%\obtainhub\installed` while
@@ -21,12 +22,20 @@ instead of four.
   then wrote the file. The digest is now checked against the file on disk,
   and a file that does not match is deleted instead of left for the next run
   to install.
+- The build stamp reported `Rust: unknown`. `build.rs` read a `RUSTC_VERSION`
+  environment variable that Cargo never sets; it now asks the compiler it is
+  driving.
 
 ### Added
 - `--verbose` turns the log level up to debug. `RUST_LOG` still wins when it
   is set.
 - `--no-color` drops the colours from the progress bar. `indicatif` has no
   `NO_COLOR` support, so the plain template is used instead.
+- `ohub --version` prints what the tool is, its repository, licence, author,
+  platform, build date and rustc version, and how it is installed. `ohub -V`
+  still prints the bare version for scripts.
+- Every command has examples in its help: `ohub install --help`,
+  `ohub restore --help`, `ohub config --help` and the rest.
 
 ### Changed
 - Every download goes through one implementation now (`core::download`). The

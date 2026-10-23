@@ -22,8 +22,22 @@ fn emit_build_constants() {
     let build_timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     println!("cargo:rustc-env=VERGEN_BUILD_TIMESTAMP={}", build_timestamp);
     
-    // Rustc version
-    let rustc_version = std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string());
+    // Rustc version. `cargo` sets RUSTC to the compiler it drives; `rustc
+    // --version` prints "rustc 1.85.1 (…)", so the second word is the number
+    // the version banner wants.
+    let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
+    let rustc_version = std::process::Command::new(&rustc)
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .split_whitespace()
+                .nth(1)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=VERGEN_RUSTC_SEMVER={}", rustc_version);
     
     // Git info if available
