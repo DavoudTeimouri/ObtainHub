@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.66-rc3] - 2026-10-23
+Fixes for slow-network downloads, TUI notes scrolling and navigation, and
+prerelease detection for install and self-update.
+
+### Fixed
+- Download progress bar filled instantly after the download finished (minreq
+  buffers the whole body). A spinner now runs while the request is in flight
+  and the bar shows the byte count when done.
+- Requests failed on slow networks. Default HTTP timeout raised from 30 to
+  300 seconds.
+- TUI: pressing 'n' for release notes had no way back. 'n' now toggles the
+  notes view open and closed.
+- TUI: release notes longer than the screen could not be read. 'j'/'k' now
+  scroll the notes while the details panel is open.
+- TUI update failed with "request failed" on slow networks. Same timeout fix
+  as the download path.
+
+### Added
+- `ohub install --prerelease` installs the latest release including
+  pre-releases (was ignored; only the latest stable was ever found).
+- `ohub self-update --prerelease` updates to the latest pre-release when no
+  newer stable release exists.
+
 ## [v3.0.66-rc2] - 2026-10-22
 Eight flags that were accepted and did nothing, a restore that put the apps
 in a directory the tool never looks at, and one download implementation

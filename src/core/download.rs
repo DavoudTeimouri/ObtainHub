@@ -57,25 +57,40 @@ pub async fn text(url: &str, token: Option<&str>) -> Result<String> {
 }
 
 /// One request for the whole file.
+///
+/// `minreq` buffers the entire body, so the download happens inside
+/// `as_bytes()` and a byte-accurate bar can't move during it. Show a spinner
+/// while the request is in flight, then finish.
 async fn plain(d: &Download<'_>) -> Result<()> {
     let mut req = crate::core::registries::github_get(d.url);
     if let Some(token) = d.token {
         req = req.with_header("Authorization", format!("Bearer {token}"));
     }
-    let response = req.send().with_context(|| format!("Failed to request {}", d.url))?;
 
-    let total = response
-        .headers
-        .get("content-length")
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
+    // Spinner while minreq downloads the whole body into memory.
+    let pb = if d.quiet {
+        ProgressBar::hidden()
+    } else {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} [{elapsed_precise}] {msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        pb.set_message(format!("Downloading {}...", d.label));
+        pb.enable_steady_tick(std::time::Duration::from_millis(80));
+        pb
+    };
+
+    let response = req.send().with_context(|| format!("Failed to request {}", d.url))?;
     let bytes = response.as_bytes();
 
-    let pb = progress_bar(d, total);
-    for chunk in bytes.chunks(8192) {
-        pb.inc(chunk.len() as u64);
-    }
-    pb.finish_with_message(format!("Downloaded {}", d.label));
+    pb.finish_with_message(format!(
+        "Downloaded {} ({} bytes)",
+        d.label,
+        bytes.len()
+    ));
 
     std::fs::write(d.dest, bytes)
         .with_context(|| format!("Failed to write {} to {}", d.label, d.dest.display()))?;

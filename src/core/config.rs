@@ -125,7 +125,7 @@ fn default_install_dir() -> PathBuf {
         .join("repos")
 }
 fn default_parallel_downloads() -> usize { 4 }
-fn default_timeout() -> u64 { 30 }
+fn default_timeout() -> u64 { 300 }
 fn default_check_interval() -> u64 { 24 }
 fn default_true() -> bool { true }
 

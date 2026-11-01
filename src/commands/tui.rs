@@ -126,6 +126,8 @@ struct App {
     /// Release notes for the app the details panel is showing, with the repo
     /// they belong to, so moving the cursor does not show the wrong notes.
     notes: Option<(String, String)>,
+    /// Scroll offset into the release-notes text (lines skipped from the top).
+    details_scroll: u16,
 }
 
 #[derive(Clone)]
@@ -387,6 +389,7 @@ async fn run_app(
         status_filter: StatusFilter::All,
         pending: None,
         notes: None,
+        details_scroll: 0,
     };
 
     // Load initial data
@@ -713,7 +716,7 @@ async fn handle_key_event(
         KeyCode::Char('?') | KeyCode::Char('h') if !filtering => {
             app.show_help = !app.show_help;
         }
-        KeyCode::Char('j') if !filtering => {
+        KeyCode::Char('j') if !filtering && !app.show_details => {
             if let Some(selected) = app.table_state.selected() {
                 if selected < app.filtered_indices.len().saturating_sub(1) {
                     app.table_state.select(Some(selected + 1));
@@ -721,7 +724,7 @@ async fn handle_key_event(
                 }
             }
         }
-        KeyCode::Down => {
+        KeyCode::Down if !app.show_details => {
             if let Some(selected) = app.table_state.selected() {
                 if selected < app.filtered_indices.len().saturating_sub(1) {
                     app.table_state.select(Some(selected + 1));
@@ -729,7 +732,7 @@ async fn handle_key_event(
                 }
             }
         }
-        KeyCode::Char('k') if !filtering => {
+        KeyCode::Char('k') if !filtering && !app.show_details => {
             if let Some(selected) = app.table_state.selected() {
                 if selected > 0 {
                     app.table_state.select(Some(selected - 1));
@@ -737,7 +740,7 @@ async fn handle_key_event(
                 }
             }
         }
-        KeyCode::Up => {
+        KeyCode::Up if !app.show_details => {
             if let Some(selected) = app.table_state.selected() {
                 if selected > 0 {
                     app.table_state.select(Some(selected - 1));
@@ -864,6 +867,15 @@ async fn handle_key_event(
             let Some(app_info) = app.selected_app().cloned() else {
                 return Ok(());
             };
+            // 'n' toggles the notes view: press it again to close.
+            if app.show_details
+                && app.notes.as_ref().map(|(r, _)| r == &app_info.repo).unwrap_or(false)
+            {
+                app.show_details = false;
+                app.notes = None;
+                app.details_scroll = 0;
+                app.status_message = "Notes closed".to_string();
+                return Ok(());};
             app.status_message = format!("Loading release notes for {}...", app_info.name);
             let token_owned = config.github_token();
             let token = token_owned.as_deref();
@@ -871,6 +883,7 @@ async fn handle_key_event(
             match crate::core::registries::fetch_release_notes(&app_info.repo, token, &retry).await {
                 Ok(Some(notes)) => {
                     app.notes = Some((app_info.repo.clone(), notes));
+                    app.details_scroll = 0;
                     app.show_details = true;
                     app.status_message = format!("Release notes for {}", app_info.name);
                 }
@@ -879,6 +892,27 @@ async fn handle_key_event(
                 }
                 Err(e) => app.status_message = format!("Could not load release notes: {e}"),
             }
+        }
+        // Scroll the release-notes text while the details panel is open.
+        KeyCode::Char('j') if !filtering && app.show_details => {
+            if let Some((_, notes)) = &app.notes {
+                let total = notes.lines().count().saturating_sub(1) as u16;
+                let visible = 12u16;
+                app.details_scroll = app.details_scroll.saturating_add(1).min(total.saturating_sub(visible));
+            }
+        }
+        KeyCode::Char('k') if !filtering && app.show_details => {
+            app.details_scroll = app.details_scroll.saturating_sub(1);
+        }
+        KeyCode::Down if app.show_details => {
+            if let Some((_, notes)) = &app.notes {
+                let total = notes.lines().count().saturating_sub(1) as u16;
+                let visible = 12u16;
+                app.details_scroll = app.details_scroll.saturating_add(1).min(total.saturating_sub(visible));
+            }
+        }
+        KeyCode::Up if app.show_details => {
+            app.details_scroll = app.details_scroll.saturating_sub(1);
         }
         KeyCode::Char('y') if !filtering => {
             let Some(app_info) = app.selected_app().cloned() else {
@@ -1031,13 +1065,19 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
                         "Release notes:",
                         Style::default().add_modifier(Modifier::BOLD),
                     )]));
-                    for line in body.lines() {
-                        details.push(Line::from(line.to_string()));
+                    let note_lines: Vec<String> = body.lines().map(|l| l.to_string()).collect();
+                    // Scroll: skip the first `details_scroll` lines so long
+                    // notes can be read with 'j'/'k'.
+                    for line in note_lines.iter().skip(app.details_scroll as usize) {
+                        details.push(Line::from(line.clone()));
                     }
                     details.push(Line::from(""));
                 }
             }
-            details.push(Line::from(vec![Span::styled("Press 'u' to update, 'x' to remove, 'n' for notes, 'Enter' to close", Style::default().fg(Color::Gray))]));
+            details.push(Line::from(vec![Span::styled(
+                "Press 'u' to update, 'x' to remove, 'n' for notes, 'j/k' to scroll, 'Enter' to close",
+                Style::default().fg(Color::Gray),
+            )]));
             let details_block = Paragraph::new(details)
                 .style(Style::default().fg(Color::White))
                 .block(Block::default().borders(Borders::ALL).title("App Details - Press 'Enter' to close"))
@@ -1297,6 +1337,7 @@ mod tests {
             status_filter: StatusFilter::All,
             pending: None,
             notes: None,
+            details_scroll: 0,
         };
         app.apps = apps;
         app.apply_filter();

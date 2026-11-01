@@ -116,6 +116,20 @@ impl Registry {
             Registry::Generic(r) => r.fetch_latest_release(package_name, token).await,
         }
     }
+
+    /// Latest release including pre-releases. Only GitHub has the concept;
+    /// other registries delegate to `fetch_latest_release`.
+    pub async fn fetch_latest_release_including_prerelease(
+        &self,
+        package_name: &str,
+        token: Option<&str>,
+    ) -> Result<RegistryRelease> {
+        match self {
+            Registry::GitHub(r) => r.fetch_latest_release_including_prerelease(package_name, token).await,
+            Registry::CratesIo(r) => r.fetch_latest_release(package_name, token).await,
+            Registry::Generic(r) => r.fetch_latest_release(package_name, token).await,
+        }
+    }
     
     pub async fn fetch_release_by_tag(
         &self,
@@ -197,6 +211,27 @@ impl GitHubRegistry {
         }
         let resp: RegistryRelease = req.send()?.json()?;
         Ok(resp)
+    }
+
+    /// Latest release including pre-releases. `releases/latest` excludes
+    /// pre-releases, so list them all and take the first (GitHub sorts by
+    /// release date, newest first). Used when the caller passed `--prerelease`.
+    pub async fn fetch_latest_release_including_prerelease(
+        &self,
+        package_name: &str,
+        token: Option<&str>,
+    ) -> Result<RegistryRelease> {
+        let repo = Self::get_repo_from_package(package_name);
+        let url = format!("https://api.github.com/repos/{}/releases", repo);
+        let mut req = github_get(&url);
+        if let Some(token) = token {
+            req = req.with_header("Authorization", format!("Bearer {}", token));
+        }
+        let releases: Vec<RegistryRelease> = req.send()?.json()?;
+        releases
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No releases found for {}", package_name))
     }
     
     pub fn select_asset(&self, release: &RegistryRelease, arch: &Arch) -> Result<RegistryAsset> {

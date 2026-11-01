@@ -97,9 +97,9 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     let package_name = source.package_name.as_deref().unwrap_or(&args.repo);
     
     // Determine version to install
-    let (release, version) = if let Some(version) = &args.version {
+    let release = if let Some(version) = &args.version {
         match registry.fetch_release_by_tag(package_name, version, token).await {
-            Ok(release) => (release, version.clone()),
+            Ok(release) => release,
             Err(e) => {
                 // Fallback: use GitHub search to find candidates
                 if args.yes {
@@ -117,41 +117,61 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                     .default(0)
                     .interact()?;
                 let selected_repo = &repo_names[choice];
-                let release = registry.fetch_latest_release(selected_repo, token).await?;
-                let version = release.tag_name.clone();
-                (release, version)
+                registry.fetch_latest_release(selected_repo, token).await?
             }
         }
     } else {
-        match registry.fetch_latest_release(package_name, token).await {
-            Ok(release) => {
-                let version = release.tag_name.clone();
-                (release, version)
-            }
-            Err(e) => {
-                // Fallback: use GitHub search to find candidates
-                if args.yes {
-                    return Err(e.context(format!("Failed to find latest release for '{}'", package_name)));
+        let release = if args.prerelease {
+            match registry.fetch_latest_release_including_prerelease(package_name, token).await {
+                Ok(release) => release,
+                Err(e) => {
+                    // Fallback: use GitHub search to find candidates
+                    if args.yes {
+                        return Err(e.context(format!("Failed to find latest release for '{}'", package_name)));
+                    }
+                    let candidates = search_github_repos(package_name, token, config).await?;
+                    if candidates.is_empty() {
+                        return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
+                    }
+                    let theme = dialoguer::theme::ColorfulTheme::default();
+                    let repo_names: Vec<String> = candidates.to_vec();
+                    let choice = dialoguer::Select::with_theme(&theme)
+                        .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
+                        .items(&repo_names)
+                        .default(0)
+                        .interact()?;
+                    let selected_repo = &repo_names[choice];
+                    registry.fetch_latest_release_including_prerelease(selected_repo, token).await?
                 }
-                let candidates = search_github_repos(package_name, token, config).await?;
-                if candidates.is_empty() {
-                    return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
-                }
-                let theme = dialoguer::theme::ColorfulTheme::default();
-                let repo_names: Vec<String> = candidates.to_vec();
-                let choice = dialoguer::Select::with_theme(&theme)
-                    .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
-                    .items(&repo_names)
-                    .default(0)
-                    .interact()?;
-                let selected_repo = &repo_names[choice];
-                let release = registry.fetch_latest_release(selected_repo, token).await?;
-                let version = release.tag_name.clone();
-                (release, version)
             }
-        }
+        } else {
+            match registry.fetch_latest_release(package_name, token).await {
+                Ok(release) => release,
+                Err(e) => {
+                    // Fallback: use GitHub search to find candidates
+                    if args.yes {
+                        return Err(e.context(format!("Failed to find latest release for '{}'", package_name)));
+                    }
+                    let candidates = search_github_repos(package_name, token, config).await?;
+                    if candidates.is_empty() {
+                        return Err(e.context(format!("No candidate repositories found for '{}'", package_name)));
+                    }
+                    let theme = dialoguer::theme::ColorfulTheme::default();
+                    let repo_names: Vec<String> = candidates.to_vec();
+                    let choice = dialoguer::Select::with_theme(&theme)
+                        .with_prompt(format!("Repository '{}' not found. Did you mean?", package_name))
+                        .items(&repo_names)
+                        .default(0)
+                        .interact()?;
+                    let selected_repo = &repo_names[choice];
+                    registry.fetch_latest_release(selected_repo, token).await?
+                }
+            }
+        };
+        release
     };
-    
+    let version = release.tag_name.clone();
+
     info!("Installing {}@{}", args.repo, version);
 
     // The declared dependencies go in first - the app may need them.

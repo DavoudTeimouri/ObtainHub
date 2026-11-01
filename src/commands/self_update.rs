@@ -26,9 +26,15 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
 
     let current_version = Version::parse(CURRENT_VERSION)?;
 
-    // Fetch latest release from GitHub with retry
-    // Try releases/latest first; if 404 (no releases published), fall back to listing releases
-    let url = format!("https://api.github.com/repos/{}/{}/releases/latest", REPO_OWNER, REPO_NAME);
+    // Fetch latest release from GitHub with retry.
+    // With --prerelease, list all releases (includes pre-releases) and take
+    // the first - GitHub sorts by release date, newest first. Without it,
+    // use /releases/latest which excludes pre-releases.
+    let url = if args.prerelease {
+        format!("https://api.github.com/repos/{}/{}/releases", REPO_OWNER, REPO_NAME)
+    } else {
+        format!("https://api.github.com/repos/{}/{}/releases/latest", REPO_OWNER, REPO_NAME)
+    };
     let release = execute_with_retry(retry_config, || {
         let url = url.clone();
         async move {
@@ -44,8 +50,9 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
                 ));
             }
 
-            if resp.status_code == 404 {
-                // No releases published yet - fall back to listing all releases
+            // /releases/latest returns 404 when no releases are published.
+            // Without --prerelease, fall back to listing all releases.
+            if resp.status_code == 404 && !args.prerelease {
                 let releases_url = format!("https://api.github.com/repos/{}/{}/releases", REPO_OWNER, REPO_NAME);
                 let releases_resp = minreq::get(&releases_url)
                     .with_header("User-Agent", "ohub")
@@ -111,12 +118,19 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
             } else if !(resp.status_code >= 200 && resp.status_code < 300) {
                 Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code))
             } else {
+                // /releases returns an array; /releases/latest returns an object.
                 let body = resp.as_bytes().to_vec();
                 if body.is_empty() {
                     return Err(anyhow::anyhow!("GitHub API returned empty body"));
                 }
-                let release: serde_json::Value = serde_json::from_slice(&body)?;
-                Ok(release)
+                let json: serde_json::Value = serde_json::from_slice(&body)?;
+                // When listing all releases, take the first (newest).
+                if args.prerelease {
+                    let arr = json.as_array().context("Releases list is not an array")?;
+                    arr.first().cloned().context("No releases found")
+                } else {
+                    Ok(json)
+                }
             }
         }
     }, "fetch_self_update_release").await?;
