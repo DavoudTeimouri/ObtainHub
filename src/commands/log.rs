@@ -31,7 +31,7 @@ pub fn execute(args: LogArgs) -> Result<()> {
     let reader = BufReader::new(file);
 
     // Collect all lines, then print the last `args.lines`.
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+    let lines: Vec<String> = reader.lines().flatten().collect();
     let total = lines.len();
     let start = total.saturating_sub(args.lines);
 
