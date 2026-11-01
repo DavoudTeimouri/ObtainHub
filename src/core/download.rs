@@ -64,6 +64,13 @@ pub async fn to_file(d: &Download<'_>, _config: &ConfigManager) -> Result<()> {
     // after a crash, network drop, or restart.
     let part_path = part_file_path(d.dest);
 
+    // Make sure the download folder exists. Downloads never created it,
+    // so the first download of any repo failed with "no such file or directory".
+    if let Some(parent) = part_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create download directory {}", parent.display()))?;
+    }
+
     // Total size: caller-provided or probed with a one-byte Range request.
     let total = match d.size {
         Some(s) if s > 0 => s,
@@ -103,15 +110,11 @@ pub async fn text(url: &str, token: Option<&str>) -> Result<String> {
 
 /// Chunked streaming download with retry and resume.
 ///
-/// Each chunk is fetched with its own Range request, wrapped in retry logic.
-/// Chunks are appended to the destination file as they arrive, so memory use
-/// stays bounded and a partial file survives a crash.
-/// Chunked streaming download with retry and resume.
-///
 /// Each chunk is fetched with its own Range request. A failed chunk is retried
 /// indefinitely with exponential backoff - the download only stops when it
-/// finishes or the user interrupts. After `STALL_NOTIFY_THRESHOLD` consecutive
-/// failures, a stall notification is printed to stderr.
+/// finishes or the user interrupts (Ctrl+C), which cleans up the part file.
+/// After `STALL_NOTIFY_THRESHOLD` consecutive failures, a stall notification
+/// is printed to stderr.
 async fn streamed(
     d: &Download<'_>,
     part_path: &Path,
@@ -133,36 +136,50 @@ async fn streamed(
     while start < total {
         let end = (start + CHUNK_SIZE - 1).min(total - 1);
 
-        match fetch_chunk(d, start, end).await {
-            Ok(chunk) => {
-                consecutive_failures = 0;
-                backoff_ms = INITIAL_BACKOFF_MS;
-                file.write_all(&chunk)
-                    .with_context(|| format!("Failed to write chunk to {}", part_path.display()))?;
-                pb.inc(chunk.len() as u64);
-                start = end + 1;
-            }
-            Err(_e) => {
-                consecutive_failures += 1;
+        // Listen for Ctrl+C between chunks so the user can stop a stuck
+        // download and leave a clean part file behind.
+        tokio::select! {
+            biased;
+            result = fetch_chunk(d, start, end) => {
+                match result {
+                    Ok(chunk) => {
+                        consecutive_failures = 0;
+                        backoff_ms = INITIAL_BACKOFF_MS;
+                        file.write_all(&chunk)
+                            .with_context(|| format!("Failed to write chunk to {}", part_path.display()))?;
+                        pb.inc(chunk.len() as u64);
+                        start = end + 1;
+                    }
+                    Err(_e) => {
+                        consecutive_failures += 1;
 
-                // Stall notification: tell the user the download is stuck
-                // and that they can interrupt with Ctrl+C.
-                if consecutive_failures.is_multiple_of(STALL_NOTIFY_THRESHOLD) {
-                    eprintln!(
-                        "Download stalled at {}/{} bytes ({} consecutive failures). \
-                         Retrying in {}s... (press Ctrl+C to stop)",
-                        start,
-                        total,
-                        consecutive_failures,
-                        backoff_ms / 1000
-                    );
+                        // Stall notification: tell the user the download is stuck
+                        // and that they can interrupt with Ctrl+C.
+                        #[allow(clippy::manual_is_multiple_of)]
+                        if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
+                            eprintln!(
+                                "Download stalled at {}/{} bytes ({} consecutive failures). \
+                                 Retrying in {}s... (press Ctrl+C to stop)",
+                                start,
+                                total,
+                                consecutive_failures,
+                                backoff_ms / 1000
+                            );
+                        }
+
+                        let delay = Duration::from_millis(backoff_ms);
+                        tokio::time::sleep(delay).await;
+                        backoff_ms = (backoff_ms as f64 * 1.5) as u64;
+                        backoff_ms = backoff_ms.min(MAX_BACKOFF_MS);
+                        continue;
+                    }
                 }
-
-                let delay = Duration::from_millis(backoff_ms);
-                tokio::time::sleep(delay).await;
-                backoff_ms = (backoff_ms as f64 * 1.5) as u64;
-                backoff_ms = backoff_ms.min(MAX_BACKOFF_MS);
-                continue;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                // User asked to stop. Remove the partial part file so nothing
+                // half-downloaded is left behind.
+                let _ = std::fs::remove_file(part_path);
+                return Err(anyhow::anyhow!("Download cancelled by user"));
             }
         }
     }

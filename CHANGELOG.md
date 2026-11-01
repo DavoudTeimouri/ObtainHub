@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.67-rc3] - 2026-10-23
+Download folder creation and clean cancellation.
+
+### Fixed
+- The download folder was never created. `to_file` now creates the parent
+  directory of the target before writing, so the first download of any repo
+  no longer fails with "no such file or directory".
+- Pressing Ctrl+C left a partial `<file>.download` part file behind. The
+  download now listens for Ctrl+C and removes the part file before exiting,
+  so nothing half-downloaded is left behind.
+
 ## [v3.0.67-rc2] - 2026-10-23
 Download-manager behaviour for slow and unreliable networks.
 
