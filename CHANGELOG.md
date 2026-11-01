@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.67-rc2] - 2026-10-23
+Download-manager behaviour for slow and unreliable networks.
+
+### Fixed
+- Downloads failed on slow networks because `minreq` buffered the whole body
+  before reporting progress. Downloads now use Range requests in 1 MiB chunks,
+  so a failed chunk is retried with exponential backoff and a partial file is
+  resumed instead of restarted.
+- Downloads did not survive a crash or restart. They now write to a
+  `<file>.download` part file and resume from where they left off on the next
+  run.
+- Downloads stopped trying after a few retries. They now retry indefinitely
+  until the download finishes or the user interrupts with Ctrl+C.
+- No feedback when a download was stuck. A stall notification is printed to
+  stderr after every 5 consecutive chunk failures.
+- Download progress bar showed a spinner instead of real progress. It now
+  shows bytes downloaded / total with ETA.
+
+### Added
+- `ohub log` shows the last N lines of the schedule log so users can diagnose
+  failed scheduled checks without opening the log file in an editor.
+
 ## [v3.0.67-rc1] - 2026-10-23
 Fixes for downloads failing on slow networks, a real download progress bar,
 resume for interrupted downloads, and `ohub log` for diagnosing issues.
