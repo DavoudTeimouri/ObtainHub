@@ -31,7 +31,14 @@ pub fn execute(args: LogArgs) -> Result<()> {
     let reader = BufReader::new(file);
 
     // Collect all lines, then print the last `args.lines`.
-    let lines: Vec<String> = reader.lines().flatten().collect();
+    // A plain `for line in reader.lines()` skips read errors instead of
+    // looping forever on them (clippy::lines_filter_map_ok).
+    let mut lines = Vec::new();
+    for line in reader.lines() {
+        if let Ok(l) = line {
+            lines.push(l);
+        }
+    }
     let total = lines.len();
     let start = total.saturating_sub(args.lines);
 
