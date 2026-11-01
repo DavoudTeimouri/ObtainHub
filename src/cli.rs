@@ -116,6 +116,11 @@ Examples:
   ohub schedule status
   ohub schedule run";
 
+const EX_LOG: &str = "\\
+Examples:
+  ohub log
+  ohub log --lines 100";
+
 const EX_GROUP: &str = "\
 Examples:
   ohub group add work firefox notepad
@@ -231,6 +236,9 @@ pub enum Commands {
 
     /// Manage scheduled background checks
     Schedule(ScheduleArgs),
+
+    /// Show recent log output (scheduled checks, download errors)
+    Log(LogArgs),
 
     /// Manage app groups/profiles
     Group(GroupArgs),
@@ -707,6 +715,14 @@ pub struct SelfUninstallArgs {
     /// Skip confirmation prompt
     #[arg(short, long)]
     pub yes: bool,
+}
+
+#[derive(Args, Debug)]
+#[command(after_help = EX_LOG)]
+pub struct LogArgs {
+    /// Number of recent lines to show
+    #[arg(long, default_value = "50")]
+    pub lines: usize,
 }
 
 #[derive(Args, Debug)]

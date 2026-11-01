@@ -23,4 +23,5 @@ pub mod shim;
 pub mod state;
 pub mod apps;
 pub mod cleanup;
+pub mod log;
 pub mod reset;

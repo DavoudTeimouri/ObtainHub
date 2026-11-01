@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::core::config::ConfigManager;
+use crate::utils::retry::{execute_with_retry, RetryConfig};
 
 /// Whether the progress bar drops its colours.
 static NO_COLOR: AtomicBool = AtomicBool::new(false);
@@ -28,145 +31,175 @@ pub struct Download<'a> {
     pub quiet: bool,
 }
 
+/// How many bytes to fetch per Range request. Large enough to be efficient,
+/// small enough that a failure only loses one chunk.
+const CHUNK_SIZE: u64 = 1024 * 1024; // 1 MiB
+
 /// Download `d.url` into `d.dest`.
 ///
 /// Every download in the tool goes through here: the registry path, the
-/// `install --url` path and `update`. One implementation means the bandwidth
-/// limit and the error messages apply to all three.
+/// `install --url` path and `update`. One implementation means the retry,
+/// resume and progress behaviour apply to all three.
+///
+/// The download is done with Range requests in 1 MiB chunks so a real
+/// progress bar can move during the transfer, a failed chunk is retried with
+/// exponential backoff, and a partially downloaded file is resumed instead of
+/// restarted.
 pub async fn to_file(d: &Download<'_>, config: &ConfigManager) -> Result<()> {
-    if let Some(limit_kbps) = config.get().download_bandwidth_limit.filter(|k| *k > 0) {
-        let total = match d.size {
-            Some(s) if s > 0 => s,
-            _ => probe_size(d).await?,
-        };
-        return paced(d, limit_kbps, total).await;
+    let retry = RetryConfig::from_config(config);
+
+    // Total size: caller-provided or probed with a one-byte Range request.
+    let total = match d.size {
+        Some(s) if s > 0 => s,
+        _ => probe_size(d, &retry).await?,
+    };
+
+    // Resume: if the destination already exists, continue from its size.
+    let resume_from = if d.dest.exists() {
+        d.dest.metadata()?.len()
+    } else {
+        0
+    };
+    if resume_from >= total {
+        // Already complete - nothing to do.
+        return Ok(());
     }
-    plain(d).await
+
+    streamed(d, &retry, total, resume_from).await
 }
 
 /// Fetch a small text file: a digest sidecar, a release notes file.
 pub async fn text(url: &str, token: Option<&str>) -> Result<String> {
-    let mut req = crate::core::registries::github_get(url);
-    if let Some(token) = token {
-        req = req.with_header("Authorization", format!("Bearer {token}"));
-    }
-    let resp = req.send().with_context(|| format!("Failed to request {url}"))?;
-    resp.as_str()
-        .with_context(|| format!("Failed to read the response from {url}"))
-        .map(|s| s.to_string())
+    let retry = RetryConfig::default();
+    let body = execute_with_retry(
+        &retry,
+        move || {
+            let url = url.to_string();
+            let token = token.map(|s| s.to_string());
+            async move {
+                let mut req = crate::core::registries::github_get(&url);
+                if let Some(token) = token {
+                    req = req.with_header("Authorization", format!("Bearer {token}"));
+                }
+                let resp = req
+                    .send()
+                    .with_context(|| format!("Failed to request {url}"))?;
+                resp.as_str()
+                    .with_context(|| format!("Failed to read the response from {url}"))
+                    .map(|s| s.to_string())
+            }
+        },
+        "download_text",
+    )
+    .await?;
+    Ok(body)
 }
 
-/// One request for the whole file.
+/// Chunked streaming download with retry and resume.
 ///
-/// `minreq` buffers the entire body, so the download happens inside
-/// `as_bytes()` and a byte-accurate bar can't move during it. Show a spinner
-/// while the request is in flight, then finish.
-async fn plain(d: &Download<'_>) -> Result<()> {
-    let mut req = crate::core::registries::github_get(d.url);
-    if let Some(token) = d.token {
-        req = req.with_header("Authorization", format!("Bearer {token}"));
-    }
+/// Each chunk is fetched with its own Range request, wrapped in retry logic.
+/// Chunks are appended to the destination file as they arrive, so memory use
+/// stays bounded and a partial file survives a crash.
+async fn streamed(
+    d: &Download<'_>,
+    retry: &RetryConfig,
+    total: u64,
+    resume_from: u64,
+) -> Result<()> {
+    let pb = progress_bar(d, total, resume_from);
+    let mut start = resume_from;
 
-    // Spinner while minreq downloads the whole body into memory.
-    let pb = if d.quiet {
-        ProgressBar::hidden()
-    } else {
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.green} [{elapsed_precise}] {msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-        );
-        pb.set_message(format!("Downloading {}...", d.label));
-        pb.enable_steady_tick(std::time::Duration::from_millis(80));
-        pb
-    };
-
-    let response = req.send().with_context(|| format!("Failed to request {}", d.url))?;
-    let bytes = response.as_bytes();
-
-    pb.finish_with_message(format!(
-        "Downloaded {} ({} bytes)",
-        d.label,
-        bytes.len()
-    ));
-
-    std::fs::write(d.dest, bytes)
-        .with_context(|| format!("Failed to write {} to {}", d.label, d.dest.display()))?;
-    Ok(())
-}
-
-/// Download an asset at a limited rate.
-///
-/// The chunk is as many bytes as the limit allows in one second and the next
-/// chunk starts a second later, so the average rate is the configured one. The
-/// server has to support Range requests; without them the download cannot be
-/// paced and the caller is told so.
-async fn paced(d: &Download<'_>, limit_kbps: u64, total: u64) -> Result<()> {
-    let chunk_size = limit_kbps.saturating_mul(1024).max(1);
-    let mut bytes: Vec<u8> = Vec::with_capacity(total as usize);
-    let mut start: u64 = 0;
-    let pb = progress_bar(d, total);
+    // Open the destination for appending (create if missing).
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(d.dest)
+        .with_context(|| format!("Failed to open {} for writing", d.dest.display()))?;
 
     while start < total {
-        let end = (start + chunk_size - 1).min(total - 1);
-        let mut req = crate::core::registries::github_get(d.url);
-        req = req.with_header("Range", format!("bytes={start}-{end}"));
-        if let Some(token) = d.token {
-            req = req.with_header("Authorization", format!("Bearer {token}"));
-        }
-        let response = req.send().with_context(|| format!("Failed to request {}", d.url))?;
-        if response.status_code != 206 {
-            anyhow::bail!(
-                "The server at {} does not support range requests, so the download cannot be rate limited",
-                d.url
-            );
-        }
-        let chunk = response.as_bytes();
-        bytes.extend_from_slice(chunk);
+        let end = (start + CHUNK_SIZE - 1).min(total - 1);
+        let chunk = fetch_chunk(d, retry, start, end).await?;
+        file.write_all(&chunk)
+            .with_context(|| format!("Failed to write chunk to {}", d.dest.display()))?;
         pb.inc(chunk.len() as u64);
         start = end + 1;
-        if start < total {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
     }
 
-    pb.finish_with_message(format!("Downloaded {}", d.label));
-    std::fs::write(d.dest, &bytes)
-        .with_context(|| format!("Failed to write {} to {}", d.label, d.dest.display()))?;
+    pb.finish_with_message(format!("Downloaded {} ({} bytes)", d.label, total));
     Ok(())
 }
 
-/// Ask the server for the file size with a one byte Range request.
-///
-/// `minreq` buffers the whole body, so a single request cannot be slowed
-/// down after the fact. The size has to be known before the chunks are
-/// fetched.
-async fn probe_size(d: &Download<'_>) -> Result<u64> {
-    let mut req = crate::core::registries::github_get(d.url);
-    req = req.with_header("Range", "bytes=0-0");
-    if let Some(token) = d.token {
-        req = req.with_header("Authorization", format!("Bearer {token}"));
-    }
-    let response = req.send().with_context(|| format!("Failed to request {}", d.url))?;
-    if response.status_code != 206 {
-        anyhow::bail!(
-            "The server at {} does not support range requests, so the download cannot be rate limited",
-            d.url
-        );
-    }
-    let content_range = response
-        .headers
-        .get("content-range")
-        .map(|v| v.as_str())
-        .unwrap_or("");
-    total_from_content_range(content_range).ok_or_else(|| {
-        anyhow::anyhow!(
-            "The server at {} did not report the file size, so the download cannot be rate limited",
-            d.url
-        )
-    })
+/// Fetch one byte range `[start..=end]` from the URL, with retry.
+async fn fetch_chunk(
+    d: &Download<'_>,
+    retry: &RetryConfig,
+    start: u64,
+    end: u64,
+) -> Result<Vec<u8>> {
+    execute_with_retry(
+        retry,
+        move || {
+            let url = d.url.to_string();
+            let token = d.token.map(|s| s.to_string());
+            let label = d.label.to_string();
+            async move {
+                let mut req = crate::core::registries::github_get(&url);
+                req = req.with_header("Range", format!("bytes={start}-{end}"));
+                if let Some(token) = token {
+                    req = req.with_header("Authorization", format!("Bearer {token}"));
+                }
+                let response = req
+                    .send()
+                    .with_context(|| format!("Failed to request {label} ({url})"))?;
+                if response.status_code != 206 {
+                    anyhow::bail!(
+                        "The server at {url} does not support range requests, so the download cannot be resumed"
+                    );
+                }
+                Ok(response.as_bytes().to_vec())
+            }
+        },
+        "download_chunk",
+    )
+    .await
+}
+
+/// Ask the server for the file size with a one byte Range request, with retry.
+async fn probe_size(d: &Download<'_>, retry: &RetryConfig) -> Result<u64> {
+    execute_with_retry(
+        retry,
+        move || {
+            let url = d.url.to_string();
+            let token = d.token.map(|s| s.to_string());
+            async move {
+                let mut req = crate::core::registries::github_get(&url);
+                req = req.with_header("Range", "bytes=0-0");
+                if let Some(token) = token {
+                    req = req.with_header("Authorization", format!("Bearer {token}"));
+                }
+                let response = req
+                    .send()
+                    .with_context(|| format!("Failed to request {url}"))?;
+                if response.status_code != 206 {
+                    anyhow::bail!(
+                        "The server at {url} does not support range requests, so the download cannot be resumed"
+                    );
+                }
+                let content_range = response
+                    .headers
+                    .get("content-range")
+                    .map(|v| v.as_str())
+                    .unwrap_or("");
+                total_from_content_range(content_range).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "The server at {url} did not report the file size, so the download cannot be resumed"
+                    )
+                })
+            }
+        },
+        "probe_size",
+    )
+    .await
 }
 
 /// `Content-Range: bytes 0-0/12345` -> `12345`.
@@ -178,7 +211,7 @@ fn total_from_content_range(value: &str) -> Option<u64> {
         .filter(|s| *s > 0)
 }
 
-fn progress_bar(d: &Download<'_>, total: u64) -> ProgressBar {
+fn progress_bar(d: &Download<'_>, total: u64, already: u64) -> ProgressBar {
     let pb = if d.quiet {
         ProgressBar::hidden()
     } else {
@@ -198,6 +231,7 @@ fn progress_bar(d: &Download<'_>, total: u64) -> ProgressBar {
             .progress_chars("#>-"),
     );
     pb.set_message(d.label.to_string());
+    pb.set_position(already);
     pb
 }
 

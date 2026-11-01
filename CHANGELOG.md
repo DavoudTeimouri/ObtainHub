@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.67-rc1] - 2026-10-23
+Fixes for downloads failing on slow networks, a real download progress bar,
+resume for interrupted downloads, and `ohub log` for diagnosing issues.
+
+### Fixed
+- Downloads failed on slow networks because `minreq` buffered the whole body
+  before reporting progress. Downloads now use Range requests in 1 MiB chunks,
+  so a failed chunk is retried with exponential backoff and a partial file is
+  resumed instead of restarted.
+- Download progress bar showed a spinner instead of real progress. It now
+  shows bytes downloaded / total with ETA.
+
+### Added
+- `ohub log` shows the last N lines of the schedule log so users can diagnose
+  failed scheduled checks without opening the log file in an editor.
+
 ## [v3.0.66] - 2026-10-23
 Fixes for slow-network downloads, TUI notes scrolling and navigation, and
 prerelease detection for install and self-update.

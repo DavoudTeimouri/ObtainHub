@@ -53,6 +53,7 @@ async fn main() -> Result<()> {
         Commands::Source(args) => commands::source::execute(args, &mut config_manager, &state_manager).await,
         Commands::SelfUninstall(args) => commands::self_uninstall::execute(args, &config_manager, &mut state_manager).await,
         Commands::Schedule(args) => commands::schedule::execute(args, &mut config_manager, &mut state_manager).await,
+        Commands::Log(args) => commands::log::execute(args),
         Commands::Group(args) => commands::group::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Shim(args) => commands::shim::execute(args, &config_manager, &state_manager).await,
         Commands::State(args) => commands::state::execute(args, &config_manager, &mut state_manager).await,
