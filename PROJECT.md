@@ -7,7 +7,7 @@ file disagree, the code is the bug.
 **Start at `AGENTS.md`** — it is the entry point and points here.
 This file also owns the **changelog template** (§0).
 
-Last verified against: `main` @ `1f8aa41` (v3.0.66-rc1).
+Last verified against: `main` @ `8f68177` (v3.0.66-rc3).
 
 ---
 
