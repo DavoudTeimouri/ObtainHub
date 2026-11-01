@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.0.66-rc3] - 2026-10-23
+## [v3.0.66] - 2026-10-23
 Fixes for slow-network downloads, TUI notes scrolling and navigation, and
 prerelease detection for install and self-update.
 
