@@ -10,6 +10,20 @@ Download the latest `.msi` from [Releases](https://github.com/DavoudTeimouri/Obt
 ### Windows (NSIS Installer)
 Download `ObtainHub-Setup.exe` from [Releases](https://github.com/DavoudTeimouri/ObtainHub/releases).
 
+### Antivirus / SmartScreen note
+`ohub.exe` and the installers are **unsigned** (no code-signing certificate).
+Windows Defender and other AVs may flag them as a trojan/unknown publisher.
+
+**If blocked:**
+1. **Windows Defender** → "Virus & threat protection" → "Allowed threats" → "Add exclusion" →
+   add the folder where you ran the installer, or the installed app folder
+   (`%APPDATA%\ObtainHub\repos\<repo>`).
+2. **Other AV** → add an exclusion for the same folder(s).
+3. **SmartScreen** → when prompted, click "More info" → "Run anyway".
+
+You can also submit a false-positive report to your AV vendor
+(Windows Defender: https://www.microsoft.com/en-us/wdsi/filesubmission).
+
 ### From Source
 ```bash
 cargo build --release

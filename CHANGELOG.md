@@ -2,19 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.0.67-rc3] - 2026-10-23
-Download folder creation and clean cancellation.
-
-### Fixed
-- The download folder was never created. `to_file` now creates the parent
-  directory of the target before writing, so the first download of any repo
-  no longer fails with "no such file or directory".
-- Pressing Ctrl+C left a partial `<file>.download` part file behind. The
-  download now listens for Ctrl+C and removes the part file before exiting,
-  so nothing half-downloaded is left behind.
-
-## [v3.0.67-rc2] - 2026-10-23
-Download-manager behaviour for slow and unreliable networks.
+## [v3.0.67] - 2026-10-23
+Download-manager behaviour for slow and unreliable networks, plus download folder creation and clean cancellation.
 
 ### Fixed
 - Downloads failed on slow networks because `minreq` buffered the whole body
@@ -29,13 +18,19 @@ Download-manager behaviour for slow and unreliable networks.
 - No feedback when a download was stuck. A stall notification is printed to
   stderr after every 5 consecutive chunk failures.
 - Download progress bar showed a spinner instead of real progress. It now
-  shows bytes downloaded / total with ETA.
+  shows bytes downloaded / total with ETA and download speed.
+- The download folder was never created. `to_file` now creates the parent
+  directory of the target before writing, so the first download of any repo
+  no longer fails with "no such file or directory".
+- Pressing Ctrl+C left a partial `<file>.download` part file behind. The
+  download now listens for Ctrl+C and removes the part file before exiting,
+  so nothing half-downloaded is left behind.
 
 ### Added
 - `ohub log` shows the last N lines of the schedule log so users can diagnose
   failed scheduled checks without opening the log file in an editor.
 
-## [v3.0.67-rc1] - 2026-10-23
+## [v3.0.66] - 2026-10-23
 Fixes for downloads failing on slow networks, a real download progress bar,
 resume for interrupted downloads, and `ohub log` for diagnosing issues.
 

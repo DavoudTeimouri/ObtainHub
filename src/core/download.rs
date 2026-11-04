@@ -282,9 +282,9 @@ fn progress_bar(d: &Download<'_>, total: u64, already: u64) -> ProgressBar {
     // The coloured template is the default one. `indicatif` has no NO_COLOR
     // support, so the plain template is spelled out.
     let template = if NO_COLOR.load(Ordering::Relaxed) {
-        "{spinner} [{elapsed_precise}] [{bar:40}] {bytes}/{total_bytes} ({eta})"
+        "{spinner} [{elapsed_precise}] [{bar:40}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})"
     } else {
-        "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})"
+        "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})"
     };
     pb.set_style(
         ProgressStyle::default_bar()
