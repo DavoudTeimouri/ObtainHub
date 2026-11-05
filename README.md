@@ -232,6 +232,7 @@ keeps it in the config file instead.
 | `ohub tui` | Interactive table of the managed apps - one row per app with Installed / Latest / Status columns, and `^` marking the apps that need an update. Press `?` for the full key list. |
 | `ohub group <add\|list\|remove\|delete\|install\|update\|check\|uninstall>` | Manage groups of repos. A group is a named list of `owner/repo` entries; the bulk actions run the real install / update / check / uninstall command for every member, one at a time. |
 | `ohub schedule <enable\|disable\|status\|run>` | Schedule automatic update checks. `enable` registers a Windows Task Scheduler task (`ObtainHubScheduledCheck`) that runs `ohub check --quiet --log` on the configured interval; `status` shows the config plus the task's next run time; `run` does the check now and writes the same report the scheduled task would. |
+| `ohub webui --port <N> --bind <addr> --auth` | Start the WebUI HTTP server. Without `--auth`, all endpoints are open. With `--auth`, protected endpoints (`/config`, `/downloads/*`, `/update-check`) require `Authorization: Bearer <token>` matching the configured `github_token`; `/` and `/apps` stay open. |
 
 ### Version comparison
 Version strings are normalized before comparison: the `v`/`V` prefix is stripped, so `v3.0.32` matches `3.0.32`.
