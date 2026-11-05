@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ObtainHub WebUI</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.5; }
+.layout { display: flex; height: 100vh; overflow: hidden; }
+.sidebar { width: 250px; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; flex-shrink: 0; }
+.brand { padding: 20px 16px; font-size: 1.25rem; font-weight: 700; color: #38bdf8; border-bottom: 1px solid #334155; letter-spacing: -0.02em; }
+.nav { flex: 1; overflow-y: auto; padding: 12px 0; }
+.nav-item { display: block; padding: 10px 16px; color: #94a3b8; text-decoration: none; border-radius: 6px; margin: 2px 12px; font-size: 0.93rem; transition: all 0.15s; border: 1px solid transparent; }
+.nav-item:hover { background: #334155; color: #f1f5f9; border-color: #475569; }
+.nav-item.active { background: #38bdf8; color: #0f172a; border-color: #38bdf8; }
+.sidebar-footer { padding: 16px; border-top: 1px solid #334155; }
+.auth-status { font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: all 0.15s; text-decoration: none; }
+.btn-primary { background: #38bdf8; color: #0f172a; }
+.btn-primary:hover { background: #7dd3fc; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger { background: #ef4444; color: #ffffff; }
+.btn-danger:hover { background: #f87171; }
+.btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+.btn-outline:hover { background: #334155; color: #f1f5f9; }
+.btn-sm { padding: 6px 12px; font-size: 0.82rem; }
+.content { flex: 1; overflow-y: auto; padding: 24px 32px; }
+.page { display: none; }
+.page.active { display: block; }
+.page-header { margin-bottom: 28px; }
+.page-title { font-size: 1.75rem; font-weight: 700; margin-bottom: 8px; color: #f1f5f9; }
+.page-subtitle { color: #94a3b8; font-size: 0.95rem; }
+.card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+.card h2 { font-size: 1.25rem; color: #38bdf8; margin-bottom: 16px; }
+.card h3 { font-size: 1rem; color: #cbd5e1; margin: 16px 0 10px; }
+.table-wrap { overflow-x: auto; margin-top: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; padding: 10px 12px; color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #334155; font-weight: 600; }
+td { padding: 12px; border-bottom: 1px solid #334155; font-size: 0.9rem; vertical-align: top; }
+tr:hover { background: #334155; }
+code { font-family: ui-monospace, SFMono-Regular, 'Source Code Pro', monospace; font-size: 0.85em; background: #334155; padding: 2px 6px; border-radius: 4px; color: #a5f3fc; }
+.form-group { margin-bottom: 18px; }
+.form-label { display: block; margin-bottom: 7px; color: #94a3b8; font-size: 0.9rem; font-weight: 500; }
+.form-input { width: 100%; padding: 10px 14px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 0.92rem; }
+.form-input:focus { outline: none; border-color: #38bdf8; }
+.form-input::placeholder { color: #64748b; }
+.form-checkbox { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9rem; color: #e2e8f0; }
+.form-checkbox input { accent-color: #38bdf8; }
+.progress-wrap { margin-top: 8px; }
+.progress-bar { width: 100%; height: 7px; background: #334155; border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #38bdf8, #818cf8); width: 0%; transition: width 0.3s ease; }
+.progress-text { font-size: 0.8rem; color: #94a3b8; margin-top: 5px; }
+.speed-eta { font-size: 0.8rem; color: #94a3b8; }
+.toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: 8px; color: white; font-size: 0.92rem; font-weight: 500; display: none; z-index: 1000; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); }
+.toast.show { display: block; animation: slideIn 0.25s ease-out; }
+@keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.toast-success { background: #22c55e; }
+.toast-error { background: #ef4444; }
+.toast-info { background: #38bdf8; color: #0f172a; }
+.hidden { display: none !important; }
+.empty-state { text-align: center; padding: 48px 24px; color: #94a3b8; }
+.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.status-running { background: #dbeafe; color: #1e40af; }
+.status-completed { background: #dcfce7; color: #166534; }
+.status-error { background: #fee2e2; color: #991b1b; }
+.status-pending { background: #f3f4f6; color: #374151; }
+.status-unknown { background: #e5e7eb; color: #4b5563; }
+.token-source { font-size: 0.78rem; color: #64748b; margin-top: 4px; }
+.masked-token { font-family: ui-monospace, SFMono-Regular, monospace; background: #334155; padding: 2px 6px; border-radius: 4px; color: #a5f3fc; }
+.btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+.auth-card { max-width: 400px; margin: 60px auto; padding: 32px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; }
+.auth-card h2 { color: #f1f5f9; margin-bottom: 20px; font-size: 1.5rem; }
+.status-indicator { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.status-dot.on { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+.status-dot.off { background: #94a3b8; }
+.kv-table td:first-child { color: #94a3b8; font-weight: 500; width: 35%; }
+.kv-table td code { font-size: 0.85em; }
+.footer-note { font-size: 0.82rem; color: #64748b; margin-top: 16px; border-top: 1px solid #334155; padding-top: 16px; }
+@media (max-width: 768px) {
+.layout { flex-direction: column; }
+.sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid #334155; }
+.nav { display: flex; overflow-x: auto; padding: 8px 0; }
+.nav-item { margin: 2px 8px; white-space: nowrap; }
+.content { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+<div class="brand">ObtainHub</div>
+<nav class="nav">
+<a href="#/" class="nav-item active" data-page="dashboard">Dashboard</a>
+<a href="#/apps" class="nav-item" data-page="apps">Apps</a>
+<a href="#/config" class="nav-item" data-page="config">Config</a>
+<a href="#/downloads" class="nav-item" data-page="downloads">Downloads</a>
+<a href="#/update-check" class="nav-item" data-page="update-check">Update Check</a>
+</nav>
+<div class="sidebar-footer">
+<div class="auth-status">
+<span class="status-indicator"><span class="status-dot off" id="authDot"></span><span id="authText">Auth: off</span></span>
+</div>
+<button id="btnLogin" class="btn btn-primary" style="width: 100%; display: none;">Login</button>
+<button id="btnLogout" class="btn btn-outline" style="width: 100%; display: none;">Logout</button>
+<div class="footer-note">ObtainHub WebUI v3.0.68-rc.1<br>GitHub package manager for Windows x64</div>
+</div>
+</aside>
+<main class="content">
+<header class="page-header">
+<h1 id="pageTitle">Dashboard</h1>
+<p id="pageSubtitle" class="page-subtitle">Manage your GitHub-based package installations</p>
+</header>
+
+<section id="page-dashboard" class="page active">
+<div class="card">
+<h2>Welcome to ObtainHub WebUI</h2>
+<p>Install, update, and track GitHub repositories through this web interface. Use the sidebar to navigate.</p>
+<h3>Quick Actions</h3>
+<div class="btn-group">
+<button class="btn btn-primary" onclick="app.navigate('apps')">View Apps</button>
+<button class="btn btn-primary" onclick="app.navigate('downloads')">Manage Downloads</button>
+<button class="btn btn-primary" onclick="app.navigate('config')">View Config</button>
+<button class="btn btn-primary" onclick="app.navigate('update-check')">Check Updates</button>
+</div>
+<div class="footer-note" style="margin-top: 24px;">
+Endpoints: GET /apps &bull; GET /config &bull; GET/POST /downloads &bull; POST /downloads/{id}/cancel &bull; POST /update-check
+</div>
+</div>
+</section>
+
+<section id="page-apps" class="page">
+<div class="card">
+<h2>Managed Apps</h2>
+<div id="appsLoading">Loading apps&hellip;</div>
+<div class="table-wrap" id="appsTableWrap" style="display:none;">
+<table class="kv-table">
+<thead>
+<tr><th>Repo</th><th>Name</th><th>Version</th><th>Install Path</th><th>Status</th><th>Installed</th></tr>
+</thead>
+<tbody id="appsTableBody"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+<section id="page-config" class="page">
+<div class="card">
+<h2>Configuration</h2>
+<div id="configLoading">Loading config&hellip;</div>
+<div class="table-wrap" id="configTableWrap" style="display:none;">
+<table class="kv-table">
+<thead>
+<tr><th>Key</th><th>Value</th></tr>
+</thead>
+<tbody id="configTableBody"></tbody>
+</table>
+</div>
+<div id="configEmpty" class="empty-state" style="display:none;">No configuration data available</div>
+</div>
+</section>
+
+<section id="page-downloads" class="page">
+<div class="card">
+<h2>Downloads</h2>
+<div class="form-group">
+<label class="form-label">Start New Download</label>
+<div style="display:flex; gap:8px; align-items:flex-end;">
+<input type="url" id="dlUrl" class="form-input" placeholder="https://github.com/owner/repo/releases/download/v1.0/file.exe" style="flex:2;">
+<input type="text" id="dlDest" class="form-input" placeholder="Destination path (optional)" style="flex:1;">
+<button class="btn btn-primary" onclick="app.startDownload()">Start</button>
+</div>
+<div class="token-source">URL can point to any GitHub release asset or direct file link.</div>
+</div>
+<div id="downloadsLoading">Loading downloads&hellip;</div>
+<div class="table-wrap" id="downloadsTableWrap" style="display:none;">
+<table>
+<thead>
+<tr><th>ID</th><th>URL</th><th>Status</th><th>Progress</th><th>Speed / ETA</th><th>Action</th></tr>
+</thead>
+<tbody id="downloadsTableBody"></tbody>
+</table>
+</div>
+<div id="downloadsEmpty" class="empty-state" style="display:none;">No downloads</div>
+</div>
+</section>
+
+<section id="page-update-check" class="page">
+<div class="card">
+<h2>Check for Updates</h2>
+<div class="form-group">
+<label class="form-label">Repository (optional)</label>
+<input type="text" id="ucRepo" class="form-input" placeholder="owner/repo">
+<div class="token-source">Leave empty to check all managed repositories.</div>
+</div>
+<div class="form-group" style="margin-bottom:0;">
+<label class="form-checkbox">
+<input type="checkbox" id="ucPrerelease"> Include prerelease versions
+</label>
+</div>
+<button class="btn btn-primary" onclick="app.checkUpdates()">Check for Updates</button>
+<div id="ucResult" style="margin-top:16px;"></div>
+</div>
+</section>
+
+<section id="page-login" class="page hidden">
+<div class="auth-card">
+<h2>Login</h2>
+<p style="color:#94a3b8; margin-bottom:20px;">Enter your Bearer token to access protected endpoints.</p>
+<div class="form-group">
+<label class="form-label">Token</label>
+<input type="password" id="loginToken" class="form-input" placeholder="ghp_xxxx&hellip;">
+<div class="token-source">Must match the configured github_token.</div>
+</div>
+<button class="btn btn-primary" onclick="app.login()" style="width:100%;">Login</button>
+</div>
+</section>
+</main>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+class ObtainHubUI {
+constructor() {
+this.token = localStorage.getItem('ohub_token') || null;
+this.currentPage = 'dashboard';
+this.pollInterval = null;
+this.init();
+}
+
+init() {
+this.setupNavigation();
+window.addEventListener('hashchange', () => this.route());
+this.route();
+}
+
+setupNavigation() {
+document.querySelectorAll('.nav-item').forEach(item => {
+item.addEventListener('click', (e) => {
+e.preventDefault();
+const page = item.getAttribute('data-page');
+this.navigate(page);
+});
+});
+}
+
+navigate(page) {
+this.currentPage = page;
+window.location.hash = '#/' + page;
+document.querySelectorAll('.nav-item').forEach(item => {
+item.classList.remove('active');
+if (item.getAttribute('data-page') === page) item.classList.add('active');
+});
+document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+const target = document.getElementById('page-' + page);
+if (target) target.classList.add('active');
+document.getElementById('pageTitle').textContent = page.charAt(0).toUpperCase() + page.slice(1).replace('-', ' ');
+document.getElementById('pageSubtitle').textContent = this.pageSubtitle(page);
+this.setupAuthUI();
+if (page === 'apps') this.loadApps();
+else if (page === 'config') this.loadConfig();
+else if (page === 'downloads') { this.loadDownloads(); this.startDownloadsPoll(); }
+else this.stopDownloadsPoll();
+}
+
+pageSubtitle(page) {
+const subs = {
+dashboard: 'Manage your GitHub-based package installations',
+apps: 'View and manage your installed repositories',
+config: 'Current ObtainHub configuration settings',
+downloads: 'Manage active and completed downloads',
+'update-check': 'Check GitHub for available updates',
+login: 'Authenticate to access protected endpoints'
+};
+return subs[page] || '';
+}
+
+route() {
+const hash = window.location.hash.replace('#/', '') || 'dashboard';
+this.navigate(hash);
+}
+
+setupAuthUI() {
+const dot = document.getElementById('authDot');
+const text = document.getElementById('authText');
+const btnLogin = document.getElementById('btnLogin');
+const btnLogout = document.getElementById('btnLogout');
+if (this.token) {
+dot.className = 'status-dot on';
+text.textContent = 'Auth: on';
+btnLogin.style.display = 'none';
+btnLogout.style.display = 'block';
+btnLogout.onclick = () => this.logout();
+} else {
+dot.className = 'status-dot off';
+text.textContent = 'Auth: off';
+btnLogin.style.display = 'block';
+btnLogout.style.display = 'none';
+btnLogin.onclick = () => this.navigate('login');
+}
+}
+
+async api(endpoint, options = {}) {
+const headers = { 'Content-Type': 'application/json', ...options.headers };
+if (this.token) headers['Authorization'] = 'Bearer ' + this.token;
+const config = { ...options, headers };
+if (config.body && typeof config.body === 'object') config.body = JSON.stringify(config.body);
+try {
+const res = await fetch(endpoint, config);
+if (res.status === 401) {
+this.stopDownloadsPoll();
+localStorage.removeItem('ohub_token');
+this.token = null;
+this.setupAuthUI();
+this.navigate('login');
+throw new Error('Authentication required');
+}
+if (!res.ok) throw new Error('HTTP ' + res.status);
+const ct = res.headers.get('content-type') || '';
+if (ct.includes('application/json')) return res.json();
+return res.text();
+} catch (err) {
+if (err.message === 'Authentication required') throw err;
+throw err;
+}
+}
+
+showToast(message, type = 'info') {
+const toast = document.getElementById('toast');
+toast.textContent = message;
+toast.className = 'toast show toast-' + type;
+setTimeout(() => { toast.classList.remove('show'); }, 3000);
+}
+
+escapeHtml(text) {
+if (text == null) return '';
+const div = document.createElement('div');
+div.textContent = String(text);
+return div.innerHTML;
+}
+
+formatBytes(bytes) {
+if (!bytes && bytes !== 0) return '0 B';
+const k = 1024;
+const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k));
+return parseFloat((Math.abs(bytes) / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+async loadApps() {
+try {
+const apps = await this.api('/apps');
+document.getElementById('appsLoading').style.display = 'none';
+const wrap = document.getElementById('appsTableWrap');
+const tbody = document.getElementById('appsTableBody');
+wrap.style.display = 'block';
+tbody.innerHTML = '';
+if (!apps || apps.length === 0) {
+tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No managed apps</td></tr>';
+return;
+}
+apps.forEach(app => {
+const tr = document.createElement('tr');
+tr.innerHTML =
+'<td><code>' + this.escapeHtml(app.repo) + '</code></td>' +
+'<td>' + this.escapeHtml(app.name) + '</td>' +
+'<td><code>' + this.escapeHtml(app.version) + '</code></td>' +
+'<td><code style="font-size:0.8rem;">' + this.escapeHtml(app.install_path) + '</code></td>' +
+'<td><span class="status-badge status-' + (app.status || 'unknown').toLowerCase() + '">' + this.escapeHtml(app.status) + '</span></td>' +
+'<td>' + this.escapeHtml(app.installed_at || '&ndash;') + '</td>';
+tbody.appendChild(tr);
+});
+} catch (err) {
+document.getElementById('appsLoading').textContent = 'Failed to load apps';
+this.showToast('Failed to load apps: ' + err.message, 'error');
+}
+}
+
+async loadConfig() {
+try {
+const config = await this.api('/config');
+document.getElementById('configLoading').style.display = 'none';
+const wrap = document.getElementById('configTableWrap');
+const tbody = document.getElementById('configTableBody');
+wrap.style.display = 'block';
+tbody.innerHTML = '';
+const entries = [
+['Install Dir', config.install_dir],
+['Download Dir', config.download_dir],
+['Shim Dir', config.shim_dir],
+['Parallel Downloads', String(config.parallel_downloads)],
+['Timeout (s)', String(config.timeout_seconds)],
+['Update Check Interval (h)', String(config.update_check_interval_hours)],
+['Auto Cleanup', config.auto_cleanup ? 'true' : 'false'],
+['Verify Checksums', config.verify_checksums ? 'true' : 'false'],
+['HTTP Retries', String(config.http_retries)],
+['HTTP Retry Delay (ms)', String(config.http_retry_delay_ms)],
+['HTTP Retry Backoff', String(config.http_retry_backoff)],
+['Schedule Enabled', config.schedule_enabled ? 'true' : 'false'],
+['Schedule Interval (h)', String(config.schedule_interval_hours)],
+['Schedule Notify', config.schedule_notify_on_update ? 'true' : 'false'],
+['Schedule Run on Startup', config.schedule_run_on_startup ? 'true' : 'false'],
+['Bandwidth Limit', config.download_bandwidth_limit ? String(config.download_bandwidth_limit) + ' B/s' : 'unlimited'],
+['Proxy', config.proxy || 'none'],
+['Token Source', config.token_source || '&ndash;'],
+['Groups', config.groups && config.groups.length ? config.groups.join(', ') : 'none'],
+];
+entries.forEach(([key, value]) => {
+const tr = document.createElement('tr');
+let cellValue = this.escapeHtml(value);
+if (key === 'Token Source' && value && value.toLowerCase().includes('credential')) {
+cellValue = '<span class="masked-token">[stored in OS credential store]</span>';
+}
+tr.innerHTML = '<td><code>' + this.escapeHtml(key) + '</code></td><td>' + cellValue + '</td>';
+tbody.appendChild(tr);
+});
+} catch (err) {
+document.getElementById('configLoading').textContent = 'Failed to load config';
+this.showToast('Failed to load config: ' + err.message, 'error');
+}
+}
+
+async loadDownloads() {
+try {
+const downloads = await this.api('/downloads');
+document.getElementById('downloadsLoading').style.display = 'none';
+const wrap = document.getElementById('downloadsTableWrap');
+const tbody = document.getElementById('downloadsTableBody');
+const empty = document.getElementById('downloadsEmpty');
+if (!downloads || downloads.length === 0) {
+wrap.style.display = 'none';
+empty.style.display = 'block';
+return;
+}
+wrap.style.display = 'block';
+empty.style.display = 'none';
+tbody.innerHTML = '';
+downloads.forEach(dl => {
+const pct = dl.total && dl.total > 0 ? Math.round((dl.downloaded / dl.total) * 100) : 0;
+const status = (dl.status || 'pending').toLowerCase();
+const statusClass = 'status-' + status;
+const tr = document.createElement('tr');
+tr.id = 'dl-row-' + this.escapeHtml(dl.id);
+tr.innerHTML =
+'<td><code>' + this.escapeHtml(dl.id) + '</code></td>' +
+'<td><code style="font-size:0.78rem;">' + this.escapeHtml(dl.url) + '</code></td>' +
+'<td><span class="status-badge ' + statusClass + '">' + this.escapeHtml(dl.status) + '</span></td>' +
+'<td><div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" id="dl-progress-' + this.escapeHtml(dl.id) + '" style="width:' + pct + '%;"></div></div><div class="progress-text">' + pct + '% &bull; ' + this.formatBytes(dl.downloaded) + ' / ' + this.formatBytes(dl.total) + '</div></div></td>' +
+'<td class="speed-eta" id="dl-speed-' + this.escapeHtml(dl.id) + '">' + (dl.speed ? this.formatBytes(dl.speed) + '/s' : '&ndash;') + (dl.eta ? ' &bull; ETA ' + dl.eta + 's' : '') + '</td>' +
+'<td><button class="btn btn-danger btn-sm" onclick="app.cancelDownload(\'' + this.escapeHtml(dl.id) + '\')" ' + (status === 'completed' || status === 'error' ? 'disabled' : '') + '>Cancel</button></td>';
+tbody.appendChild(tr);
+});
+} catch (err) {
+document.getElementById('downloadsLoading').textContent = 'Failed to load downloads';
+this.showToast('Failed to load downloads: ' + err.message, 'error');
+}
+}
+
+startDownloadsPoll() {
+if (this.pollInterval) clearInterval(this.pollInterval);
+this.pollInterval = setInterval(() => this.loadDownloads(), 2000);
+}
+
+stopDownloadsPoll() {
+if (this.pollInterval) { clearInterval(this.pollInterval); this.pollInterval = null; }
+}
+
+async startDownload() {
+const url = document.getElementById('dlUrl').value.trim();
+const dest = document.getElementById('dlDest').value.trim();
+if (!url) { this.showToast('Please enter a URL', 'error'); return; }
+try {
+await this.api('/downloads', { method: 'POST', body: { url: url, dest: dest || null } });
+document.getElementById('dlUrl').value = '';
+document.getElementById('dlDest').value = '';
+this.showToast('Download started', 'success');
+this.loadDownloads();
+} catch (err) {
+this.showToast('Failed to start download: ' + err.message, 'error');
+}
+}
+
+async cancelDownload(id) {
+try {
+await this.api('/downloads/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+this.showToast('Download cancelled', 'success');
+this.loadDownloads();
+} catch (err) {
+this.showToast('Failed to cancel download: ' + err.message, 'error');
+}
+}
+
+async checkUpdates() {
+const repo = document.getElementById('ucRepo').value.trim();
+const prerelease = document.getElementById('ucPrerelease').checked;
+const body = {};
+if (repo) body.repo = repo;
+body.prerelease = prerelease;
+try {
+const result = await this.api('/update-check', { method: 'POST', body: body });
+const resultDiv = document.getElementById('ucResult');
+resultDiv.innerHTML = '<h3 style="color:#38bdf8; margin-bottom:8px;">Result</h3><pre style="background:#334155; padding:12px; border-radius:6px; overflow-x:auto; font-size:0.85rem;">' + this.escapeHtml(JSON.stringify(result, null, 2)) + '</pre>';
+this.showToast('Update check complete', 'success');
+} catch (err) {
+this.showToast('Update check failed: ' + err.message, 'error');
+}
+}
+
+login() {
+const token = document.getElementById('loginToken').value.trim();
+if (!token) { this.showToast('Please enter a token', 'error'); return; }
+this.token = token;
+localStorage.setItem('ohub_token', token);
+this.setupAuthUI();
+this.showToast('Logged in successfully', 'success');
+this.navigate('dashboard');
+}
+
+logout() {
+this.token = null;
+localStorage.removeItem('ohub_token');
+this.stopDownloadsPoll();
+this.setupAuthUI();
+this.showToast('Logged out', 'info');
+this.navigate('dashboard');
+}
+}
+
+const app = new ObtainHubUI();
+</script>
+</body>
+</html>

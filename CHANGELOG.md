@@ -3,11 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 ## [v3.0.68-rc.1] - 2026-11-05
-WebUI: `ohub webui` subcommand with `--port`, `--bind`, `--auth` flags. Protected endpoints (/config, /downloads/*, /update-check) require `Authorization: Bearer <token>` matching the configured github_token when `--auth` is set.
+WebUI: `ohub webui` subcommand with `--port` (default 8080), `--bind`, `--auth` flags. Full-featured HTML single-page app at `GET /` with dashboard, apps table, config viewer, download manager with progress bars, and update check. Protected API endpoints (`/apps`, `/config`, `/downloads/*`, `/update-check`) require `Authorization: Bearer <token>` matching the configured `github_token` when `--auth` is set; `/` is always public. Port conflict detection tries the next port if the default is in use.
 
 ### Added
 - WebUI HTTP server (Axum) with Bearer token auth middleware
+- HTML single-page application (vanilla JS, no build step)
 - `ohub webui --port 8080 --bind 127.0.0.1 --auth`
+- Download progress polling (2-second interval) with progress bars
+- Auth login/logout with Bearer token stored in browser session
 
 ## [v3.0.67] - 2026-10-23
 Download-manager behaviour for slow and unreliable networks, plus download folder creation and clean cancellation.
