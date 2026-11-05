@@ -40,7 +40,7 @@ fn write_pid_file() -> anyhow::Result<()> {
     if let Some(parent) = webui_pid_file().parent() {
         let _ = fs::create_dir_all(parent);
     }
-    fs::write(&webui_pid_file(), std::process::id().to_string())?;
+    fs::write(webui_pid_file(), std::process::id().to_string())?;
     Ok(())
 }
 

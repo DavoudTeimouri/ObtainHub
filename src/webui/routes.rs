@@ -119,7 +119,7 @@ pub async fn put_config(
     Json(payload): Json<ConfigUpdate>,
 ) -> impl IntoResponse {
     let mut config_manager = (*app_state.config_manager).clone();
-    let mut config = config_manager.get_mut();
+    let config = config_manager.get_mut();
 
     if let Some(v) = payload.install_dir {
         config.install_dir = std::path::PathBuf::from(v);
