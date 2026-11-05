@@ -39,7 +39,8 @@ pub async fn auth_middleware(
     match token {
         Some(token) => {
             // Validate against the configured GitHub token.
-            let config_token = state.config_manager.github_token();
+            let config_manager = state.config_manager.lock().await;
+            let config_token = config_manager.github_token();
             if let Some(configured_token) = config_token {
                 if token == configured_token {
                     Ok(next.run(request).await)

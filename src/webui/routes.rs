@@ -20,8 +20,8 @@ pub struct AppInfo {
 pub async fn list_apps(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
 ) -> impl IntoResponse {
-    let state = app_state.state_manager.get();
-    let apps: Vec<AppInfo> = state.installed.values().map(|app| {
+    let state = app_state.state_manager.lock().await;
+    let apps: Vec<AppInfo> = state.get().installed.values().map(|app| {
         AppInfo {
             repo: app.repo.clone(),
             name: app.repo.split('/').next_back().unwrap_or(&app.repo).to_string(),
@@ -65,8 +65,10 @@ pub struct ConfigInfo {
 pub async fn get_config(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
 ) -> impl IntoResponse {
-    let config = app_state.config_manager.get();
-    
+    let config_manager = app_state.config_manager.lock().await;
+    let config = config_manager.get();
+    let token_source = config_manager.token_source().to_string();
+
     Json(ConfigInfo {
         install_dir: config.install_dir.display().to_string(),
         download_dir: config.download_dir.display().to_string(),
@@ -86,7 +88,7 @@ pub async fn get_config(
         schedule_notify_on_update: config.schedule.notify_on_update,
         schedule_run_on_startup: config.schedule.run_on_startup,
         groups: config.groups.keys().cloned().collect(),
-        token_source: app_state.config_manager.token_source().to_string(),
+        token_source,
     })
 }
 
@@ -118,7 +120,7 @@ pub async fn put_config(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(payload): Json<ConfigUpdate>,
 ) -> impl IntoResponse {
-    let mut config_manager = (*app_state.config_manager).clone();
+    let mut config_manager = app_state.config_manager.lock().await;
     let config = config_manager.get_mut();
 
     if let Some(v) = payload.install_dir {
@@ -173,7 +175,7 @@ pub async fn put_config(
         config.schedule.run_on_startup = v;
     }
 
-    if let Err(e) = app_state.config_manager.save() {
+    if let Err(e) = config_manager.save() {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
             "error": format!("Failed to save config: {e}")
         }))).into_response();
@@ -194,7 +196,7 @@ pub async fn post_github_token(
     Json(payload): Json<TokenSet>,
 ) -> impl IntoResponse {
     let token = payload.token;
-    let mut config_manager = (*app_state.config_manager).clone();
+    let mut config_manager = app_state.config_manager.lock().await;
 
     let stored = crate::core::credentials::store_token(&token).unwrap_or(false);
     if !stored {
@@ -217,7 +219,7 @@ pub async fn delete_github_token(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
 ) -> impl IntoResponse {
     let _removed = crate::core::credentials::delete_token();
-    let mut config_manager = (*app_state.config_manager).clone();
+    let mut config_manager = app_state.config_manager.lock().await;
     config_manager.get_mut().github_token = None;
     let _ = config_manager.save();
 
@@ -235,7 +237,7 @@ pub async fn post_app(
     Json(payload): Json<AppAdd>,
 ) -> impl IntoResponse {
     let repo = payload.repo;
-    let mut state_manager = (*app_state.state_manager).clone();
+    let mut state_manager = app_state.state_manager.lock().await;
 
     // Check if already managed
     if state_manager.get_installed(&repo).is_some() {
@@ -275,7 +277,7 @@ pub async fn delete_app(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     axum::extract::Path(repo): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    let mut state_manager = (*app_state.state_manager).clone();
+    let mut state_manager = app_state.state_manager.lock().await;
     let removed = state_manager.remove_installed(&repo);
 
     if removed.is_none() {
@@ -304,7 +306,7 @@ pub async fn post_source(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(payload): Json<SourceAdd>,
 ) -> impl IntoResponse {
-    let mut config_manager = (*app_state.config_manager).clone();
+    let mut config_manager = app_state.config_manager.lock().await;
     let config = config_manager.get_mut();
 
     // Check for duplicate name
@@ -342,7 +344,7 @@ pub async fn delete_source(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    let mut config_manager = (*app_state.config_manager).clone();
+    let mut config_manager = app_state.config_manager.lock().await;
     let config = config_manager.get_mut();
     let len_before = config.manifest_sources.len();
     config.manifest_sources.retain(|s| s.name != name);
@@ -366,7 +368,8 @@ pub async fn delete_source(
 pub async fn list_sources(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
 ) -> impl IntoResponse {
-    let config = app_state.config_manager.get();
+    let config_manager = app_state.config_manager.lock().await;
+    let config = config_manager.get();
     let sources: Vec<serde_json::Value> = config.manifest_sources.iter().map(|s| {
         serde_json::json!({
             "name": s.name,

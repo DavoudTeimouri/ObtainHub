@@ -113,34 +113,108 @@ pub async fn update_check(
     State(app_state): State<std::sync::Arc<super::AppState>>,
     Json(req): Json<UpdateCheckRequest>,
 ) -> impl IntoResponse {
-    let _token = app_state.config_manager.github_token();
-    
+    let config_manager = app_state.config_manager.lock().await;
+    let token = config_manager.github_token();
+    drop(config_manager);
+
     // If specific repo is requested, check only that one
     if let Some(repo) = req.repo {
-        let result = check_single_repo(&repo, req.prerelease).await;
+        let result = check_single_repo(&repo, req.prerelease, token.as_deref(), &app_state).await;
         return Json(vec![result]);
     }
-    
+
     // Otherwise check all installed repos
-    let state = app_state.state_manager.get();
+    let state_manager = app_state.state_manager.lock().await;
+    let state = state_manager.get();
     let mut results = Vec::new();
-    
+
     for app in state.installed.values() {
-        let result = check_single_repo(&app.repo, req.prerelease).await;
+        let result = check_single_repo(&app.repo, req.prerelease, token.as_deref(), &app_state).await;
         results.push(result);
     }
-    
+
     Json(results)
 }
 
-async fn check_single_repo(repo: &str, _prerelease: bool) -> UpdateCheckResponse {
-    // TODO: Implement actual update check using the registry
-    // This is a placeholder implementation
+/// GitHub release response for update checking.
+#[derive(Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    prerelease: bool,
+}
+
+/// Check a single repository for updates using the GitHub API.
+async fn check_single_repo(
+    repo: &str,
+    prerelease: bool,
+    token: Option<&str>,
+    app_state: &std::sync::Arc<crate::webui::AppState>,
+) -> UpdateCheckResponse {
+    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+
+    let mut req = crate::core::registries::github_get(&url);
+    if let Some(token) = token {
+        req = req.with_header("Authorization", format!("Bearer {token}"));
+    }
+
+    let release = match req.send() {
+        Ok(resp) if resp.status_code == 200 => match resp.json::<GitHubRelease>() {
+            Ok(r) => r,
+            Err(_) => return UpdateCheckResponse {
+                repo: repo.to_string(),
+                current_version: "unknown".to_string(),
+                latest_version: "unknown".to_string(),
+                update_available: false,
+            },
+        },
+        Ok(resp) if resp.status_code == 404 => {
+            return UpdateCheckResponse {
+                repo: repo.to_string(),
+                current_version: "unknown".to_string(),
+                latest_version: "unknown".to_string(),
+                update_available: false,
+            };
+        }
+        _ => {
+            return UpdateCheckResponse {
+                repo: repo.to_string(),
+                current_version: "unknown".to_string(),
+                latest_version: "unknown".to_string(),
+                update_available: false,
+            };
+        }
+    };
+
+    let latest = release.tag_name.trim_start_matches('v').to_string();
+
+    // Skip prereleases unless requested
+    if release.prerelease && !prerelease {
+        return UpdateCheckResponse {
+            repo: repo.to_string(),
+            current_version: "unknown".to_string(),
+            latest_version: latest,
+            update_available: false,
+        };
+    }
+
+    // Get current version from state
+    let state_manager = app_state.state_manager.lock().await;
+    let current_version = state_manager
+        .get()
+        .installed
+        .get(repo)
+        .map(|a| a.version.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    drop(state_manager);
+
+    let update_available = crate::core::normalize_version(&latest)
+        != crate::core::normalize_version(&current_version);
+
     UpdateCheckResponse {
         repo: repo.to_string(),
-        current_version: "unknown".to_string(),
-        latest_version: "unknown".to_string(),
-        update_available: false,
+        current_version,
+        latest_version: latest,
+        update_available,
     }
 }
 

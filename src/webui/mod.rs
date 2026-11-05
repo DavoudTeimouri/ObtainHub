@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::path::PathBuf;
 use std::fs;
+use tokio::sync::Mutex;
 use tracing::{info, warn};
 use anyhow::Context;
 
@@ -10,10 +11,16 @@ mod routes;
 mod downloads;
 mod auth;
 
+
 /// Shared state for the WebUI server.
+///
+/// `ConfigManager` and `StateManager` are wrapped in `tokio::sync::Mutex` so
+/// that all HTTP handlers see the same in-memory state. Mutating through a
+/// clone (which the previous code did) wrote to disk but left the original
+/// `Arc` stale, so `GET /apps` and `GET /config` never reflected writes.
 pub struct AppState {
-    pub config_manager: Arc<crate::core::config::ConfigManager>,
-    pub state_manager: Arc<crate::core::state::StateManager>,
+    pub config_manager: Arc<Mutex<crate::core::config::ConfigManager>>,
+    pub state_manager: Arc<Mutex<crate::core::state::StateManager>>,
     /// Require Bearer token auth on protected endpoints when true.
     pub auth_enabled: bool,
 }
@@ -61,8 +68,8 @@ pub async fn run_webui(
     auth_enabled: bool,
 ) -> anyhow::Result<()> {
     let app_state = Arc::new(AppState {
-        config_manager: Arc::new(config_manager),
-        state_manager: Arc::new(state_manager),
+        config_manager: Arc::new(Mutex::new(config_manager)),
+        state_manager: Arc::new(Mutex::new(state_manager)),
         auth_enabled,
     });
 
