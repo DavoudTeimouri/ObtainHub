@@ -1,12 +1,13 @@
 use clap::Parser;
 use crate::cli::{Cli, Commands};
 use crate::core::{config, state, logger};
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 mod cli;
 mod core;
 mod commands;
 mod utils;
+mod webui;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -54,6 +55,13 @@ async fn main() -> Result<()> {
         Commands::SelfUninstall(args) => commands::self_uninstall::execute(args, &config_manager, &mut state_manager).await,
         Commands::Schedule(args) => commands::schedule::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Log(args) => commands::log::execute(args),
+        Commands::Webui(args) => {
+            // Parse bind address
+            let bind_addr: std::net::SocketAddr = format!("{}:{}", args.bind, args.port)
+                .parse()
+                .context("Invalid bind address")?;
+            crate::webui::run_webui(bind_addr, config_manager, state_manager, args.auth).await
+        }
         Commands::Group(args) => commands::group::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Shim(args) => commands::shim::execute(args, &config_manager, &state_manager).await,
         Commands::State(args) => commands::state::execute(args, &config_manager, &mut state_manager).await,

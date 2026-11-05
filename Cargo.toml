@@ -1,6 +1,6 @@
 [package]
 name = "obtainhub"
-version = "3.0.67"
+version = "3.0.68-rc.1"
 edition = "2021"
 license = "MIT"
 description = "ObtainHub - GitHub repository search and management CLI"
@@ -28,9 +28,9 @@ minreq = { version = "2.0", features = ["https", "json-using-serde"] }
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+uuid = { version = "1.8", features = ["v4", "serde"] }
 serde_yaml = "0.9"
 toml = "0.8"
-
 # HTTP
 urlencoding = "2.1"
 
@@ -81,6 +81,9 @@ crossterm = "0.27"
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "fmt"] }
 # tracing-appender = "0.2.3"
+
+# Web UI
+axum = { version = "0.7", features = ["tracing"] }
 
 # Error handling
 anyhow = "1.0"

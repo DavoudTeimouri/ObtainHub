@@ -121,6 +121,12 @@ Examples:
   ohub log
   ohub log --lines 100";
 
+const EX_WEBUI: &str = "\
+Examples:
+  ohub webui --port 8080
+  ohub webui --port 8080 --bind 0.0.0.0 --auth\
+";
+
 const EX_GROUP: &str = "\
 Examples:
   ohub group add work firefox notepad
@@ -239,6 +245,9 @@ pub enum Commands {
 
     /// Show recent log output (scheduled checks, download errors)
     Log(LogArgs),
+
+    /// Start the WebUI HTTP server
+    Webui(WebuiArgs),
 
     /// Manage app groups/profiles
     Group(GroupArgs),
@@ -723,6 +732,22 @@ pub struct LogArgs {
     /// Number of recent lines to show
     #[arg(long, default_value = "50")]
     pub lines: usize,
+}
+
+#[derive(Args, Debug)]
+#[command(after_help = EX_WEBUI)]
+pub struct WebuiArgs {
+    /// Port to listen on (0 to disable)
+    #[arg(long, default_value = "0")]
+    pub port: u16,
+    
+    /// Address to bind to
+    #[arg(long, default_value = "127.0.0.1")]
+    pub bind: String,
+    
+    /// Require authentication on protected endpoints
+    #[arg(long)]
+    pub auth: bool,
 }
 
 #[derive(Args, Debug)]
