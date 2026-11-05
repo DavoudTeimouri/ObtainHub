@@ -737,8 +737,8 @@ pub struct LogArgs {
 #[derive(Args, Debug)]
 #[command(after_help = EX_WEBUI)]
 pub struct WebuiArgs {
-    /// Port to listen on (0 to disable)
-    #[arg(long, default_value = "0")]
+    /// Port to listen on (default 8080)
+    #[arg(long, default_value = "8080")]
     pub port: u16,
     
     /// Address to bind to

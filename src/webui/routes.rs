@@ -1,24 +1,6 @@
 use axum::{Json, response::IntoResponse, extract::State};
 use serde::Serialize;
 
-/// Health check endpoint.
-///
-/// Returns basic server status for monitoring.
-#[derive(Serialize)]
-pub struct HealthResponse {
-    pub status: &'static str,
-    pub version: &'static str,
-    pub service: &'static str,
-}
-
-pub async fn health() -> impl IntoResponse {
-    Json(HealthResponse {
-        status: "ok",
-        version: env!("CARGO_PKG_VERSION"),
-        service: "ohub-webui",
-    })
-}
-
 /// Application info for web API.
 #[derive(Serialize)]
 pub struct AppInfo {
