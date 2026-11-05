@@ -52,17 +52,32 @@ ohub <COMMAND>
 | `schedule` | Manage scheduled background checks |
 | `group` | Manage app groups/profiles |
 | `shim` | Manage portable shims |
-| `state` | Export/import state |
-| `apps` | Backup/restore application folders |
-| `cleanup` | Clean up leftover files |
-| `tui` | Launch the interactive app table |
-| `config` | Manage configuration |
-| `backup` | Backup installed repositories and config |
-| `restore` | Restore from backup |
-| `self-update` | Update ohub itself |
-| `completion` | Generate shell completions |
-| `doctor` | Diagnose installation issues |
-| `self-uninstall` | Completely remove ohub |
+|| `state` | Export/import state |
+|| `webui` | Start the WebUI HTTP server |
+|| `apps` | Backup/restore application folders |
+|| `cleanup` | Clean up leftover files |
+|| `tui` | Launch the interactive app table |
+|| `config` | Manage configuration |
+|| `backup` | Backup installed repositories and config |
+|| `restore` | Restore from backup |
+|| `self-update` | Update ohub itself |
+|| `completion` | Generate shell completions |
+|| `doctor` | Diagnose installation issues |
+|| `self-uninstall` | Completely remove ohub |
+
+### WebUI
+
+```bash
+# Start WebUI on localhost:8080 (no auth)
+ohub webui --port 8080
+
+# Start WebUI on all interfaces, require Bearer token auth
+ohub webui --port 8080 --bind 0.0.0.0 --auth
+
+# --auth validates Authorization: Bearer <token> against the configured
+# github_token. Protected endpoints (/config, /downloads/*, /update-check)
+# require the token; / and /apps stay open.
+```
 
 ### Examples
 
