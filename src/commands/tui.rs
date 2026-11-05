@@ -486,10 +486,10 @@ impl App {
             if !self.status_filter.matches(app) {
                 continue;
             }
-            if !ft.is_empty()
-                && !(app.name.to_lowercase().contains(&ft)
-                    || app.repo.to_lowercase().contains(&ft)
-                    || app.status.to_lowercase().contains(&ft))
+            if !(ft.is_empty()
+                || app.name.to_lowercase().contains(&ft)
+                || app.repo.to_lowercase().contains(&ft)
+                || app.status.to_lowercase().contains(&ft))
             {
                 continue;
             }

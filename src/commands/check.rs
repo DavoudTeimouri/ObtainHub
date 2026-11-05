@@ -656,7 +656,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         log_lines.push(summary.clone());
         if !args.quiet {
             println!("{summary}");
-            if (args.all || args.candidates) && unmanaged_count > 0 && !args.candidates {
+            if args.all && !args.candidates && unmanaged_count > 0 {
                 println!(
                     "  The {} unmanaged app(s) are listed above - pick the ones you want to manage.",
                     unmanaged_count

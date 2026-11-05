@@ -120,8 +120,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                 registry.fetch_latest_release(selected_repo, token).await?
             }
         }
-    } else {
-        let release = if args.prerelease {
+    } else if args.prerelease {
             match registry.fetch_latest_release_including_prerelease(package_name, token).await {
                 Ok(release) => release,
                 Err(e) => {
@@ -167,9 +166,8 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                     registry.fetch_latest_release(selected_repo, token).await?
                 }
             }
-        };
-        release
-    };
+        }
+    ;
     let version = release.tag_name.clone();
 
     info!("Installing {}@{}", args.repo, version);

@@ -22,7 +22,7 @@ pub async fn execute(args: SourceArgs, config: &mut ConfigManager, _state: &Stat
                 }
             }
         }
-        SourceAction::Add { name, url, src_type, registry_type, package_name, pre_install, post_install, pre_uninstall, post_uninstall, priority, enabled, auto_sync } => {
+        SourceAction::Add { name, url, src_type, registry_type, package_name, pre_install, post_install, pre_uninstall, post_uninstall, priority, enabled: _, auto_sync } => {
             // Validate the source
             let api_url = if url.contains("/releases") && url.contains("api.github.com") {
                 url.clone()
@@ -75,7 +75,7 @@ pub async fn execute(args: SourceArgs, config: &mut ConfigManager, _state: &Stat
             let src = crate::core::config::ManifestSource {
                 name: name.clone(),
                 url: url.clone(),
-                enabled: enabled || true,
+                enabled: true,
                 headers,
                 src_type,
                 hooks,

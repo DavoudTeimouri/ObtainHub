@@ -2,7 +2,6 @@ use axum::{Json, response::IntoResponse, extract::{State, Path}};
 use serde::{Serialize, Deserialize};
 use anyhow::Context;
 use uuid::Uuid;
-use minreq;
 
 /// Download info for web API.
 #[derive(Serialize)]
