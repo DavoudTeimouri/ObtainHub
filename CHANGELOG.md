@@ -3,7 +3,19 @@
 All notable changes to this project will be documented in this file.
 
 ## [v3.0.68-rc.1] - 2026-11-05
-WebUI: `ohub webui` subcommand with `--port` (default 8080), `--bind`, `--auth` flags. Full-featured HTML single-page app at `GET /` with dashboard, apps table, config viewer, download manager with progress bars, and update check. Protected API endpoints (`/config`, `/downloads/*`, `/update-check`) require `Authorization: Bearer <token>` matching the configured `github_token` when `--auth` is set; `/` and `/apps` stay public. Port conflict detection tries the next port if the default is in use.
+WebUI: `ohub webui` subcommand with `--port` (default 8080), `--bind`, `--auth` flags. Full-featured HTML single-page app at `GET /` with dashboard, apps table, config editor, token manager, source manager, download manager with progress bars, and update check. Protected API endpoints (`/config`, `/downloads/*`, `/update-check`, `POST/DELETE /apps`, `POST/DELETE /config/sources`) require `Authorization: Bearer <token>` matching the configured `github_token` when `--auth` is set; `/` and `GET /apps` stay public. Port conflict detection tries the next port if the default is in use. Default browser opens automatically on start. `ohub self-update` stops the WebUI before replacing the binary.
+
+### Added
+- WebUI HTTP server (Axum) with Bearer token auth middleware
+- HTML single-page application (vanilla JS, no build step)
+- Editable configuration (all keys) via PUT /config
+- GitHub token add/remove via POST/DELETE /config/github-token
+- Apps add/remove via POST/DELETE /apps
+- Manifest sources add/remove via POST/DELETE /config/sources
+- Download progress polling (2-second interval) with progress bars
+- Auth login/logout with Bearer token in browser session
+- Auto browser open on `ohub webui`
+- WebUI PID file for self-update process termination
 
 ### Added
 - WebUI HTTP server (Axum) with Bearer token auth middleware

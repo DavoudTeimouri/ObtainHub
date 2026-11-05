@@ -7,6 +7,7 @@ use semver::Version;
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::process;
 use tracing::info;
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -22,6 +23,9 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 static RELEASE_PUBLIC_KEY_B64: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &StateManager, retry_config: &RetryConfig) -> Result<()> {
+    // Stop the WebUI server if it's running, so the binary can be replaced.
+    stop_webui();
+
     info!("Checking for self-update");
 
     let current_version = Version::parse(CURRENT_VERSION)?;
@@ -469,6 +473,32 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
     }
 
     Ok(())
+}
+
+/// Stop the WebUI server if it's running, by reading the PID file and
+/// sending a termination signal. Used by `ohub self-update` so the binary
+/// can be replaced on Windows (which locks running EXEs).
+fn stop_webui() {
+    let pid_file = dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ObtainHub")
+        .join("webui.pid");
+    let Ok(pid_str) = fs::read_to_string(&pid_file) else {
+        return;
+    };
+    let Ok(pid) = pid_str.trim().parse::<u32>() else {
+        return;
+    };
+    if cfg!(windows) {
+        let _ = process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F", "/T"])
+            .spawn();
+    } else {
+        let _ = process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .spawn();
+    }
+    let _ = fs::remove_file(&pid_file);
 }
 
 fn get_target_triple() -> String {

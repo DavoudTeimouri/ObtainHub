@@ -48,6 +48,15 @@ pub struct StateManager {
     state_path: PathBuf,
 }
 
+impl Clone for StateManager {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            state_path: self.state_path.clone(),
+        }
+    }
+}
+
 impl StateManager {
     pub fn new() -> Result<Self> {
         let state_dir = dirs::data_dir()

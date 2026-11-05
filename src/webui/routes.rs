@@ -1,5 +1,6 @@
-use axum::{Json, response::IntoResponse, extract::State};
-use serde::Serialize;
+use axum::{Json, response::IntoResponse, extract::State, http::StatusCode};
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
 
 /// Application info for web API.
 #[derive(Serialize)]
@@ -87,4 +88,294 @@ pub async fn get_config(
         groups: config.groups.keys().cloned().collect(),
         token_source: app_state.config_manager.token_source().to_string(),
     })
+}
+
+/// Partial config update request. All fields optional — only provided fields
+/// are changed.
+#[derive(Deserialize, Default)]
+pub struct ConfigUpdate {
+    pub install_dir: Option<String>,
+    pub download_dir: Option<String>,
+    pub shim_dir: Option<String>,
+    pub parallel_downloads: Option<usize>,
+    pub timeout_seconds: Option<u64>,
+    pub update_check_interval_hours: Option<u64>,
+    pub auto_cleanup: Option<bool>,
+    pub verify_checksums: Option<bool>,
+    pub proxy: Option<Option<String>>,
+    pub download_bandwidth_limit: Option<Option<u64>>,
+    pub http_retries: Option<u32>,
+    pub http_retry_delay_ms: Option<u64>,
+    pub http_retry_backoff: Option<f64>,
+    pub schedule_enabled: Option<bool>,
+    pub schedule_interval_hours: Option<u64>,
+    pub schedule_notify_on_update: Option<bool>,
+    pub schedule_run_on_startup: Option<bool>,
+}
+
+/// Update configuration values. Requires auth when --auth is set.
+pub async fn put_config(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(payload): Json<ConfigUpdate>,
+) -> impl IntoResponse {
+    let mut config_manager = (*app_state.config_manager).clone();
+    let mut config = config_manager.get_mut();
+
+    if let Some(v) = payload.install_dir {
+        config.install_dir = std::path::PathBuf::from(v);
+    }
+    if let Some(v) = payload.download_dir {
+        config.download_dir = std::path::PathBuf::from(v);
+    }
+    if let Some(v) = payload.shim_dir {
+        config.shim_dir = std::path::PathBuf::from(v);
+    }
+    if let Some(v) = payload.parallel_downloads {
+        config.parallel_downloads = v;
+    }
+    if let Some(v) = payload.timeout_seconds {
+        config.timeout_seconds = v;
+    }
+    if let Some(v) = payload.update_check_interval_hours {
+        config.update_check_interval_hours = v;
+    }
+    if let Some(v) = payload.auto_cleanup {
+        config.auto_cleanup = v;
+    }
+    if let Some(v) = payload.verify_checksums {
+        config.verify_checksums = v;
+    }
+    if let Some(v) = payload.proxy {
+        config.proxy = v;
+    }
+    if let Some(v) = payload.download_bandwidth_limit {
+        config.download_bandwidth_limit = v;
+    }
+    if let Some(v) = payload.http_retries {
+        config.http_retries = v;
+    }
+    if let Some(v) = payload.http_retry_delay_ms {
+        config.http_retry_delay_ms = v;
+    }
+    if let Some(v) = payload.http_retry_backoff {
+        config.http_retry_backoff = v;
+    }
+    if let Some(v) = payload.schedule_enabled {
+        config.schedule.enabled = v;
+    }
+    if let Some(v) = payload.schedule_interval_hours {
+        config.schedule.interval_hours = v;
+    }
+    if let Some(v) = payload.schedule_notify_on_update {
+        config.schedule.notify_on_update = v;
+    }
+    if let Some(v) = payload.schedule_run_on_startup {
+        config.schedule.run_on_startup = v;
+    }
+
+    if let Err(e) = app_state.config_manager.save() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "error": format!("Failed to save config: {e}")
+        }))).into_response();
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({"status": "updated"}))).into_response()
+}
+
+/// Set the GitHub token. Stored in OS credential store when available,
+/// otherwise in config.toml. Requires auth when --auth is set.
+#[derive(Deserialize)]
+pub struct TokenSet {
+    pub token: String,
+}
+
+pub async fn post_github_token(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(payload): Json<TokenSet>,
+) -> impl IntoResponse {
+    let token = payload.token;
+    let mut config_manager = (*app_state.config_manager).clone();
+
+    let stored = crate::core::credentials::store_token(&token).unwrap_or(false);
+    if !stored {
+        config_manager.get_mut().github_token = Some(token);
+        if let Err(e) = config_manager.save() {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": format!("Failed to save token: {e}")
+            }))).into_response();
+        }
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "status": "token_set",
+        "source": if stored { "credential_store" } else { "config_file" }
+    }))).into_response()
+}
+
+/// Remove the GitHub token. Requires auth when --auth is set.
+pub async fn delete_github_token(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+) -> impl IntoResponse {
+    let _removed = crate::core::credentials::delete_token();
+    let mut config_manager = (*app_state.config_manager).clone();
+    config_manager.get_mut().github_token = None;
+    let _ = config_manager.save();
+
+    (StatusCode::OK, Json(serde_json::json!({"status": "token_removed"}))).into_response()
+}
+
+/// Add an app/repo to management. Requires auth when --auth is set.
+#[derive(Deserialize)]
+pub struct AppAdd {
+    pub repo: String,
+}
+
+pub async fn post_app(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(payload): Json<AppAdd>,
+) -> impl IntoResponse {
+    let repo = payload.repo;
+    let mut state_manager = (*app_state.state_manager).clone();
+
+    // Check if already managed
+    if state_manager.get_installed(&repo).is_some() {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({
+            "error": format!("{repo} is already managed")
+        }))).into_response();
+    }
+
+    // Add as installed with placeholder data - user will need to install via CLI
+    let installed = crate::core::state::InstalledRepo {
+        repo: repo.clone(),
+        version: "0.0.0".to_string(),
+        install_path: std::path::PathBuf::new(),
+        installed_at: chrono::Utc::now(),
+        updated_at: None,
+        checksum: None,
+        metadata: serde_json::Value::Null,
+        previous_version: None,
+        previous_install_path: None,
+        dependencies: Vec::new(),
+        is_dependency: false,
+        uninstaller: None,
+    };
+    state_manager.add_installed(installed);
+
+    if let Err(e) = state_manager.save() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "error": format!("Failed to save state: {e}")
+        }))).into_response();
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({"status": "added", "repo": repo}))).into_response()
+}
+
+/// Remove an app/repo from management. Requires auth when --auth is set.
+pub async fn delete_app(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    axum::extract::Path(repo): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let mut state_manager = (*app_state.state_manager).clone();
+    let removed = state_manager.remove_installed(&repo);
+
+    if removed.is_none() {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": format!("{repo} is not managed")
+        }))).into_response();
+    }
+
+    if let Err(e) = state_manager.save() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "error": format!("Failed to save state: {e}")
+        }))).into_response();
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({"status": "removed", "repo": repo}))).into_response()
+}
+
+/// Add a manifest source. Requires auth when --auth is set.
+#[derive(Deserialize)]
+pub struct SourceAdd {
+    pub name: String,
+    pub url: String,
+}
+
+pub async fn post_source(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(payload): Json<SourceAdd>,
+) -> impl IntoResponse {
+    let mut config_manager = (*app_state.config_manager).clone();
+    let config = config_manager.get_mut();
+
+    // Check for duplicate name
+    if config.manifest_sources.iter().any(|s| s.name == payload.name) {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({
+            "error": format!("Source '{}' already exists", payload.name)
+        }))).into_response();
+    }
+
+    let src = crate::core::config::ManifestSource {
+        name: payload.name.clone(),
+        url: payload.url.clone(),
+        enabled: true,
+        headers: HashMap::new(),
+        src_type: "github".to_string(),
+        hooks: HashMap::new(),
+        priority: None,
+        auto_sync: false,
+        registry_type: "github".to_string(),
+        package_name: None,
+    };
+    config.manifest_sources.push(src);
+
+    if let Err(e) = config_manager.save() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "error": format!("Failed to save config: {e}")
+        }))).into_response();
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({"status": "added", "name": payload.name}))).into_response()
+}
+
+/// Remove a manifest source. Requires auth when --auth is set.
+pub async fn delete_source(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let mut config_manager = (*app_state.config_manager).clone();
+    let config = config_manager.get_mut();
+    let len_before = config.manifest_sources.len();
+    config.manifest_sources.retain(|s| s.name != name);
+
+    if config.manifest_sources.len() == len_before {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": format!("Source '{name}' not found")
+        }))).into_response();
+    }
+
+    if let Err(e) = config_manager.save() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "error": format!("Failed to save config: {e}")
+        }))).into_response();
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({"status": "removed", "name": name}))).into_response()
+}
+
+/// List manifest sources.
+pub async fn list_sources(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+) -> impl IntoResponse {
+    let config = app_state.config_manager.get();
+    let sources: Vec<serde_json::Value> = config.manifest_sources.iter().map(|s| {
+        serde_json::json!({
+            "name": s.name,
+            "url": s.url,
+            "enabled": s.enabled,
+            "src_type": s.src_type,
+            "registry_type": s.registry_type,
+            "package_name": s.package_name,
+        })
+    }).collect();
+    Json(sources)
 }
