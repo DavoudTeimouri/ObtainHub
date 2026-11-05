@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.1] - 2026-11-05
+WebUI: `ohub webui` subcommand with `--port`, `--bind`, `--auth` flags. Protected endpoints (/config, /downloads/*, /update-check) require `Authorization: Bearer <token>` matching the configured github_token when `--auth` is set.
+
+### Added
+- WebUI HTTP server (Axum) with Bearer token auth middleware
+- `ohub webui --port 8080 --bind 127.0.0.1 --auth`
+
 ## [v3.0.67] - 2026-10-23
 Download-manager behaviour for slow and unreliable networks, plus download folder creation and clean cancellation.
 
