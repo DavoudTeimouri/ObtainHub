@@ -155,7 +155,8 @@ async fn streamed(
 
                         // Stall notification: tell the user the download is stuck
                         // and that they can interrupt with Ctrl+C.
-                        if consecutive_failures.is_multiple_of(STALL_NOTIFY_THRESHOLD) {
+                        #[allow(clippy::manual_is_multiple_of)]
+                        if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
                             eprintln!(
                                 "Download stalled at {}/{} bytes ({} consecutive failures). \
                                  Retrying in {}s... (press Ctrl+C to stop)",
