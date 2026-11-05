@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ObtainHub WebUI</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1 class="logo">ObtainHub</h1>
+        <p class="logo-subtitle">GitHub Package Manager</p>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#dashboard" class="nav-item active" data-page="dashboard">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          <span>Dashboard</span>
+        </a>
+        <a href="#apps" class="nav-item" data-page="apps">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+            <line x1="12" y1="22.08" x2="12" y2="12"/>
+          </svg>
+          <span>Apps</span>
+        </a>
+        <a href="#downloads" class="nav-item" data-page="downloads">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Downloads</span>
+        </a>
+        <a href="#config" class="nav-item" data-page="config">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span>Config</span>
+        </a>
+        <a href="#updates" class="nav-item" data-page="updates">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6"/>
+            <path d="M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          <span>Updates</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="auth-status" id="authStatus">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Not authenticated</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="loginBtn">Login</button>
+      </div>
+    </aside>
+
+    <header class="header" id="header">
+      <button class="menu-toggle" id="menuToggle" aria-label="Toggle menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <div class="header-title" id="headerTitle">Dashboard</div>
+      <div class="header-actions">
+        <button class="btn btn-ghost" id="refreshBtn" title="Refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+        </button>
+        <div class="version-badge" id="versionBadge">v3.0.68</div>
+      </div>
+    </header>
+
+    <main class="main" id="main">
+      <section class="page active" id="page-dashboard">
+        <div class="page-header">
+          <h2>Dashboard</h2>
+          <p class="page-subtitle">Overview of managed applications and system status</p>
+        </div>
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value" id="statApps">0</span>
+              <span class="stat-label">Managed Apps</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value" id="statDownloads">0</span>
+              <span class="stat-label">Active Downloads</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6"/>
+                <path d="M1 20v-6h6"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value" id="statUpdates">0</span>
+              <span class="stat-label">Updates Available</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value" id="statUptime">-</span>
+              <span class="stat-label">Server Uptime</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Recent Activity</h3>
+          <div class="activity-list" id="activityList">
+            <div class="empty-state">No recent activity</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-apps">
+        <div class="page-header">
+          <h2>Managed Applications</h2>
+          <p class="page-subtitle">All applications tracked by ObtainHub</p>
+        </div>
+        <div class="card">
+          <div class="table-wrapper">
+            <table class="data-table" id="appsTable">
+              <thead>
+                <tr>
+                  <th>Repository</th>
+                  <th>Name</th>
+                  <th>Version</th>
+                  <th>Status</th>
+                  <th>Installed</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="appsTableBody">
+                <tr class="loading-row"><td colspan="7">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-downloads">
+        <div class="page-header">
+          <h2>Downloads</h2>
+          <p class="page-subtitle">Manage and monitor active downloads</p>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Start New Download</h3>
+            <button class="btn btn-primary" id="showDownloadForm">Add Download</button>
+          </div>
+          <form class="download-form hidden" id="downloadForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="downloadUrl">URL *</label>
+                <input type="url" id="downloadUrl" placeholder="https://example.com/file.zip" required>
+              </div>
+              <div class="form-group">
+                <label for="downloadDest">Destination *</label>
+                <input type="text" id="downloadDest" placeholder="C:\Downloads\file.zip" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="downloadLabel">Label</label>
+                <input type="text" id="downloadLabel" placeholder="Optional label">
+              </div>
+              <div class="form-group">
+                <label for="downloadToken">Auth Token</label>
+                <input type="password" id="downloadToken" placeholder="Optional Bearer token">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Start Download</button>
+              <button type="button" class="btn btn-secondary" id="hideDownloadForm">Cancel</button>
+            </div>
+          </form>
+        </div>
+        <div class="card">
+          <h3>Active Downloads</h3>
+          <div class="table-wrapper">
+            <table class="data-table" id="downloadsTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Label / URL</th>
+                  <th>Status</th>
+                  <th>Progress</th>
+                  <th>Downloaded / Total</th>
+                  <th>Speed</th>
+                  <th>ETA</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="downloadsTableBody">
+                <tr class="loading-row"><td colspan="8">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="polling-info" id="pollingInfo">Auto-refresh: <span id="pollingStatus">Enabled</span> (every 2s)</p>
+        </div>
+      </section>
+
+      <section class="page" id="page-config">
+        <div class="page-header">
+          <h2>Configuration</h2>
+          <p class="page-subtitle">ObtainHub settings and paths</p>
+        </div>
+        <div class="config-grid" id="configGrid">
+          <div class="card config-section">
+            <h3>Directories</h3>
+            <dl class="config-list" id="configDirs"></dl>
+          </div>
+          <div class="card config-section">
+            <h3>Network</h3>
+            <dl class="config-list" id="configNetwork"></dl>
+          </div>
+          <div class="card config-section">
+            <h3>Behavior</h3>
+            <dl class="config-list" id="configBehavior"></dl>
+          </div>
+          <div class="card config-section">
+            <h3>Schedule</h3>
+            <dl class="config-list" id="configSchedule"></dl>
+          </div>
+          <div class="card config-section">
+            <h3>Advanced</h3>
+            <dl class="config-list" id="configAdvanced"></dl>
+          </div>
+          <div class="card config-section">
+            <h3>Groups & Auth</h3>
+            <dl class="config-list" id="configGroups"></dl>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-updates">
+        <div class="page-header">
+          <h2>Check for Updates</h2>
+          <p class="page-subtitle">Check installed repositories for new releases</p>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Update Check Options</h3>
+          </div>
+          <form class="update-form" id="updateForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="updateRepo">Repository (optional)</label>
+                <input type="text" id="updateRepo" placeholder="owner/repo (leave empty for all)">
+              </div>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="updatePrerelease">
+                  <span>Include pre-releases</span>
+                </label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="checkUpdatesBtn">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Check for Updates
+              </button>
+            </div>
+          </form>
+        </div>
+        <div class="card hidden" id="updateResultsCard">
+          <h3>Results</h3>
+          <div class="table-wrapper">
+            <table class="data-table" id="updateResultsTable">
+              <thead>
+                <tr>
+                  <th>Repository</th>
+                  <th>Current Version</th>
+                  <th>Latest Version</th>
+                  <th>Update Available</th>
+                </tr>
+              </thead>
+              <tbody id="updateResultsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal hidden" id="loginModal">
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Authentication Required</h3>
+        <button class="modal-close" id="modalClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>This server requires authentication. Enter your GitHub token to access protected endpoints.</p>
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="authToken">GitHub Token</label>
+            <input type="password" id="authToken" placeholder="ghp_..." required autocomplete="off">
+            <small>Token is stored in sessionStorage for this session only</small>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Login</button>
+            <button type="button" class="btn btn-secondary" id="modalCancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

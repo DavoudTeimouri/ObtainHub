@@ -44,10 +44,7 @@ pub async fn run_webui(
         .route("/", get(spa))
         .route(
             "/apps",
-            get(routes::list_apps).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
+            get(routes::list_apps),
         )
         .route(
             "/config",
