@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.7] - 2026-11-06
+RC release with WebUI professional redesign and CI fixes:
+- WebUI: embedded static SPA (index.html/style.css/app.js) with dashboard, apps/config/sources/token CRUD, download progress, update check
+- Auth: public read routes, Bearer token auth on mutating routes when `--auth` set
+- Port conflict detection (tries next port), default port 8080
+- Self-update: stops WebUI via PID file before binary replacement
+- Fixed clippy `needless_borrow` in `delete_app` route (`-D warnings` CI gate)
+
 ## [v3.0.68-rc.6] - 2026-11-06
 RC release with WebUI professional redesign and CI fixes:
 - WebUI: embedded static SPA (index.html/style.css/app.js) with dashboard, apps/config/sources/token CRUD, download progress, update check
