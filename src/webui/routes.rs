@@ -277,6 +277,8 @@ pub async fn delete_app(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     axum::extract::Path(repo): axum::extract::Path<String>,
 ) -> impl IntoResponse {
+    // Catch-all path includes a leading '/', strip it.
+    let repo = repo.strip_prefix('/').unwrap_or(&repo);
     let mut state_manager = app_state.state_manager.lock().await;
     let removed = state_manager.remove_installed(&repo);
 
@@ -344,6 +346,8 @@ pub async fn delete_source(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> impl IntoResponse {
+    // Catch-all path includes a leading '/', strip it.
+    let name = name.strip_prefix('/').unwrap_or(&name);
     let mut config_manager = app_state.config_manager.lock().await;
     let config = config_manager.get_mut();
     let len_before = config.manifest_sources.len();

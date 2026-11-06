@@ -1,8 +1,8 @@
 use axum::{routing::get, Router, middleware, response::Html};
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::path::PathBuf;
 use std::fs;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 use anyhow::Context;
@@ -25,12 +25,30 @@ pub struct AppState {
     pub auth_enabled: bool,
 }
 
-/// Single-page application HTML served at `/`.
-const SPA_HTML: &str = include_str!("spa.html");
+/// Embedded static file content (compiled into the binary).
+const INDEX_HTML: &str = include_str!("static/index.html");
+const STYLE_CSS: &str = include_str!("static/style.css");
+const APP_JS: &str = include_str!("static/app.js");
 
 /// HTML dashboard handler for `GET /`. Always public (no auth required).
-async fn spa() -> Html<&'static str> {
-    Html(SPA_HTML)
+/// Serves the professional static index.html embedded in the binary.
+async fn spa() -> Html<String> {
+    Html(INDEX_HTML.to_string())
+}
+
+/// Serve embedded static file at `/static/<path>`.
+async fn static_file_embedded(
+    axum::extract::Path(path): axum::extract::Path<String>,
+) -> Result<Html<String>, axum::http::StatusCode> {
+    if path.contains("..") {
+        return Err(axum::http::StatusCode::NOT_FOUND);
+    }
+    let content = match path.as_str() {
+        "style.css" => Html(STYLE_CSS.to_string()),
+        "app.js" => Html(APP_JS.to_string()),
+        _ => return Err(axum::http::StatusCode::NOT_FOUND),
+    };
+    Ok(content)
 }
 
 /// Path to the WebUI PID file, used by `ohub self-update` to stop the server
@@ -79,97 +97,32 @@ pub async fn run_webui(
     }
 
     let app = Router::new()
-        .route("/", get(spa))
         // Public read-only routes
+        .route("/", get(spa))
+        .route("/static/*path", get(static_file_embedded))
         .route("/apps", get(routes::list_apps))
+        .route("/config", get(routes::get_config))
         .route("/config/sources", get(routes::list_sources))
-        // Protected read route
-        .route(
-            "/config",
-            get(routes::get_config).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        // Protected write routes
-        .route(
-            "/config",
-            axum::routing::put(routes::put_config).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/config/github-token",
-            axum::routing::post(routes::post_github_token).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/config/github-token",
-            axum::routing::delete(routes::delete_github_token).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/apps",
-            axum::routing::post(routes::post_app).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/apps/{repo}",
-            axum::routing::delete(routes::delete_app).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/config/sources",
-            axum::routing::post(routes::post_source).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/config/sources/{name}",
-            axum::routing::delete(routes::delete_source).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
+        // Token setup is public (no auth yet — chicken-and-egg)
+        .route("/config/github-token", axum::routing::post(routes::post_github_token))
+        // Protected write routes (auth middleware applied below)
+        .route("/config", axum::routing::put(routes::put_config))
+        .route("/config/github-token", axum::routing::delete(routes::delete_github_token))
+        .route("/apps", axum::routing::post(routes::post_app))
+        .route("/apps/*repo", axum::routing::delete(routes::delete_app))
+        .route("/config/sources", axum::routing::post(routes::post_source))
+        .route("/config/sources/*name", axum::routing::delete(routes::delete_source))
         // Protected download routes
-        .route(
-            "/downloads",
-            get(downloads::list_downloads).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/downloads",
-            axum::routing::post(downloads::start_download).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/downloads/{id}/cancel",
-            axum::routing::post(downloads::cancel_download).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
-        .route(
-            "/update-check",
-            axum::routing::post(downloads::update_check).layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                crate::webui::auth::auth_middleware,
-            )),
-        )
+        .route("/downloads", axum::routing::get(downloads::list_downloads))
+        .route("/downloads", axum::routing::post(downloads::start_download))
+        .route("/downloads/{id}/cancel", axum::routing::post(downloads::cancel_download))
+        // Protected update check
+        .route("/update-check", axum::routing::post(downloads::update_check))
+        // Apply auth middleware to all routes — public paths are exempted inside the middleware
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            crate::webui::auth::auth_middleware,
+        ))
         .with_state(app_state);
 
     // Port conflict detection: try to bind, if it fails try the next port.

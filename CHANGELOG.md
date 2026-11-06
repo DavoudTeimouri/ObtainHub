@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.2] - 2026-11-05
+WebUI professional redesign: modern dark-themed SPA with dashboard stats cards, responsive layout, toast notifications, auth login/logout modal, and full CRUD for apps/sources/token/config. Static assets (HTML/CSS/JS) embedded in the binary. Public routes (`GET /`, `GET /apps`, `GET /config`, `GET /config/sources`, `POST /config/github-token`) stay open; mutating routes require `Authorization: Bearer` when `--auth` is set. Catch-all path parameters for repo names containing `/` (`owner/repo`). Removed duplicate `### Added` section from previous release notes.
+
+### Added
+- Professional dark-themed WebUI SPA (vanilla JS, no build step)
+- Dashboard with managed apps / downloads / updates / uptime stats
+- Config editor (all keys) with inline save via PUT /config
+- GitHub token add/remove via POST/DELETE /config/github-token
+- Apps add/remove via POST/DELETE /apps
+- Manifest sources add/remove via POST/DELETE /config/sources
+- Download progress polling (2s) with progress bars and cancel
+- Real GitHub API update check via POST /update-check
+- Auth login/logout with Bearer token in browser sessionStorage
+- Auto browser open on `ohub webui`
+- WebUI PID file for self-update process termination
+- Port conflict detection: tries next port if default is in use
+
 ## [v3.0.68-rc.1] - 2026-11-05
 WebUI: `ohub webui` subcommand with `--port` (default 8080), `--bind`, `--auth` flags. Full-featured HTML single-page app at `GET /` with dashboard, apps table, config editor, token manager, source manager, download manager with progress bars, and update check. Protected API endpoints (`/config`, `/downloads/*`, `/update-check`, `POST/DELETE /apps`, `POST/DELETE /config/sources`) require `Authorization: Bearer <token>` matching the configured `github_token` when `--auth` is set; `/` and `GET /apps` stay public. Port conflict detection tries the next port if the default is in use. Default browser opens automatically on start. `ohub self-update` stops the WebUI before replacing the binary.
 
