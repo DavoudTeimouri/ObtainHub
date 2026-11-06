@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.3] - 2026-11-05
+Fix clippy `needless_borrow` warning in WebUI `delete_app` route that failed CI (`cargo clippy --all-targets -- -D warnings`). `remove_installed` takes `&str`; `repo` is already `&str` after `strip_prefix`, so pass it directly.
+
 ## [v3.0.68-rc.2] - 2026-11-05
 WebUI professional redesign: modern dark-themed SPA with dashboard stats cards, responsive layout, toast notifications, auth login/logout modal, and full CRUD for apps/sources/token/config. Static assets (HTML/CSS/JS) embedded in the binary. Public routes (`GET /`, `GET /apps`, `GET /config`, `GET /config/sources`, `POST /config/github-token`) stay open; mutating routes require `Authorization: Bearer` when `--auth` is set. Catch-all path parameters for repo names containing `/` (`owner/repo`). Removed duplicate `### Added` section from previous release notes.
 
