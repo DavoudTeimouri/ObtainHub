@@ -280,7 +280,7 @@ pub async fn delete_app(
     // Catch-all path includes a leading '/', strip it.
     let repo = repo.strip_prefix('/').unwrap_or(&repo);
     let mut state_manager = app_state.state_manager.lock().await;
-    let removed = state_manager.remove_installed(&repo);
+    let removed = state_manager.remove_installed(repo);
 
     if removed.is_none() {
         return (StatusCode::NOT_FOUND, Json(serde_json::json!({
