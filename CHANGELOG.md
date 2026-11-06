@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.4] - 2026-11-06
+RC release with WebUI professional redesign and CI fixes:
+- WebUI: embedded static SPA (index.html/style.css/app.js) with dashboard, apps/config/sources/token CRUD, download progress, update check
+- Auth: public read routes, Bearer token auth on mutating routes when `--auth` set
+- Port conflict detection (tries next port), default port 8080
+- Self-update: stops WebUI via PID file before binary replacement
+- Fixed clippy `needless_borrow` in `delete_app` route (`-D warnings` CI gate)
+
 ## [v3.0.68-rc.3] - 2026-11-05
 Fix clippy `needless_borrow` warning in WebUI `delete_app` route that failed CI (`cargo clippy --all-targets -- -D warnings`). `remove_installed` takes `&str`; `repo` is already `&str` after `strip_prefix`, so pass it directly.
 
