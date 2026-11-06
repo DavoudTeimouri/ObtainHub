@@ -40,30 +40,33 @@ ohub <COMMAND>
 
 | Command | Description |
 |---------|-------------|
-| `search` | Search GitHub repositories; select results to add or install |
-| `install` | Install a repository (supports `--file` for local archives, `--url` for direct downloads) |
-| `check` | Check for updates to installed repositories |
-| `list` | List installed repositories |
-| `update` | Update installed repositories |
-| `uninstall` | Uninstall a repository |
-| `remove` | Remove from management (keep files) |
-| `add` | Add to management without installing |
-| `source` | Manage custom manifest sources |
-| `schedule` | Manage scheduled background checks |
-| `group` | Manage app groups/profiles |
-| `shim` | Manage portable shims |
-|| `state` | Export/import state |
-|| `webui` | Start the WebUI HTTP server |
-|| `apps` | Backup/restore application folders |
-|| `cleanup` | Clean up leftover files |
-|| `tui` | Launch the interactive app table |
-|| `config` | Manage configuration |
-|| `backup` | Backup installed repositories and config |
-|| `restore` | Restore from backup |
-|| `self-update` | Update ohub itself |
-|| `completion` | Generate shell completions |
-|| `doctor` | Diagnose installation issues |
-|| `self-uninstall` | Completely remove ohub |
+|| `search` | Search GitHub repositories; select results to add or install ||
+|| `install` | Install a repository (supports `--file` for local archives, `--url` for direct downloads) ||
+|| `check` | Check for updates to installed repositories ||
+|| `list` | List installed repositories ||
+|| `update` | Update installed repositories ||
+|| `uninstall` | Uninstall a repository ||
+|| `remove` | Remove from management (keep files) ||
+|| `add` | Add to management without installing ||
+|| `source` | Manage custom manifest sources ||
+|| `schedule` | Manage scheduled background checks ||
+|| `group` | Manage app groups/profiles ||
+|| `shim` | Manage portable shims ||
+|| `state` | Export/import state ||
+|| `webui` | Start the WebUI HTTP server ||
+|| `apps` | Backup/restore application folders ||
+|| `cleanup` | Clean up leftover files ||
+|| `tui` | Launch the interactive app table ||
+|| `config` | Manage configuration ||
+|| `backup` | Backup installed repositories and config ||
+|| `restore` | Restore from backup ||
+|| `self-update` | Update ohub itself ||
+|| `completion` | Generate shell completions ||
+|| `doctor` | Diagnose installation issues ||
+|| `self-uninstall` | Completely remove ohub ||
+|| `log` | Show recent log output ||
+|| `info` | Show detailed info about a repository ||
+|| `reset` | Reset ohub state and configuration ||
 
 ### WebUI
 
@@ -186,7 +189,8 @@ ohub tui                         # Press '?' for help, 'j/k' to navigate
 | `c` | Clear the filter |
 | `Enter` | App details, or apply the filter |
 | `?` / `h` / `F1` | Help |
-| `q` / `Esc` | Quit |
+| `q` | Quit |
+| `Esc` | Close details panel / clear filter / cancel search — quits only at the top level |
 
 Update and remove ask for confirmation first: the status line shows what will
 happen, `Enter` confirms, `Esc` or any other key cancels.
@@ -197,11 +201,11 @@ Config file: `%APPDATA%\ObtainHub\config.toml` (Windows) or `$XDG_CONFIG_HOME/Ob
 State file: `%APPDATA%\ObtainHub\state.json`
 
 ```bash
-ohub config list          # Show all config
+ohub config show          # Show all config
 ohub config get key       # Get value
 ohub config set key value # Set value
 ohub config auth          # Where the GitHub token lives
-ohub config set download_bandwidth_limit 512   # KB per second (none to clear)
+ohub config set download_bandwidth_limit 512   # 512 bytes/sec (none to clear)
 ```
 
 The GitHub token is stored in the **OS credential store** (Windows Credential
@@ -293,7 +297,7 @@ then checks the managed ones for updates.
 
 Zero-valued `parallel_downloads`, `timeout_seconds`, `update_check_interval_hours`, and `schedule.interval_hours` are reset to their defaults on load — a hand-edited config can never set them to 0.
 
-`github_token` is stored in plain text in `config.toml`. `ohub config get github_token` returns `[stored]`, never the value, to avoid leaking it into shell history or logs.
+`github_token` is stored in the **OS credential store** (Windows Credential Manager), not in `config.toml`. `ohub config get github_token` returns `[stored]`, never the value, to avoid leaking it into shell history or logs.
 
 ## Self-update assets
 
