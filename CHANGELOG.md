@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.13] - 2026-11-07
+Fix `ERROR: The process "N" not found.` during `ohub self-update`: `stop_webui`
+spawned `taskkill` with inherited stderr, so a stale `webui.pid` leaked
+taskkill's error to the console. Now uses `.output()` (silenced). Also the
+WebUI now shuts down gracefully on Ctrl-C and removes its PID file (only if it
+still owns it), so stale PID files stop accumulating.
+
 ## [v3.0.68-rc.12] - 2026-11-07
 WebUI redesign: full design-system rewrite of `style.css` — indigo/violet gradient
 accent on deep-slate background with radial glows, glass sticky header, gradient

@@ -71,6 +71,17 @@ fn write_pid_file() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Remove the PID file on shutdown, but only if it still names this process —
+/// a newer WebUI instance may have overwritten it.
+fn remove_pid_file() {
+    let pid_file = webui_pid_file();
+    if let Ok(content) = fs::read_to_string(&pid_file) {
+        if content.trim() == std::process::id().to_string() {
+            let _ = fs::remove_file(&pid_file);
+        }
+    }
+}
+
 /// Start the WebUI HTTP server.
 ///
 /// Runs an axum server on the given address. The server shares config/state
@@ -148,5 +159,12 @@ pub async fn run_webui(
     let actual_addr = listener.local_addr()?;
     info!("WebUI listening on {actual_addr}");
 
-    axum::serve(listener, app).await.context("WebUI server error")
+    let result = axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await
+        .context("WebUI server error");
+    remove_pid_file();
+    result
 }

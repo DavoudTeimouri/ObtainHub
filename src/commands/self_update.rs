@@ -490,13 +490,15 @@ fn stop_webui() {
         return;
     };
     if cfg!(windows) {
+        // .output() so a stale PID doesn't leak taskkill's
+        // `ERROR: The process "N" not found.` onto the user's console.
         let _ = process::Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/F", "/T"])
-            .spawn();
+            .output();
     } else {
         let _ = process::Command::new("kill")
             .args(["-TERM", &pid.to_string()])
-            .spawn();
+            .output();
     }
     let _ = fs::remove_file(&pid_file);
 }
