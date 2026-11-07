@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.17] - 2026-11-07
+- Downloads page is now download-only per request: URL in, file lands in the
+  configured download folder, live progress/speed/ETA table. Removed the
+  Actions column, the per-row Cancel button and `cancelDownload()` from the
+  UI (the `POST /downloads/:id/cancel` API endpoint remains for CLI/API users).
+
 ## [v3.0.68-rc.16] - 2026-11-07
 - Fix dead WebUI clicks: a bad string escape (`\\'` instead of `\'`) in the
   spliced app.js made the whole module fail to parse, so no navigation or

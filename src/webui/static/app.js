@@ -747,13 +747,12 @@ class ObtainHubUI {
           '<td><span class="badge ' + statusClass + '">' + this.escapeHtml(dl.status) + '</span></td>' +
           '<td><div class="progress-bar"><div class="progress-fill" id="dl-progress-' + this.escapeHtml(dl.id) + '" style="width:' + pct + '%;"></div></div></td>' +
           '<td>' + this.formatBytes(dl.downloaded) + ' / ' + this.formatBytes(dl.total) + '</td>' +
-          '<td class="speed-eta">' + (dl.speed ? this.formatBytes(dl.speed) + '/s' : '&ndash;') + (dl.eta ? ' &bull; ETA ' + dl.eta + 's' : '') + '</td>' +
-          '<td><button class="action-btn btn-danger" onclick="app.cancelDownload(\'' + this.escapeHtml(dl.id) + '\')" ' + (status === 'completed' || status === 'error' ? 'disabled' : '') + '>Cancel</button></td>';
+          '<td class="speed-eta">' + (dl.speed ? this.formatBytes(dl.speed) + '/s' : '&ndash;') + (dl.eta ? ' &bull; ETA ' + dl.eta + 's' : '') + '</td>';
         tbody.appendChild(tr);
       });
     } catch (err) {
       const tbody = document.getElementById('downloadsTableBody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Failed to load downloads: ' + this.escapeHtml(err.message) + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load downloads: ' + this.escapeHtml(err.message) + '</td></tr>';
     }
   }
 
@@ -774,16 +773,6 @@ class ObtainHubUI {
       this.loadDownloads();
     } catch (err) {
       this.showToast('Failed to start download: ' + err.message, 'error');
-    }
-  }
-
-  async cancelDownload(id) {
-    try {
-      await this.api('/downloads/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
-      this.showToast('Download cancelled', 'success');
-      this.loadDownloads();
-    } catch (err) {
-      this.showToast('Failed to cancel download: ' + err.message, 'error');
     }
   }
 
