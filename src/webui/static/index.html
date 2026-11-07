@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0e17">
   <title>ObtainHub WebUI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.17">
+  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.18">
 </head>
 <body>
   <div class="app">
@@ -66,6 +66,16 @@
         </a>
       </nav>
       <div class="sidebar-footer">
+        <div class="sidebar-tools">
+          <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Refresh current page">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            <span>Refresh</span>
+          </button>
+          <div class="version-badge" id="versionBadge">v3.0.68-rc.18</div>
+        </div>
         <div class="auth-status" id="authStatus">
           <span class="status-dot" id="statusDot"></span>
           <span id="statusText">Not authenticated</span>
@@ -83,15 +93,6 @@
         </svg>
       </button>
       <div class="header-title" id="headerTitle">Dashboard</div>
-      <div class="header-actions">
-        <button class="btn btn-ghost" id="refreshBtn" title="Refresh">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="23 4 23 10 17 10"/>
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-          </svg>
-        </button>
-        <div class="version-badge" id="versionBadge">v3.0.68-rc.17</div>
-      </div>
     </header>
 
     <main class="main" id="main">
@@ -155,6 +156,13 @@
           <p class="page-subtitle">Search GitHub, install, update, and remove software — same engines as the CLI</p>
         </div>
 
+        <div class="subtabs" id="appsTabs">
+          <button class="subtab active" data-apps-tab="installed" type="button">Installed</button>
+          <button class="subtab" data-apps-tab="search" type="button">Find &amp; Install</button>
+          <button class="subtab" data-apps-tab="sources" type="button">Sources</button>
+        </div>
+
+        <div class="apps-panel" id="appsTab-search">
         <div class="card">
           <div class="card-header">
             <h3>Search &amp; Install</h3>
@@ -203,6 +211,9 @@
           </div>
         </div>
 
+        </div>
+
+        <div class="apps-panel active" id="appsTab-installed">
         <div class="card">
           <div class="card-header">
             <h3>Managed Applications</h3>
@@ -231,6 +242,9 @@
           </div>
         </div>
 
+        </div>
+
+        <div class="apps-panel" id="appsTab-sources">
         <div class="card">
           <div class="card-header">
             <h3>Repositories (Sources)</h3>
@@ -268,6 +282,7 @@
             </table>
           </div>
           <div class="empty-state hidden" id="sourcesEmpty">No custom sources configured</div>
+        </div>
         </div>
       </section>
 
@@ -400,15 +415,15 @@
             <table class="data-table">
               <thead><tr><th>Command</th><th>Description</th><th>WebUI equivalent</th></tr></thead>
               <tbody>
-                <tr><td><code>ohub search &lt;query&gt;</code></td><td>Search GitHub repositories</td><td>Apps → Search &amp; Install</td></tr>
+                <tr><td><code>ohub search &lt;query&gt;</code></td><td>Search GitHub repositories</td><td>Apps → Find &amp; Install</td></tr>
                 <tr><td><code>ohub install &lt;owner/repo&gt;</code></td><td>Download and install a release</td><td>Apps → Install button</td></tr>
-                <tr><td><code>ohub list</code></td><td>List managed applications</td><td>Apps → Managed Applications</td></tr>
+                <tr><td><code>ohub list</code></td><td>List managed applications</td><td>Apps → Installed</td></tr>
                 <tr><td><code>ohub check [repo]</code></td><td>Check for updates</td><td>Apps → Check / Check All</td></tr>
                 <tr><td><code>ohub update [repo]</code></td><td>Update installed software</td><td>Apps → Update button</td></tr>
                 <tr><td><code>ohub uninstall &lt;repo&gt;</code></td><td>Uninstall software</td><td>Apps → Uninstall button</td></tr>
                 <tr><td><code>ohub remove &lt;repo&gt;</code></td><td>Stop managing a repo</td><td>Apps → Remove button</td></tr>
                 <tr><td><code>ohub add &lt;repo&gt;</code></td><td>Add repo to management</td><td>Apps → Install adds it</td></tr>
-                <tr><td><code>ohub source add/list/remove</code></td><td>Manage manifest sources</td><td>Apps → Repositories (Sources)</td></tr>
+                <tr><td><code>ohub source add/list/remove</code></td><td>Manage manifest sources</td><td>Apps → Sources</td></tr>
                 <tr><td><code>ohub config</code></td><td>Show/edit configuration</td><td>Config page</td></tr>
                 <tr><td><code>ohub webui [--auth] [--port N]</code></td><td>Start this WebUI</td><td>—</td></tr>
                 <tr><td><code>ohub self-update</code></td><td>Update ohub itself</td><td>—</td></tr>
@@ -450,6 +465,7 @@
           </div>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">Sign in</button>
+            <button type="button" class="btn btn-secondary" id="loginCurrentUserBtn" title="Sign in as the Windows account running ohub (must be admin)">Use current user</button>
             <button type="button" class="btn btn-secondary" id="modalCancel">Cancel</button>
           </div>
         </form>
@@ -472,6 +488,6 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script type="module" src="/static/app.js?v=3.0.68-rc.17"></script>
+  <script type="module" src="/static/app.js?v=3.0.68-rc.18"></script>
 </body>
 </html>

@@ -76,6 +76,8 @@ pub struct ConfigInfo {
     pub token_source: String,
     /// Whether a GitHub token is configured (value itself is never exposed).
     pub has_token: bool,
+    /// Whether the WebUI was started with `--auth` (drives UI field locking).
+    pub auth_required: bool,
 }
 
 /// Get current configuration (token masked).
@@ -109,6 +111,7 @@ pub async fn get_config(
         groups: config.groups.keys().cloned().collect(),
         token_source,
         has_token: config_manager.github_token().is_some(),
+        auth_required: app_state.auth_enabled,
     })
 }
 
@@ -640,16 +643,43 @@ pub async fn check_app(
 
 #[derive(Deserialize)]
 pub struct LoginBody {
-    pub username: String,
-    pub password: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    /// Sign in as the Windows account running the ohub process (must be admin).
+    pub use_current_user: Option<bool>,
+}
+
+/// Insert a session token and return it.
+fn issue_session(app_state: &std::sync::Arc<crate::webui::AppState>) -> String {
+    let token = uuid::Uuid::new_v4().to_string();
+    app_state.sessions.lock().unwrap().insert(token.clone());
+    token
+}
+
+/// Run an encoded PowerShell script; returns stdout on success.
+fn run_ps(script: &str) -> Result<String, String> {
+    let encoded = base64_utf16le(script);
+    match std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+        .output()
+    {
+        Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).trim().to_string()),
+        Ok(_) => Err("rejected".to_string()),
+        Err(e) => Err(format!("Login backend unavailable: {e}")),
+    }
 }
 
 /// Sign in with a Windows admin account on this machine.
 ///
-/// Public route (it IS the login). Validates credentials against the local
-/// SAM via PowerShell `PrincipalContext.ValidateCredentials` (encoded command,
-/// password never in a process list), then issues a session token accepted by
-/// the auth middleware. Windows only; elsewhere returns 501.
+/// Public route (it IS the login). Two modes:
+/// - `{username, password}`: validated against the local SAM via PowerShell
+///   `PrincipalContext.ValidateCredentials` (encoded command, password never
+///   in a process list).
+/// - `{use_current_user: true}`: no password needed; the account running the
+///   ohub process must be a local administrator.
+///
+/// Both issue a session token accepted by the auth middleware.
+/// Windows only; elsewhere returns 501.
 pub async fn login(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(body): Json<LoginBody>,
@@ -659,23 +689,39 @@ pub async fn login(
             "error": "Windows admin sign-in is available on Windows only. Use a Bearer token instead."
         }))).into_response();
     }
-    let script = format!(
-        "$ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Machine); if ($ctx.ValidateCredentials('{u}', '{p}')) {{ exit 0 }} else {{ exit 1 }}",
-        u = body.username.replace('\'', "''"),
-        p = body.password.replace('\'', "''")
-    );
-    let encoded = base64_utf16le(&script);
-    match std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
-        .output()
-    {
-        Ok(out) if out.status.success() => {
-            let token = uuid::Uuid::new_v4().to_string();
-            app_state.sessions.lock().unwrap().insert(token.clone());
-            (StatusCode::OK, Json(serde_json::json!({"token": token}))).into_response()
+    let verified_user = if body.use_current_user == Some(true) {
+        let script = "$wi = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $wp = New-Object System.Security.Principal.WindowsPrincipal($wi); if ($wp.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) { $wi.Name; exit 0 } else { exit 1 }";
+        match run_ps(script) {
+            Ok(name) => Some(name),
+            Err(_) => None,
         }
-        Ok(_) => (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Invalid Windows credentials"}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Login backend unavailable: {e}")}))).into_response(),
+    } else {
+        let username = body.username.unwrap_or_default();
+        let password = body.password.unwrap_or_default();
+        if username.is_empty() || password.is_empty() {
+            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                "error": "Provide username+password or use_current_user"
+            }))).into_response();
+        }
+        let script = format!(
+            "$ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Machine); if ($ctx.ValidateCredentials('{u}', '{p}')) {{ exit 0 }} else {{ exit 1 }}",
+            u = username.replace('\'', "''"),
+            p = password.replace('\'', "''")
+        );
+        match run_ps(&script) {
+            Ok(_) => Some(username),
+            Err(e) if e == "rejected" => None,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        }
+    };
+    match verified_user {
+        Some(user) => {
+            let token = issue_session(&app_state);
+            (StatusCode::OK, Json(serde_json::json!({"token": token, "user": user}))).into_response()
+        }
+        None => (StatusCode::UNAUTHORIZED, Json(serde_json::json!({
+            "error": "Invalid Windows credentials or current user is not an administrator"
+        }))).into_response(),
     }
 }
 

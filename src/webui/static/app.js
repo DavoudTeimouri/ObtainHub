@@ -8,13 +8,33 @@ class ObtainHubUI {
     this.token = sessionStorage.getItem('ohub_token') || null;
     this.currentPage = 'dashboard';
     this.pollInterval = null;
+    this.authRequired = false;
+    this.appsTab = 'installed';
     this.init();
   }
 
   init() {
     this.setupNavigation();
     window.addEventListener('hashchange', () => this.route());
+    this.loadAuthMode();
     this.route();
+  }
+
+  // Fetch /config (public) to learn whether the server runs with --auth.
+  // When it does and there is no session token, all page fields stay locked.
+  async loadAuthMode() {
+    try {
+      const cfg = await this.api('/config');
+      this.authRequired = !!cfg.auth_required;
+    } catch (e) { /* keep default: unlocked */ }
+    this.applyLock();
+  }
+
+  applyLock() {
+    const locked = this.authRequired && !this.token;
+    document.body.classList.toggle('locked', locked);
+    document.querySelectorAll('main .page input, main .page select, main .page textarea, main .page button')
+      .forEach(el => { el.disabled = locked; });
   }
 
   setupNavigation() {
@@ -54,6 +74,17 @@ class ObtainHubUI {
         this.loginWithCredentials(username, password);
       });
     }
+
+    // Sign in as the Windows account running ohub (no password)
+    const loginCurrentUserBtn = document.getElementById('loginCurrentUserBtn');
+    if (loginCurrentUserBtn) {
+      loginCurrentUserBtn.addEventListener('click', () => this.loginAsCurrentUser());
+    }
+
+    // Apps page sub-tabs (Installed / Find & Install / Sources)
+    document.querySelectorAll('#appsTabs [data-apps-tab]').forEach(btn => {
+      btn.addEventListener('click', () => this.showAppsTab(btn.getAttribute('data-apps-tab')));
+    });
 
     // Token fallback login
     const tokenLoginForm = document.getElementById('tokenLoginForm');
@@ -187,7 +218,7 @@ class ObtainHubUI {
     // Setup auth UI and load page data
     this.setupAuthUI();
     if (page === 'dashboard') this.loadDashboard();
-    else if (page === 'apps') { this.loadApps(); this.loadSources(); }
+    else if (page === 'apps') { this.showAppsTab(this.appsTab); }
     else if (page === 'config') this.loadConfig();
     else if (page === 'downloads') {
       this.loadDownloads();
@@ -207,12 +238,28 @@ class ObtainHubUI {
   refreshCurrentPage() {
     switch (this.currentPage) {
       case 'dashboard': this.loadDashboard(); break;
-      case 'apps': this.loadApps(); this.loadSources(); break;
+      case 'apps': this.showAppsTab(this.appsTab); break;
       case 'config': this.loadConfig(); break;
       case 'downloads': this.loadDownloads(); break;
       case 'help': this.loadHelp(); break;
     }
     this.showToast('Refreshed', 'info');
+  }
+
+  showAppsTab(name) {
+    this.appsTab = name;
+    document.querySelectorAll('#appsTabs [data-apps-tab]').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-apps-tab') === name);
+    });
+    document.querySelectorAll('.apps-panel').forEach(p => p.classList.remove('active'));
+    const panel = document.getElementById('appsTab-' + name);
+    if (panel) panel.classList.add('active');
+    if (name === 'installed') this.loadApps();
+    else if (name === 'sources') this.loadSources();
+    else if (name === 'search') {
+      const q = document.getElementById('searchQuery');
+      if (q) q.focus();
+    }
   }
 
   setupAuthUI() {
@@ -240,6 +287,7 @@ class ObtainHubUI {
       }
       authItems.forEach(el => el.classList.add('disabled'));
     }
+    this.applyLock();
   }
 
   showLoginModal() {
@@ -265,6 +313,7 @@ class ObtainHubUI {
         sessionStorage.removeItem('ohub_token');
         this.token = null;
         this.setupAuthUI();
+        this.applyLock();
         this.showLoginModal();
         throw new Error('Authentication required');
       }
@@ -781,7 +830,17 @@ class ObtainHubUI {
     try {
       const res = await this.api('/auth/login', { method: 'POST', body: { username: username, password: password } });
       this.login(res.token);
-      this.showToast('Signed in as ' + username, 'success');
+      this.showToast('Signed in as ' + (res.user || username), 'success');
+    } catch (err) {
+      this.showToast('Sign-in failed: ' + err.message, 'error');
+    }
+  }
+
+  async loginAsCurrentUser() {
+    try {
+      const res = await this.api('/auth/login', { method: 'POST', body: { use_current_user: true } });
+      this.login(res.token);
+      this.showToast('Signed in as ' + (res.user || 'current user'), 'success');
     } catch (err) {
       this.showToast('Sign-in failed: ' + err.message, 'error');
     }
@@ -792,6 +851,7 @@ class ObtainHubUI {
     this.token = token;
     sessionStorage.setItem('ohub_token', token);
     this.setupAuthUI();
+    this.applyLock();
     this.hideLoginModal();
     this.showToast('Logged in successfully', 'success');
   }
@@ -801,6 +861,7 @@ class ObtainHubUI {
     sessionStorage.removeItem('ohub_token');
     this.stopDownloadsPoll();
     this.setupAuthUI();
+    this.applyLock();
     this.showToast('Logged out', 'info');
     this.navigate('dashboard');
   }

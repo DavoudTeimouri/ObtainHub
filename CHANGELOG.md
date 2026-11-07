@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.18] - 2026-11-07
+- Readonly-until-login: `/config` now reports `auth_required`; when the server
+  runs with `--auth` and no session token exists, every input/button on every
+  page is disabled (dimmed) until sign-in. Unlocks on login, re-locks on 401
+  or logout. Without `--auth` nothing is locked.
+- New sign-in mode "Use current user": `POST /auth/login {use_current_user:true}`
+  checks the Windows account running ohub is a local admin (WindowsPrincipal,
+  encoded PowerShell) and issues a session token — no password needed.
+- Apps page split into sub-tabs: **Installed** (managed apps, Check All,
+  per-app Check/Update/Uninstall/Remove), **Find & Install** (GitHub search),
+  **Sources** (repository manager). Help quick-reference updated to match.
+- Refresh button + version badge moved out of the page header into the sidebar
+  footer, so page tops are clean and uniform.
+
 ## [v3.0.68-rc.17] - 2026-11-07
 - Downloads page is now download-only per request: URL in, file lands in the
   configured download folder, live progress/speed/ETA table. Removed the

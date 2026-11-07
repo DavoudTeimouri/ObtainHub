@@ -339,6 +339,56 @@ code {
   animation: fade-in 0.18s ease;
 }
 
+/* Apps page sub-tabs */
+.subtabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.subtab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 10px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.subtab:hover { color: var(--text); }
+
+.subtab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent-primary);
+}
+
+.apps-panel { display: none; }
+.apps-panel.active { display: block; }
+
+/* Sidebar footer tools (refresh + version live here, not in page headers) */
+.sidebar-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sidebar-tools .btn { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Locked (pre-login) state: disabled controls are visibly dimmed */
+body.locked main .page input:disabled,
+body.locked main .page select:disabled,
+body.locked main .page textarea:disabled,
+body.locked main .page button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
