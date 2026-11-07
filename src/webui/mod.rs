@@ -23,6 +23,8 @@ pub struct AppState {
     pub state_manager: Arc<Mutex<crate::core::state::StateManager>>,
     /// Require Bearer token auth on protected endpoints when true.
     pub auth_enabled: bool,
+    /// Live download jobs, shared with the download handlers.
+    pub downloads: downloads::DownloadRegistry,
 }
 
 /// Embedded static file content (compiled into the binary).
@@ -89,6 +91,7 @@ pub async fn run_webui(
         config_manager: Arc::new(Mutex::new(config_manager)),
         state_manager: Arc::new(Mutex::new(state_manager)),
         auth_enabled,
+        downloads: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     });
 
     // Write PID file so `ohub self-update` can stop the WebUI before updating.
@@ -103,7 +106,7 @@ pub async fn run_webui(
         .route("/apps", get(routes::list_apps))
         .route("/config", get(routes::get_config))
         .route("/config/sources", get(routes::list_sources))
-        // Token setup is public (no auth yet — chicken-and-egg)
+        // Token setup is public only until a token exists (see auth.rs bootstrap)
         .route("/config/github-token", axum::routing::post(routes::post_github_token))
         // Protected write routes (auth middleware applied below)
         .route("/config", axum::routing::put(routes::put_config))
@@ -118,12 +121,15 @@ pub async fn run_webui(
         .route("/downloads/{id}/cancel", axum::routing::post(downloads::cancel_download))
         // Protected update check
         .route("/update-check", axum::routing::post(downloads::update_check))
+        // Protected diagnostics: full state export and schedule log tail
+        .route("/state/export", get(routes::export_state))
+        .route("/logs", get(routes::tail_logs))
+        .with_state(app_state.clone())
         // Apply auth middleware to all routes — public paths are exempted inside the middleware
         .layer(middleware::from_fn_with_state(
-            app_state.clone(),
+            app_state,
             crate::webui::auth::auth_middleware,
-        ))
-        .with_state(app_state);
+        ));
 
     // Port conflict detection: try to bind, if it fails try the next port.
     let listener = match tokio::net::TcpListener::bind(addr).await {

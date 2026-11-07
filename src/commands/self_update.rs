@@ -43,7 +43,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
         let url = url.clone();
         async move {
             let resp = minreq::get(&url)
-                .with_header("User-Agent", "ohub")
+                .with_header("User-Agent", crate::core::USER_AGENT)
                 .with_header("Accept", "application/vnd.github.v3+json")
                 .send()
                 .context("Failed to fetch latest release")?;
@@ -59,7 +59,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
             if resp.status_code == 404 && !args.prerelease {
                 let releases_url = format!("https://api.github.com/repos/{}/{}/releases", REPO_OWNER, REPO_NAME);
                 let releases_resp = minreq::get(&releases_url)
-                    .with_header("User-Agent", "ohub")
+                    .with_header("User-Agent", crate::core::USER_AGENT)
                     .with_header("Accept", "application/vnd.github.v3+json")
                     .send()
                     .context("Failed to fetch releases list")?;
@@ -84,7 +84,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
                     // No releases at all - try tags instead
                     let tags_url = format!("https://api.github.com/repos/{}/{}/tags", REPO_OWNER, REPO_NAME);
                     let tags_resp = minreq::get(&tags_url)
-                        .with_header("User-Agent", "ohub")
+                        .with_header("User-Agent", crate::core::USER_AGENT)
                         .send()
                         .context("Failed to fetch tags")?;
 
@@ -225,7 +225,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
         pb.set_style(
             ProgressStyle::default_spinner()
                 .template("{spinner:.green} {msg}")
-                .unwrap()
+                .expect("static progress template is valid")
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
         pb.set_message(format!("Downloading {}...", asset_name));
@@ -239,7 +239,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
         let download_url = download_url.to_string();
         async move {
             let resp = minreq::get(download_url)
-                .with_header("User-Agent", "ohub")
+                .with_header("User-Agent", crate::core::USER_AGENT)
                 .send()
                 .context("Failed to download release asset")?;
             let bytes = resp.as_bytes().to_vec();
@@ -397,7 +397,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
         pb.set_style(
             ProgressStyle::default_spinner()
                 .template("{spinner:.green} {msg}")
-                .unwrap()
+                .expect("static progress template is valid")
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
         pb.set_message("Extracting...".to_string());
@@ -590,7 +590,7 @@ fn find_published_digest(release: &serde_json::Value, asset_name: &str) -> Optio
             None => continue,
         };
 
-        let req = minreq::get(url).with_header("User-Agent", "ohub");
+        let req = minreq::get(url).with_header("User-Agent", crate::core::USER_AGENT);
         if let Ok(resp) = req.send() {
             if let Ok(text) = resp.as_str() {
                 if let Some(d) = digest_for(text, asset_name) {
@@ -631,7 +631,7 @@ async fn verify_signature(sig_url: &str, data: &[u8], retry_config: &RetryConfig
     let sig_b64 = execute_with_retry(retry_config, || {
         let sig_url = sig_url.to_string();
         async move {
-            let req = minreq::get(sig_url).with_header("User-Agent", "ohub");
+            let req = minreq::get(sig_url).with_header("User-Agent", crate::core::USER_AGENT);
             let resp = req.send().context("Failed to download signature")?;
             let sig_b64 = resp.as_str()?.trim().to_string();
             Ok(sig_b64)

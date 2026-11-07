@@ -386,3 +386,32 @@ pub async fn list_sources(
     }).collect();
     Json(sources)
 }
+
+/// Export the full state as JSON (same shape as `ohub state export`).
+pub async fn export_state(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+) -> impl IntoResponse {
+    let state_manager = app_state.state_manager.lock().await;
+    match serde_json::to_value(state_manager.get()) {
+        Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
+    }
+}
+
+/// Tail of the schedule log (`<data_dir>/obtainhub/schedule.log`).
+pub async fn tail_logs(
+    State(_app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let lines: usize = q.get("lines").and_then(|v| v.parse().ok()).unwrap_or(100).min(2000);
+    let mut path = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
+    path.push("obtainhub");
+    path.push("schedule.log");
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            let tail: Vec<String> = content.lines().rev().take(lines).collect::<Vec<_>>().into_iter().rev().map(|s| s.to_string()).collect();
+            Json(serde_json::json!({"path": path.display().to_string(), "lines": tail}))
+        }
+        Err(_) => Json(serde_json::json!({"path": path.display().to_string(), "lines": Vec::<String>::new()}))
+    }
+}

@@ -59,7 +59,11 @@ pub async fn execute(args: SourceArgs, config: &mut ConfigManager, _state: &Stat
 
             // Check for assets in first release
             let first = &releases[0];
-            if !first.get("assets").map(|a| a.is_array() && !a.as_array().unwrap().is_empty()).unwrap_or(false) {
+            let has_assets = first
+                .get("assets")
+                .and_then(|a| a.as_array())
+                .is_some_and(|a| !a.is_empty());
+            if !has_assets {
                 return Err(anyhow::anyhow!("Repository has no assets to install from"));
             }
 
@@ -111,7 +115,11 @@ pub async fn execute(args: SourceArgs, config: &mut ConfigManager, _state: &Stat
             
             if resp.status_code == 200 {
                 let data: Value = resp.json()?;
-                if data.is_array() && !data.as_array().unwrap().is_empty() && data[0].get("assets").is_some() {
+                let looks_like_releases = data
+                    .as_array()
+                    .is_some_and(|a| !a.is_empty())
+                    && data[0].get("assets").is_some();
+                if looks_like_releases {
                     println!("Source '{}' verified: GitHub releases with assets found", name);
                 } else {
                     println!("Source '{}' verified but structure unexpected", name);
@@ -133,7 +141,11 @@ pub async fn execute(args: SourceArgs, config: &mut ConfigManager, _state: &Stat
             
             if resp.status_code == 200 {
                 let data: Value = resp.json()?;
-                if data.is_array() && !data.as_array().unwrap().is_empty() && data[0].get("assets").is_some() {
+                let looks_like_releases = data
+                    .as_array()
+                    .is_some_and(|a| !a.is_empty())
+                    && data[0].get("assets").is_some();
+                if looks_like_releases {
                     println!("Source '{}' updated and verified", name);
                 } else {
                     println!("Source '{}' updated but structure unexpected", name);

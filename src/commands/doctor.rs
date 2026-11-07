@@ -137,7 +137,7 @@ pub async fn execute(args: DoctorArgs, config: &ConfigManager, state: &mut State
 
             // Validate the token against GitHub.
             let req = minreq::get("https://api.github.com/user")
-                .with_header("User-Agent", "ObtainHub/3.0.0")
+                .with_header("User-Agent", crate::core::USER_AGENT)
                 .with_header("Authorization", format!("Bearer {token}"));
             match req.send() {
                 Ok(resp) if resp.status_code == 200 => {
@@ -157,7 +157,7 @@ pub async fn execute(args: DoctorArgs, config: &ConfigManager, state: &mut State
 
             // Rate limit budget.
             let req = minreq::get("https://api.github.com/rate_limit")
-                .with_header("User-Agent", "ObtainHub/3.0.0")
+                .with_header("User-Agent", crate::core::USER_AGENT)
                 .with_header("Authorization", format!("Bearer {token}"));
             match req.send() {
                 Ok(resp) if resp.status_code == 200 => {

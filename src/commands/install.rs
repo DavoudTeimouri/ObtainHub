@@ -739,7 +739,7 @@ pub async fn search_github_repos(query: &str, token: Option<&str>, config: &Conf
     let encoded = urlencoding::encode(query);
     let url = format!("https://api.github.com/search/repositories?q={}&per_page=10", encoded);
 
-    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
+    let mut req = minreq::get(&url).with_header("User-Agent", crate::core::USER_AGENT);
     if let Some(token) = token {
         req = req.with_header("Authorization", format!("Bearer {token}"));
     }

@@ -27,7 +27,7 @@ pub fn request_timeout() -> Duration {
 pub fn github_get(url: &str) -> minreq::Request {
     minreq::get(url)
         .with_timeout(request_timeout().as_secs())
-        .with_header("User-Agent", "ObtainHub/3.0.0")
+        .with_header("User-Agent", crate::core::USER_AGENT)
 }
 
 /// The asset-name tokens that identify an architecture.

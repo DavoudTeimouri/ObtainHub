@@ -40,35 +40,37 @@ ohub <COMMAND>
 
 | Command | Description |
 |---------|-------------|
-|| `search` | Search GitHub repositories; select results to add or install ||
-|| `install` | Install a repository (supports `--file` for local archives, `--url` for direct downloads) ||
-|| `check` | Check for updates to installed repositories ||
-|| `list` | List installed repositories ||
-|| `update` | Update installed repositories ||
-|| `uninstall` | Uninstall a repository ||
-|| `remove` | Remove from management (keep files) ||
-|| `add` | Add to management without installing ||
-|| `source` | Manage custom manifest sources ||
-|| `schedule` | Manage scheduled background checks ||
-|| `group` | Manage app groups/profiles ||
-|| `shim` | Manage portable shims ||
-|| `state` | Export/import state ||
-|| `webui` | Start the WebUI HTTP server ||
-|| `apps` | Backup/restore application folders ||
-|| `cleanup` | Clean up leftover files ||
-|| `tui` | Launch the interactive app table ||
-|| `config` | Manage configuration ||
-|| `backup` | Backup installed repositories and config ||
-|| `restore` | Restore from backup ||
-|| `self-update` | Update ohub itself ||
-|| `completion` | Generate shell completions ||
-|| `doctor` | Diagnose installation issues ||
-|| `self-uninstall` | Completely remove ohub ||
-|| `log` | Show recent log output ||
-|| `info` | Show detailed info about a repository ||
-|| `reset` | Reset ohub state and configuration ||
+| `search` | Search GitHub repositories; select results to add or install |
+| `install` | Install a repository (supports `--file` for local archives, `--url` for direct downloads) |
+| `check` | Check for updates to installed repositories |
+| `list` | List installed repositories |
+| `update` | Update installed repositories |
+| `uninstall` | Uninstall a repository |
+| `remove` | Remove from management (keep files) |
+| `add` | Add to management without installing |
+| `source` | Manage custom manifest sources |
+| `schedule` | Manage scheduled background checks |
+| `group` | Manage app groups/profiles |
+| `shim` | Manage portable shims |
+| `state` | Export/import state |
+| `webui` | Start the WebUI HTTP server |
+| `apps` | Backup/restore application folders |
+| `cleanup` | Clean up leftover files |
+| `tui` | Launch the interactive app table |
+| `config` | Manage configuration |
+| `backup` | Backup installed repositories and config |
+| `restore` | Restore from backup |
+| `self-update` | Update ohub itself |
+| `completion` | Generate shell completions |
+| `doctor` | Diagnose installation issues |
+| `self-uninstall` | Completely remove ohub |
+| `log` | Show recent log output |
+| `info` | Show detailed info about a repository |
+| `reset` | Reset ohub state and configuration |
 
 ### WebUI
+
+ObtainHub includes a built-in professional web interface for managing applications, configuration, and updates from a browser.
 
 ```bash
 # Start WebUI on localhost:8080 (no auth)
@@ -77,10 +79,26 @@ ohub webui --port 8080
 # Start WebUI on all interfaces, require Bearer token auth
 ohub webui --port 8080 --bind 0.0.0.0 --auth
 
-# --auth validates Authorization: Bearer <token> against the configured
-# github_token. Protected endpoints (/config, /downloads/*, /update-check)
-# require the token; / and /apps stay open.
+# --auth validates Authorization: Bearer *** against the configured
+# github_token. Protected endpoints (/config writes, /downloads/*, /update-check,
+# POST/DELETE /apps, POST/DELETE /config/sources, DELETE /config/github-token)
+# require the token; GET /, GET /apps, GET /config and GET /config/sources stay
+# open. POST /config/github-token is open only until a token is set (bootstrap),
+# so an exposed server cannot be re-keyed without the token.
 ```
+
+**Features:**
+- **Dashboard** — Overview of managed apps, active downloads, available updates, server uptime
+- **Apps Management** — List, add, remove repositories with real-time status
+- **Configuration Editor** — Edit all config keys (directories, network, behavior, schedule, advanced)
+- **Token Manager** — Add/remove GitHub token (stored in OS credential store)
+- **Source Manager** — Add/remove custom manifest sources
+- **Downloads** — Start/cancel downloads with progress bars and speed/ETA
+- **Update Check** — Check all or specific repos for new releases (supports pre-release toggle)
+- **Authentication** — Bearer token login/logout with sessionStorage persistence
+- **Responsive Design** — Works on desktop, tablet, and mobile
+
+The WebUI automatically opens in your default browser on launch. Port conflicts are handled automatically (tries next port if default is in use). The `ohub self-update` command stops the WebUI before replacing the binary.
 
 ### Examples
 
@@ -236,7 +254,7 @@ keeps it in the config file instead.
 | `ohub tui` | Interactive table of the managed apps - one row per app with Installed / Latest / Status columns, and `^` marking the apps that need an update. Press `?` for the full key list. |
 | `ohub group <add\|list\|remove\|delete\|install\|update\|check\|uninstall>` | Manage groups of repos. A group is a named list of `owner/repo` entries; the bulk actions run the real install / update / check / uninstall command for every member, one at a time. |
 | `ohub schedule <enable\|disable\|status\|run>` | Schedule automatic update checks. `enable` registers a Windows Task Scheduler task (`ObtainHubScheduledCheck`) that runs `ohub check --quiet --log` on the configured interval; `status` shows the config plus the task's next run time; `run` does the check now and writes the same report the scheduled task would. |
-| `ohub webui --port <N> --bind <addr> --auth` | Start the WebUI HTTP server. Without `--auth`, all endpoints are open. With `--auth`, protected endpoints (`/config`, `/downloads/*`, `/update-check`) require `Authorization: Bearer <token>` matching the configured `github_token`; `/` and `/apps` stay open. |
+| `ohub webui --port <N> --bind <addr> --auth` | Start the WebUI HTTP server. Without `--auth`, all endpoints are open. With `--auth`, mutating endpoints (`PUT /config`, `POST/DELETE /apps`, `POST/DELETE /config/sources`, `DELETE /config/github-token`, `/downloads/*`, `/update-check`) require `Authorization: Bearer *** matching the configured `github_token`; read-only GETs stay open, and `POST /config/github-token` is open only until a token exists. Downloads always write inside the configured `download_dir` and honor `download_bandwidth_limit`. |
 
 ### Version comparison
 Version strings are normalized before comparison: the `v`/`V` prefix is stripped, so `v3.0.32` matches `3.0.32`.

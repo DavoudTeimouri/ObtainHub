@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.10] - 2026-11-07
+RC release with WebUI hardening and real downloads:
+- Auth middleware deduplicated; public-route match is exact-or-child path; `POST /config/github-token` is public only until a token exists (bootstrap), so an exposed `--bind 0.0.0.0 --auth` server cannot be re-keyed
+- WebUI downloads are real: live job registry, chunked ranged downloads with progress/speed/ETA, cancel with `.part` cleanup; dest constrained to `download_dir` (file name only) so a no-auth localhost server is not an arbitrary-file-write primitive
+- `download_bandwidth_limit` now honored in both WebUI and CLI download paths
+- New WebUI endpoints: `GET /state/export`, `GET /logs?lines=N` (protected)
+- Single `USER_AGENT` const from `CARGO_PKG_VERSION` replaces 11 hardcoded UA strings
+- `ohub search` auto-paginates up to `--limit` (GitHub 1000-result cap respected); `--dry-run` prints the query URL
+- Removed orphaned `src/webui/spa.html`; unwraps on static templates → `expect`; `source.rs` chained unwraps → `is_some_and`
+- Added `tests/cli.rs` smoke tests (assert_cmd); 53 unit + 4 integration tests, clippy `-D warnings` clean
+- PLAN.md rewritten to current status; README auth/download docs updated
+
 ## [v3.0.68-rc.9] - 2026-11-06
 Docs: complete README rewrite with full command reference, corrected TUI key descriptions, fixed github_token storage documentation (OS credential store, not plain text), added missing commands (log, info, reset) to command table.
 

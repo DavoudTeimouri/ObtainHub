@@ -33,41 +33,57 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
     let token_owned = config.github_token();
     let token = token_owned.as_deref();
 
-    let mut url = format!(
-        "https://api.github.com/search/repositories?q={}&per_page={}&page={}&sort={}&order=desc",
-        urlencoding::encode(&args.query),
-        args.per_page.min(100),
-        args.page,
-        if args.sort_stars { "stars" } else { "best-match" }
-    );
+    let per_page = args.per_page.min(100);
+    let mut page = args.page;
 
-    if args.active_only {
-        let year_ago = chrono::Utc::now() - chrono::Duration::days(365);
-        url.push_str(&format!("+pushed:>={}", year_ago.format("%Y-%m-%d")));
+    // Fetch pages until the limit is reached, the API runs out of results, or
+    // GitHub's 1000-result search cap is hit.
+    let mut results: Vec<GitHubRepo> = Vec::new();
+    loop {
+        let mut url = format!(
+            "https://api.github.com/search/repositories?q={}&per_page={}&page={}&sort={}&order=desc",
+            urlencoding::encode(&args.query),
+            per_page,
+            page,
+            if args.sort_stars { "stars" } else { "best-match" }
+        );
+
+        if args.active_only {
+            let year_ago = chrono::Utc::now() - chrono::Duration::days(365);
+            url.push_str(&format!("+pushed:>={}", year_ago.format("%Y-%m-%d")));
+        }
+
+        if let Some(lang) = &args.language {
+            url.push_str(&format!("+language:{}", urlencoding::encode(lang)));
+        }
+
+        if args.dry_run {
+            println!("{url}");
+            return Ok(());
+        }
+
+        let mut req = minreq::get(&url).with_header("User-Agent", crate::core::USER_AGENT);
+        if let Some(token) = token {
+            req = req.with_header("Authorization", format!("Bearer {token}"));
+        }
+
+        let resp = req.with_timeout(config.get().timeout_seconds).send()?;
+
+        if resp.status_code == 403 {
+            return Err(anyhow::anyhow!(
+                "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
+            ));
+        }
+
+        let resp: SearchResponse = resp.json()?;
+        let fetched = resp.items.len();
+        results.extend(resp.items.into_iter().filter(|r| r.stargazers_count >= args.min_stars));
+
+        if results.len() >= args.limit || fetched < per_page || page * per_page >= 1000 {
+            break;
+        }
+        page += 1;
     }
-
-    if let Some(lang) = &args.language {
-        url.push_str(&format!("+language:{}", urlencoding::encode(lang)));
-    }
-
-    let mut req = minreq::get(&url).with_header("User-Agent", "ObtainHub/3.0.0");
-    if let Some(token) = token {
-        req = req.with_header("Authorization", format!("Bearer {token}"));
-    }
-
-    let resp = req.with_timeout(config.get().timeout_seconds).send()?;
-
-    if resp.status_code == 403 {
-        return Err(anyhow::anyhow!(
-            "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
-        ));
-    }
-
-    let resp: SearchResponse = resp.json()?;
-
-    let mut results: Vec<_> = resp.items.into_iter()
-        .filter(|r| r.stargazers_count >= args.min_stars)
-        .collect();
 
     results.truncate(args.limit);
 

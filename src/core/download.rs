@@ -59,7 +59,7 @@ const MAX_BACKOFF_MS: u64 = 30_000;
 ///   `STALL_NOTIFY_THRESHOLD` consecutive chunk failures, so the user knows
 ///   the download is stuck and can stop it if they want.
 /// - On success, atomically renames the part file to the destination.
-pub async fn to_file(d: &Download<'_>, _config: &ConfigManager) -> Result<()> {
+pub async fn to_file(d: &Download<'_>, config: &ConfigManager) -> Result<()> {
     // The part file caches downloaded parts so a download can be resumed
     // after a crash, network drop, or restart.
     let part_path = part_file_path(d.dest);
@@ -89,13 +89,14 @@ pub async fn to_file(d: &Download<'_>, _config: &ConfigManager) -> Result<()> {
         return Ok(());
     }
 
-    streamed(d, &part_path, total, resume_from).await
+    let bandwidth_limit = config.get().download_bandwidth_limit;
+    streamed(d, &part_path, total, resume_from, bandwidth_limit).await
 }
 
 /// Fetch a small text file: a digest sidecar, a release notes file.
 pub async fn text(url: &str, token: Option<&str>) -> Result<String> {
     let mut req = minreq::get(url)
-        .with_header("User-Agent", "ObtainHub/3.0.0")
+        .with_header("User-Agent", crate::core::USER_AGENT)
         .with_header("Accept", "application/vnd.github.v3+json");
     if let Some(token) = token {
         req = req.with_header("Authorization", format!("Bearer {token}"));
@@ -120,6 +121,7 @@ async fn streamed(
     part_path: &Path,
     total: u64,
     resume_from: u64,
+    bandwidth_limit: Option<u64>,
 ) -> Result<()> {
     let pb = progress_bar(d, total, resume_from);
     let mut start = resume_from;
@@ -148,6 +150,12 @@ async fn streamed(
                         file.write_all(&chunk)
                             .with_context(|| format!("Failed to write chunk to {}", part_path.display()))?;
                         pb.inc(chunk.len() as u64);
+                        // Honor the configured bandwidth limit (bytes/sec).
+                        if let Some(limit) = bandwidth_limit {
+                            if limit > 0 {
+                                tokio::time::sleep(Duration::from_secs_f64(chunk.len() as f64 / limit as f64)).await;
+                            }
+                        }
                         start = end + 1;
                     }
                     Err(_e) => {
@@ -155,7 +163,7 @@ async fn streamed(
 
                         // Stall notification: tell the user the download is stuck
                         // and that they can interrupt with Ctrl+C.
-                        #[allow(clippy::manual_is_multiple_of)]
+                        #[allow(unknown_lints, clippy::manual_is_multiple_of)]
                         if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
                             eprintln!(
                                 "Download stalled at {}/{} bytes ({} consecutive failures). \
@@ -202,7 +210,7 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
     let label = d.label.to_string();
 
     let resp = minreq::get(&url)
-        .with_header("User-Agent", "ObtainHub/3.0.0")
+        .with_header("User-Agent", crate::core::USER_AGENT)
         .with_header("Range", format!("bytes={start}-{end}"))
         .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
         .send()
@@ -240,7 +248,7 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
     let token = d.token.map(|s| s.to_string());
 
     let resp = minreq::get(&url)
-        .with_header("User-Agent", "ObtainHub/3.0.0")
+        .with_header("User-Agent", crate::core::USER_AGENT)
         .with_header("Range", "bytes=0-0")
         .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
         .send()
@@ -289,7 +297,7 @@ fn progress_bar(d: &Download<'_>, total: u64, already: u64) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_bar()
             .template(template)
-            .unwrap()
+            .expect("static progress template is valid")
             .progress_chars("#>-"),
     );
     pb.set_message(d.label.to_string());
