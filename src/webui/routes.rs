@@ -2,6 +2,23 @@ use axum::{Json, response::IntoResponse, extract::State, http::StatusCode};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 
+/// Base64 (RFC 4648) of UTF-16LE — used for PowerShell `-EncodedCommand` so
+/// passwords never appear in a process command line.
+fn base64_utf16le(s: &str) -> String {
+    let bytes: Vec<u8> = s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    const TBL: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(TBL[((n >> 18) & 63) as usize] as char);
+        out.push(TBL[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { TBL[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { TBL[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
 /// Application info for web API.
 #[derive(Serialize)]
 pub struct AppInfo {
@@ -57,6 +74,8 @@ pub struct ConfigInfo {
     pub schedule_run_on_startup: bool,
     pub groups: Vec<String>,
     pub token_source: String,
+    /// Whether a GitHub token is configured (value itself is never exposed).
+    pub has_token: bool,
 }
 
 /// Get current configuration (token masked).
@@ -89,6 +108,7 @@ pub async fn get_config(
         schedule_run_on_startup: config.schedule.run_on_startup,
         groups: config.groups.keys().cloned().collect(),
         token_source,
+        has_token: config_manager.github_token().is_some(),
     })
 }
 
@@ -414,4 +434,256 @@ pub async fn tail_logs(
         }
         Err(_) => Json(serde_json::json!({"path": path.display().to_string(), "lines": Vec::<String>::new()}))
     }
+}
+
+// ---------- GitHub search ----------
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+    #[serde(default = "default_search_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub min_stars: u32,
+    #[serde(default)]
+    pub active_only: bool,
+}
+
+fn default_search_limit() -> usize {
+    20
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RepoItem {
+    pub full_name: String,
+    pub description: Option<String>,
+    pub stargazers_count: u32,
+    pub language: Option<String>,
+    pub updated_at: String,
+    pub html_url: String,
+}
+
+/// Search GitHub repositories. Requires auth when --auth is set.
+pub async fn search_repos(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    axum::extract::Query(query): axum::extract::Query<SearchQuery>,
+) -> impl IntoResponse {
+    let (token, timeout) = {
+        let cm = app_state.config_manager.lock().await;
+        (cm.github_token(), cm.get().timeout_seconds)
+    };
+
+    let mut url = format!(
+        "https://api.github.com/search/repositories?q={}&per_page={}&page=1&sort=best-match&order=desc",
+        urlencoding::encode(&query.q),
+        query.limit.clamp(1, 50)
+    );
+    if query.min_stars > 0 {
+        url.push_str(&format!("+stars:>={}", query.min_stars));
+    }
+    if query.active_only {
+        let year_ago = chrono::Utc::now() - chrono::Duration::days(365);
+        url.push_str(&format!("+pushed:>={}", year_ago.format("%Y-%m-%d")));
+    }
+
+    let mut req = minreq::get(&url).with_header("User-Agent", crate::core::USER_AGENT);
+    if let Some(t) = token {
+        req = req.with_header("Authorization", format!("Bearer {t}"));
+    }
+
+    #[derive(Deserialize)]
+    struct SearchResponse {
+        items: Vec<RepoItem>,
+    }
+
+    match req.with_timeout(timeout).send() {
+        Ok(resp) if resp.status_code == 200 => match resp.json::<SearchResponse>() {
+            Ok(r) => Json(r.items).into_response(),
+            Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Bad GitHub response: {e}")}))).into_response(),
+        },
+        Ok(resp) if resp.status_code == 403 => (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({"error": "GitHub API rate limited. Add a GitHub token in Configuration → GitHub Token."}))).into_response(),
+        Ok(resp) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("GitHub API returned {}", resp.status_code)}))).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Search failed: {e}")}))).into_response(),
+    }
+}
+
+// ---------- App actions (same engines as the CLI commands) ----------
+
+#[derive(Deserialize)]
+pub struct AppAction {
+    pub repo: String,
+    #[serde(default)]
+    pub force: bool,
+    #[serde(default)]
+    pub purge: bool,
+    #[serde(default)]
+    pub prerelease: bool,
+}
+
+fn action_result(result: anyhow::Result<()>) -> axum::response::Response {
+    match result {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"status": "ok"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("{e:#}")}))).into_response(),
+    }
+}
+
+/// Install a repository (same engine as `ohub install`). Protected.
+pub async fn install_app(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(body): Json<AppAction>,
+) -> impl IntoResponse {
+    let args = crate::cli::InstallArgs {
+        repo: body.repo,
+        version: None,
+        tag: None,
+        prerelease: body.prerelease,
+        force: body.force,
+        download_only: false,
+        skip_deps: false,
+        timeout: None,
+        arch: crate::cli::Arch::Auto,
+        yes: true,
+        reset: false,
+        interactive: false,
+        dry_run: false,
+        file: None,
+        url: None,
+        dependencies: Vec::new(),
+    };
+    let result = {
+        let cm = app_state.config_manager.lock().await;
+        let rc = crate::utils::retry::RetryConfig::from_config(&cm);
+        let mut sm = app_state.state_manager.lock().await;
+        crate::commands::install::execute(args, &cm, &mut sm, &rc).await
+    };
+    action_result(result)
+}
+
+/// Uninstall a repository (same engine as `ohub uninstall`). Protected.
+pub async fn uninstall_app(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(body): Json<AppAction>,
+) -> impl IntoResponse {
+    let args = crate::cli::UninstallArgs {
+        repo: body.repo,
+        purge: body.purge,
+        yes: true,
+        force: body.force,
+    };
+    let result = {
+        let mut cm = app_state.config_manager.lock().await;
+        let mut sm = app_state.state_manager.lock().await;
+        crate::commands::uninstall::execute(args, &mut cm, &mut sm).await
+    };
+    action_result(result)
+}
+
+/// Update a repository (same engine as `ohub update <repo>`). Protected.
+pub async fn update_app(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(body): Json<AppAction>,
+) -> impl IntoResponse {
+    let args = crate::cli::UpdateArgs {
+        repo: Some(body.repo),
+        prerelease: body.prerelease,
+        dry_run: false,
+        force: body.force,
+        skip_deps: false,
+        timeout: None,
+        arch: crate::cli::Arch::Auto,
+        yes: true,
+        reset: false,
+        interactive: false,
+        notes: false,
+        quiet: true,
+        log: None,
+    };
+    let result = {
+        let cm = app_state.config_manager.lock().await;
+        let rc = crate::utils::retry::RetryConfig::from_config(&cm);
+        let mut sm = app_state.state_manager.lock().await;
+        crate::commands::update::execute(args, &cm, &mut sm, &rc).await
+    };
+    action_result(result)
+}
+
+/// Check one repository for updates (same engine as `ohub check <repo>`). Protected.
+pub async fn check_app(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(body): Json<AppAction>,
+) -> impl IntoResponse {
+    let args = crate::cli::CheckArgs {
+        repo: Some(body.repo),
+        outdated_only: false,
+        prerelease: body.prerelease,
+        yes: true,
+        all: false,
+        candidates: false,
+        reset: false,
+        arch: crate::cli::Arch::Auto,
+        timeout: None,
+        notes: false,
+        force: false,
+        quiet: true,
+        dry_run: false,
+        log: None,
+    };
+    let result = {
+        let cm = app_state.config_manager.lock().await;
+        let mut sm = app_state.state_manager.lock().await;
+        crate::commands::check::execute(args, &cm, &mut sm).await
+    };
+    action_result(result)
+}
+
+// ---------- Login (Windows admin credentials) ----------
+
+#[derive(Deserialize)]
+pub struct LoginBody {
+    pub username: String,
+    pub password: String,
+}
+
+/// Sign in with a Windows admin account on this machine.
+///
+/// Public route (it IS the login). Validates credentials against the local
+/// SAM via PowerShell `PrincipalContext.ValidateCredentials` (encoded command,
+/// password never in a process list), then issues a session token accepted by
+/// the auth middleware. Windows only; elsewhere returns 501.
+pub async fn login(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(body): Json<LoginBody>,
+) -> impl IntoResponse {
+    if !cfg!(windows) {
+        return (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({
+            "error": "Windows admin sign-in is available on Windows only. Use a Bearer token instead."
+        }))).into_response();
+    }
+    let script = format!(
+        "$ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Machine); if ($ctx.ValidateCredentials('{u}', '{p}')) {{ exit 0 }} else {{ exit 1 }}",
+        u = body.username.replace('\'', "''"),
+        p = body.password.replace('\'', "''")
+    );
+    let encoded = base64_utf16le(&script);
+    match std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let token = uuid::Uuid::new_v4().to_string();
+            app_state.sessions.lock().unwrap().insert(token.clone());
+            (StatusCode::OK, Json(serde_json::json!({"token": token}))).into_response()
+        }
+        Ok(_) => (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Invalid Windows credentials"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Login backend unavailable: {e}")}))).into_response(),
+    }
+}
+
+// ---------- Help ----------
+
+/// Full `ohub --help` text, always in sync with the clap definition. Public.
+pub async fn help_text() -> impl IntoResponse {
+    use clap::CommandFactory;
+    let text = crate::cli::Cli::command().render_long_help().to_string();
+    ([(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")], text)
 }

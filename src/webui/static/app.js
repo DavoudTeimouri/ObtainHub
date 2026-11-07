@@ -8,7 +8,6 @@ class ObtainHubUI {
     this.token = sessionStorage.getItem('ohub_token') || null;
     this.currentPage = 'dashboard';
     this.pollInterval = null;
-    this.serverStartTime = null;
     this.init();
   }
 
@@ -16,9 +15,6 @@ class ObtainHubUI {
     this.setupNavigation();
     window.addEventListener('hashchange', () => this.route());
     this.route();
-    // Start server uptime tracking
-    this.serverStartTime = Date.now();
-    setInterval(() => this.updateUptime(), 1000);
   }
 
   setupNavigation() {
@@ -48,13 +44,32 @@ class ObtainHubUI {
       });
     }
 
-    // Login form
+    // Login form — Windows admin credentials
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
       loginForm.addEventListener('submit', (e) => {
         e.preventDefault();
+        const username = document.getElementById('loginUser').value.trim();
+        const password = document.getElementById('loginPass').value;
+        this.loginWithCredentials(username, password);
+      });
+    }
+
+    // Token fallback login
+    const tokenLoginForm = document.getElementById('tokenLoginForm');
+    if (tokenLoginForm) {
+      tokenLoginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
         const token = document.getElementById('authToken').value.trim();
         this.login(token);
+      });
+    }
+    const useTokenLink = document.getElementById('useTokenLink');
+    if (useTokenLink) {
+      useTokenLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        loginForm.classList.add('hidden');
+        tokenLoginForm.classList.remove('hidden');
       });
     }
 
@@ -100,15 +115,49 @@ class ObtainHubUI {
       });
     }
 
-    // Update form
-    const updateForm = document.getElementById('updateForm');
-    if (updateForm) {
-      updateForm.addEventListener('submit', (e) => {
+    // Search form (Apps page)
+    const searchForm = document.getElementById('searchForm');
+    if (searchForm) {
+      searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        const repo = document.getElementById('updateRepo').value.trim() || undefined;
-        const prerelease = document.getElementById('updatePrerelease').checked;
-        this.checkUpdates(repo, prerelease);
+        this.searchApps();
       });
+    }
+
+    // Apps page buttons
+    const checkAllBtn = document.getElementById('checkAllBtn');
+    if (checkAllBtn) checkAllBtn.addEventListener('click', () => this.checkAllApps());
+    const refreshAppsBtn = document.getElementById('refreshAppsBtn');
+    if (refreshAppsBtn) refreshAppsBtn.addEventListener('click', () => this.loadApps());
+
+    // Source form (Apps page)
+    const showSourceForm = document.getElementById('showSourceForm');
+    const hideSourceForm = document.getElementById('hideSourceForm');
+    const sourceForm = document.getElementById('sourceForm');
+    if (showSourceForm && sourceForm) {
+      showSourceForm.addEventListener('click', (e) => { e.preventDefault(); sourceForm.classList.remove('hidden'); });
+    }
+    if (hideSourceForm && sourceForm) {
+      hideSourceForm.addEventListener('click', (e) => { e.preventDefault(); sourceForm.classList.add('hidden'); });
+    }
+    if (sourceForm) {
+      sourceForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.addSource();
+      });
+    }
+
+    // GitHub token form (Config page)
+    const tokenForm = document.getElementById('tokenForm');
+    if (tokenForm) {
+      tokenForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.saveConfigToken();
+      });
+    }
+    const deleteTokenBtn = document.getElementById('deleteTokenBtn');
+    if (deleteTokenBtn) {
+      deleteTokenBtn.addEventListener('click', () => this.deleteConfigToken());
     }
   }
 
@@ -138,14 +187,13 @@ class ObtainHubUI {
     // Setup auth UI and load page data
     this.setupAuthUI();
     if (page === 'dashboard') this.loadDashboard();
-    else if (page === 'apps') this.loadApps();
+    else if (page === 'apps') { this.loadApps(); this.loadSources(); }
     else if (page === 'config') this.loadConfig();
-    else if (page === 'sources') this.loadSources();
     else if (page === 'downloads') {
       this.loadDownloads();
       this.startDownloadsPoll();
-    } else if (page === 'updates') {
-      // Updates page is loaded on demand via the form
+    } else if (page === 'help') {
+      this.loadHelp();
     } else {
       this.stopDownloadsPoll();
     }
@@ -159,11 +207,10 @@ class ObtainHubUI {
   refreshCurrentPage() {
     switch (this.currentPage) {
       case 'dashboard': this.loadDashboard(); break;
-      case 'apps': this.loadApps(); break;
+      case 'apps': this.loadApps(); this.loadSources(); break;
       case 'config': this.loadConfig(); break;
-      case 'sources': this.loadSources(); break;
       case 'downloads': this.loadDownloads(); break;
-      case 'updates': break;
+      case 'help': this.loadHelp(); break;
     }
     this.showToast('Refreshed', 'info');
   }
@@ -291,16 +338,6 @@ class ObtainHubUI {
     }
   }
 
-  updateUptime() {
-    const el = document.getElementById('statUptime');
-    if (!el || !this.serverStartTime) return;
-    const ms = Date.now() - this.serverStartTime;
-    const h = Math.floor(ms / 3600000);
-    const m = Math.floor((ms % 3600000) / 60000);
-    const s = Math.floor((ms % 60000) / 1000);
-    el.textContent = `${h}h ${m}m ${s}s`;
-  }
-
   // ---- Dashboard ----
   async loadDashboard() {
     try {
@@ -348,54 +385,154 @@ class ObtainHubUI {
 
   // ---- Apps ----
   async loadApps() {
+    const tbody = document.getElementById('appsTableBody');
+    if (!tbody) return;
     try {
       const apps = await this.api('/apps');
-      document.getElementById('appsLoading').style.display = 'none';
-      const wrap = document.getElementById('appsTableWrap');
-      const tbody = document.getElementById('appsTableBody');
-      const empty = document.getElementById('appsEmpty');
-
       if (!apps || apps.length === 0) {
-        wrap.style.display = 'none';
-        empty.style.display = 'block';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No managed applications. Search GitHub above and install one.</td></tr>';
         return;
       }
-      wrap.style.display = 'block';
-      empty.style.display = 'none';
       tbody.innerHTML = '';
-
       apps.forEach(app => {
         const tr = document.createElement('tr');
         const statusClass = 'status-' + (app.status || 'unknown').toLowerCase();
+        const repo = this.escapeHtml(app.repo);
         tr.innerHTML =
-          '<td><code>' + this.escapeHtml(app.repo) + '</code></td>' +
+          '<td><code>' + repo + '</code></td>' +
           '<td>' + this.escapeHtml(app.name) + '</td>' +
           '<td><code>' + this.escapeHtml(app.version) + '</code></td>' +
           '<td><span class="badge badge-' + statusClass + '">' + this.escapeHtml(app.status) + '</span></td>' +
-          '<td>' + this.escapeHtml(app.installed_at || '&ndash;') + '</td>' +
-          '<td>' + this.escapeHtml(app.updated_at || '&ndash;') + '</td>' +
-          '<td>' +
-            '<button class="action-btn btn-danger" onclick="app.removeApp(\'' + this.escapeHtml(app.repo) + '\')">Remove</button>' +
+          '<td>' + this.formatRelativeTime(app.installed_at) + '</td>' +
+          '<td>' + this.formatRelativeTime(app.updated_at) + '</td>' +
+          '<td class="actions-cell">' +
+            '<button class="action-btn" onclick="app.checkApp(\\'' + repo + '\\')">Check</button> ' +
+            '<button class="action-btn" onclick="app.updateApp(\\'' + repo + '\\')">Update</button> ' +
+            '<button class="action-btn" onclick="app.uninstallApp(\\'' + repo + '\\')">Uninstall</button> ' +
+            '<button class="action-btn btn-danger" onclick="app.removeApp(\\'' + repo + '\\')">Remove</button>' +
           '</td>';
         tbody.appendChild(tr);
       });
     } catch (err) {
-      document.getElementById('appsLoading').textContent = 'Failed to load apps';
-      this.showToast('Failed to load apps: ' + err.message, 'error');
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load apps: ' + this.escapeHtml(err.message) + '</td></tr>';
     }
   }
 
-  async addApp() {
-    const input = document.getElementById('addAppRepo');
-    const repo = input.value.trim();
-    if (!repo) { this.showToast('Please enter a repository', 'error'); return; }
+  // GitHub API actions need a token — remind and guide instead of failing.
+  async requireToken() {
     try {
-      await this.api('/apps', { method: 'POST', body: { repo: repo } });
-      input.value = '';
-      this.showToast('App added: ' + repo, 'success');
+      const config = await this.api('/config');
+      if (config && config.has_token) return true;
+    } catch (e) { /* fall through to reminder */ }
+    this.showToast('GitHub token required — add it in Configuration, GitHub Token (or run: ohub config set github_token <token>)', 'warning');
+    this.navigate('config');
+    return false;
+  }
+
+  async searchApps() {
+    if (!(await this.requireToken())) return;
+    const q = document.getElementById('searchQuery').value.trim();
+    if (!q) { this.showToast('Enter a search query', 'error'); return; }
+    const limit = document.getElementById('searchLimit').value || 10;
+    const minStars = document.getElementById('searchMinStars').value || 0;
+    const activeOnly = document.getElementById('searchActiveOnly').checked;
+    const btn = document.getElementById('searchBtn');
+    btn.disabled = true;
+    btn.textContent = 'Searching...';
+    try {
+      const params = new URLSearchParams({ q: q, limit: limit, min_stars: minStars, active_only: activeOnly ? 'true' : 'false' });
+      const results = await this.api('/search?' + params.toString());
+      const wrap = document.getElementById('searchResultsWrap');
+      const tbody = document.getElementById('searchResultsBody');
+      wrap.classList.remove('hidden');
+      if (!results || results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No results</td></tr>';
+      } else {
+        tbody.innerHTML = '';
+        results.forEach(r => {
+          const tr = document.createElement('tr');
+          const repo = this.escapeHtml(r.full_name);
+          tr.innerHTML =
+            '<td><a href="' + this.escapeHtml(r.html_url) + '" target="_blank" rel="noopener"><code>' + repo + '</code></a></td>' +
+            '<td>' + this.escapeHtml(r.description || '') + '</td>' +
+            '<td>' + r.stargazers_count + '</td>' +
+            '<td>' + this.escapeHtml(r.language || '-') + '</td>' +
+            '<td>' + this.formatRelativeTime(r.updated_at) + '</td>' +
+            '<td><button class="action-btn action-btn-primary" onclick="app.installApp(\\'' + repo + '\\')">Install</button></td>';
+          tbody.appendChild(tr);
+        });
+      }
+    } catch (err) {
+      this.showToast('Search failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Search';
+    }
+  }
+
+  async installApp(repo) {
+    if (!(await this.requireToken())) return;
+    if (!confirm('Install ' + repo + '?')) return;
+    this.showToast('Installing ' + repo + '...', 'info');
+    try {
+      await this.api('/apps/install', { method: 'POST', body: { repo: repo } });
+      this.showToast('Installed: ' + repo, 'success');
       this.loadApps();
     } catch (err) {
-      this.showToast('Failed to add app: ' + err.message, 'error');
+      this.showToast('Install failed: ' + err.message, 'error');
+    }
+  }
+
+  async updateApp(repo) {
+    if (!(await this.requireToken())) return;
+    this.showToast('Updating ' + repo + '...', 'info');
+    try {
+      await this.api('/apps/update', { method: 'POST', body: { repo: repo } });
+      this.showToast('Update complete: ' + repo, 'success');
+      this.loadApps();
+    } catch (err) {
+      this.showToast('Update failed: ' + err.message, 'error');
+    }
+  }
+
+  async checkApp(repo) {
+    if (!(await this.requireToken())) return;
+    try {
+      await this.api('/apps/check', { method: 'POST', body: { repo: repo } });
+      this.showToast('Checked: ' + repo, 'success');
+      this.loadApps();
+    } catch (err) {
+      this.showToast('Check failed: ' + err.message, 'error');
+    }
+  }
+
+  async checkAllApps() {
+    if (!(await this.requireToken())) return;
+    const btn = document.getElementById('checkAllBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+    try {
+      const apps = await this.api('/apps');
+      for (const a of (apps || [])) {
+        await this.api('/apps/check', { method: 'POST', body: { repo: a.repo } }).catch(() => {});
+      }
+      this.showToast('Update check complete for all apps', 'success');
+      this.loadApps();
+    } catch (err) {
+      this.showToast('Check failed: ' + err.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Check All Updates'; }
+    }
+  }
+
+  async uninstallApp(repo) {
+    if (!(await this.requireToken())) return;
+    if (!confirm('Uninstall ' + repo + '? (stays managed)')) return;
+    try {
+      await this.api('/apps/uninstall', { method: 'POST', body: { repo: repo, purge: false } });
+      this.showToast('Uninstalled: ' + repo, 'success');
+      this.loadApps();
+    } catch (err) {
+      this.showToast('Uninstall failed: ' + err.message, 'error');
     }
   }
 
@@ -412,11 +549,23 @@ class ObtainHubUI {
 
   // ---- Config ----
   async loadConfig() {
+    const loading = document.getElementById('configLoading');
+    const wrap = document.getElementById('configTableWrap');
     try {
       const config = await this.api('/config');
-      document.getElementById('configLoading').style.display = 'none';
-      const wrap = document.getElementById('configTableWrap');
-      wrap.style.display = 'block';
+      if (loading) loading.classList.add('hidden');
+      if (wrap) wrap.classList.remove('hidden');
+
+      // Token reminder banner
+      const banner = document.getElementById('tokenBanner');
+      if (banner) banner.classList.toggle('hidden', !!config.has_token);
+      const badge = document.getElementById('tokenStatusBadge');
+      if (badge) {
+        badge.textContent = config.has_token ? 'configured' : 'not set';
+        badge.className = 'badge ' + (config.has_token ? 'badge-success' : 'badge-warning');
+      }
+      const delBtn = document.getElementById('deleteTokenBtn');
+      if (delBtn) delBtn.classList.toggle('hidden', !config.has_token);
 
       const sections = {
         configDirs: [
@@ -461,15 +610,9 @@ class ObtainHubUI {
           dt.textContent = key;
           const dd = document.createElement('dd');
           if (key === 'Token Source') {
-            dd.innerHTML = '<span class="badge badge-neutral">[stored in OS credential store]</span>';
-          } else if (key === 'Groups' || key === 'Proxy') {
-            dd.textContent = value;
+            dd.innerHTML = '<span class="badge badge-neutral">[OS credential store]</span>';
           } else if (['true', 'false'].includes(value)) {
-            dd.textContent = value;
-            dd.className = value === 'true' ? 'badge badge-success' : 'badge badge-neutral';
-            dd.style.display = 'inline-block';
-            dd.style.padding = '2px 8px';
-            dd.style.borderRadius = '4px';
+            dd.innerHTML = '<span class="badge ' + (value === 'true' ? 'badge-success' : 'badge-neutral') + '">' + value + '</span>';
           } else {
             dd.textContent = value;
           }
@@ -478,81 +621,69 @@ class ObtainHubUI {
         });
       });
     } catch (err) {
-      document.getElementById('configLoading').textContent = 'Failed to load config';
+      if (loading) loading.textContent = 'Failed to load config: ' + err.message;
       this.showToast('Failed to load config: ' + err.message, 'error');
     }
   }
 
-  // ---- Token ----
-  async saveToken() {
-    const input = document.getElementById('authToken');
+  // ---- GitHub token (Config page) ----
+  async saveConfigToken() {
+    const input = document.getElementById('configTokenInput');
     const token = input.value.trim();
     if (!token) { this.showToast('Please enter a token', 'error'); return; }
     try {
       await this.api('/config/github-token', { method: 'POST', body: { token: token } });
       input.value = '';
-      this.hideLoginModal();
-      this.showToast('Token saved', 'success');
-      this.setupAuthUI();
+      this.showToast('GitHub token saved', 'success');
+      this.loadConfig();
     } catch (err) {
       this.showToast('Failed to save token: ' + err.message, 'error');
     }
   }
 
-  // Wire up login form submit (in case it wasn't caught in init)
-  async handleLoginSubmit(e) {
-    e.preventDefault();
-    const input = document.getElementById('authToken');
-    const token = input.value.trim();
-    if (!token) { this.showToast('Please enter a token', 'error'); return; }
+  async deleteConfigToken() {
+    if (!confirm('Remove the stored GitHub token?')) return;
     try {
-      await this.api('/config/github-token', { method: 'POST', body: { token: token } });
-      input.value = '';
-      this.hideLoginModal();
-      this.showToast('Token saved', 'success');
-      this.setupAuthUI();
+      await this.api('/config/github-token', { method: 'DELETE' });
+      this.showToast('Token removed', 'success');
+      this.loadConfig();
     } catch (err) {
-      this.showToast('Failed to save token: ' + err.message, 'error');
+      this.showToast('Failed to remove token: ' + err.message, 'error');
     }
   }
 
-  // ---- Sources ----
+  // ---- Sources (Apps page) ----
   async loadSources() {
+    const tbody = document.getElementById('sourcesTableBody');
+    const empty = document.getElementById('sourcesEmpty');
+    if (!tbody) return;
     try {
       const sources = await this.api('/config/sources');
-      document.getElementById('sourcesLoading').style.display = 'none';
-      const wrap = document.getElementById('sourcesTableWrap');
-      const tbody = document.getElementById('sourcesTableBody');
-      const empty = document.getElementById('sourcesEmpty');
-
       if (!sources || sources.length === 0) {
-        wrap.style.display = 'none';
-        empty.style.display = 'block';
+        tbody.innerHTML = '';
+        if (empty) empty.classList.remove('hidden');
         return;
       }
-      wrap.style.display = 'block';
-      empty.style.display = 'none';
+      if (empty) empty.classList.add('hidden');
       tbody.innerHTML = '';
-
       sources.forEach(src => {
         const tr = document.createElement('tr');
+        const name = this.escapeHtml(src.name);
         tr.innerHTML =
-          '<td><code>' + this.escapeHtml(src.name) + '</code></td>' +
+          '<td><code>' + name + '</code></td>' +
           '<td><code style="font-size:0.78rem;">' + this.escapeHtml(src.url) + '</code></td>' +
-          '<td><code>' + this.escapeHtml(src.src_type) + '</code></td>' +
           '<td><span class="badge ' + (src.enabled ? 'badge-success' : 'badge-neutral') + '">' + (src.enabled ? 'Enabled' : 'Disabled') + '</span></td>' +
-          '<td><button class="action-btn btn-danger" onclick="app.removeSource(\'' + this.escapeHtml(src.name) + '\')">Remove</button></td>';
+          '<td><button class="action-btn btn-danger" onclick="app.removeSource(\\'' + name + '\\')">Remove</button></td>';
         tbody.appendChild(tr);
       });
     } catch (err) {
-      document.getElementById('sourcesLoading').textContent = 'Failed to load sources';
-      this.showToast('Failed to load sources: ' + err.message, 'error');
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Failed to load sources: ' + this.escapeHtml(err.message) + '</td></tr>';
     }
   }
 
   async addSource() {
-    const nameInput = document.getElementById('addSourceName');
-    const urlInput = document.getElementById('addSourceUrl');
+    const nameInput = document.getElementById('sourceName');
+    const urlInput = document.getElementById('sourceUrl');
     const name = nameInput.value.trim();
     const url = urlInput.value.trim();
     if (!name || !url) { this.showToast('Please enter name and URL', 'error'); return; }
@@ -560,6 +691,7 @@ class ObtainHubUI {
       await this.api('/config/sources', { method: 'POST', body: { name: name, url: url } });
       nameInput.value = '';
       urlInput.value = '';
+      document.getElementById('sourceForm').classList.add('hidden');
       this.showToast('Source added: ' + name, 'success');
       this.loadSources();
     } catch (err) {
@@ -578,22 +710,29 @@ class ObtainHubUI {
     }
   }
 
+  // ---- Help ----
+  async loadHelp() {
+    const el = document.getElementById('helpText');
+    if (!el || el.dataset.loaded) return;
+    try {
+      el.textContent = await this.api('/help');
+      el.dataset.loaded = '1';
+    } catch (err) {
+      el.textContent = 'Failed to load help: ' + err.message;
+    }
+  }
+
   // ---- Downloads ----
   async loadDownloads() {
     try {
       const downloads = await this.api('/downloads');
-      document.getElementById('downloadsLoading').style.display = 'none';
-      const wrap = document.getElementById('downloadsTableWrap');
       const tbody = document.getElementById('downloadsTableBody');
-      const empty = document.getElementById('downloadsEmpty');
+      if (!tbody) return;
 
       if (!downloads || downloads.length === 0) {
-        wrap.style.display = 'none';
-        empty.style.display = 'block';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No downloads yet</td></tr>';
         return;
       }
-      wrap.style.display = 'block';
-      empty.style.display = 'none';
       tbody.innerHTML = '';
 
       downloads.forEach(dl => {
@@ -613,8 +752,8 @@ class ObtainHubUI {
         tbody.appendChild(tr);
       });
     } catch (err) {
-      document.getElementById('downloadsLoading').textContent = 'Failed to load downloads';
-      this.showToast('Failed to load downloads: ' + err.message, 'error');
+      const tbody = document.getElementById('downloadsTableBody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Failed to load downloads: ' + this.escapeHtml(err.message) + '</td></tr>';
     }
   }
 
@@ -648,46 +787,14 @@ class ObtainHubUI {
     }
   }
 
-  // ---- Update Check ----
-  async checkUpdates(repo, prerelease) {
-    const btn = document.getElementById('checkUpdatesBtn');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> Checking...';
-    btn.disabled = true;
-
+  async loginWithCredentials(username, password) {
+    if (!username || !password) { this.showToast('Enter Windows username and password', 'error'); return; }
     try {
-      const body = {};
-      if (repo) body.repo = repo;
-      body.prerelease = prerelease || false;
-      const result = await this.api('/update-check', { method: 'POST', body: body });
-
-      const resultDiv = document.getElementById('updateResults');
-      const resultsCard = document.getElementById('updateResultsCard');
-      const tbody = document.getElementById('updateResultsBody');
-
-      resultsCard.classList.remove('hidden');
-      tbody.innerHTML = '';
-
-      if (!result || result.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No repositories to check</td></tr>';
-      } else {
-        result.forEach(r => {
-          const tr = document.createElement('tr');
-          const hasUpdate = r.update_available ? 'badge-success' : 'badge-neutral';
-          tr.innerHTML =
-            '<td><code>' + this.escapeHtml(r.repo) + '</code></td>' +
-            '<td><code>' + this.escapeHtml(r.current_version) + '</code></td>' +
-            '<td><code>' + this.escapeHtml(r.latest_version) + '</code></td>' +
-            '<td><span class="badge ' + hasUpdate + '">' + (r.update_available ? 'Update available' : 'Current') + '</span></td>';
-          tbody.appendChild(tr);
-        });
-      }
-      this.showToast('Update check complete', 'success');
+      const res = await this.api('/auth/login', { method: 'POST', body: { username: username, password: password } });
+      this.login(res.token);
+      this.showToast('Signed in as ' + username, 'success');
     } catch (err) {
-      this.showToast('Update check failed: ' + err.message, 'error');
-    } finally {
-      btn.innerHTML = originalText;
-      btn.disabled = false;
+      this.showToast('Sign-in failed: ' + err.message, 'error');
     }
   }
 

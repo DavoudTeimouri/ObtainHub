@@ -14,6 +14,8 @@ const PUBLIC_ROUTES: &[(&str, &[Method])] = &[
     ("/apps", &[Method::GET]),
     ("/config", &[Method::GET]),
     ("/config/sources", &[Method::GET]),
+    ("/auth/login", &[Method::POST]),
+    ("/help", &[Method::GET]),
 ];
 
 /// Check if the given path and method are publicly accessible.
@@ -67,6 +69,16 @@ pub async fn auth_middleware(
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
     let token = auth_header.and_then(|h| h.strip_prefix("Bearer "));
+
+    // A valid session token (issued by POST /auth/login) also authenticates.
+    // ponytail: guard scoped to a block — holding a std MutexGuard across
+    // .await would make the middleware future !Send and break FromFn.
+    if let Some(token) = token {
+        let valid = { state.sessions.lock().unwrap().contains(token) };
+        if valid {
+            return Ok(next.run(request).await);
+        }
+    }
 
     match (token, configured_token) {
         (Some(token), Some(configured)) if token == configured => Ok(next.run(request).await),

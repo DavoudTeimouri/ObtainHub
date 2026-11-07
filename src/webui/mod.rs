@@ -25,6 +25,8 @@ pub struct AppState {
     pub auth_enabled: bool,
     /// Live download jobs, shared with the download handlers.
     pub downloads: downloads::DownloadRegistry,
+    /// Session tokens issued by POST /auth/login (Windows admin sign-in).
+    pub sessions: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
 }
 
 /// Embedded static file content (compiled into the binary).
@@ -105,6 +107,7 @@ pub async fn run_webui(
         state_manager: Arc::new(Mutex::new(state_manager)),
         auth_enabled,
         downloads: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        sessions: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
     });
 
     // Write PID file so `ohub self-update` can stop the WebUI before updating.
@@ -126,17 +129,27 @@ pub async fn run_webui(
         .route("/config/github-token", axum::routing::delete(routes::delete_github_token))
         .route("/apps", axum::routing::post(routes::post_app))
         .route("/apps/*repo", axum::routing::delete(routes::delete_app))
+        // App actions (same engines as the CLI): repo passed in the JSON body
+        // because axum 0.7 wildcards must be the last path segment.
+        .route("/apps/install", axum::routing::post(routes::install_app))
+        .route("/apps/uninstall", axum::routing::post(routes::uninstall_app))
+        .route("/apps/update", axum::routing::post(routes::update_app))
+        .route("/apps/check", axum::routing::post(routes::check_app))
+        .route("/search", get(routes::search_repos))
         .route("/config/sources", axum::routing::post(routes::post_source))
         .route("/config/sources/*name", axum::routing::delete(routes::delete_source))
         // Protected download routes
         .route("/downloads", axum::routing::get(downloads::list_downloads))
         .route("/downloads", axum::routing::post(downloads::start_download))
-        .route("/downloads/{id}/cancel", axum::routing::post(downloads::cancel_download))
+        // axum 0.7 path params use `:id` (`{id}` would be a literal segment).
+        .route("/downloads/:id/cancel", axum::routing::post(downloads::cancel_download))
         // Protected update check
         .route("/update-check", axum::routing::post(downloads::update_check))
         // Protected diagnostics: full state export and schedule log tail
         .route("/state/export", get(routes::export_state))
         .route("/logs", get(routes::tail_logs))
+        .route("/auth/login", axum::routing::post(routes::login))
+        .route("/help", get(routes::help_text))
         .with_state(app_state.clone())
         // Apply auth middleware to all routes — public paths are exempted inside the middleware
         .layer(middleware::from_fn_with_state(

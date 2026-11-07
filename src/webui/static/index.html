@@ -56,13 +56,13 @@
           </svg>
           <span>Config</span>
         </a>
-        <a href="#updates" class="nav-item" data-page="updates">
+        <a href="#help" class="nav-item" data-page="help">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M23 4v6h-6"/>
-            <path d="M1 20v-6h6"/>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <span>Updates</span>
+          <span>Help</span>
         </a>
       </nav>
       <div class="sidebar-footer">
@@ -90,7 +90,7 @@
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
           </svg>
         </button>
-        <div class="version-badge" id="versionBadge">v3.0.68-rc.14</div>
+        <div class="version-badge" id="versionBadge">v3.0.68-rc.15</div>
       </div>
     </header>
 
@@ -140,18 +140,6 @@
               <span class="stat-label">Updates Available</span>
             </div>
           </div>
-          <div class="stat-card">
-            <div class="stat-icon green">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M12 6v6l4 2"/>
-              </svg>
-            </div>
-            <div class="stat-info">
-              <span class="stat-value" id="statUptime">-</span>
-              <span class="stat-label">Server Uptime</span>
-            </div>
-          </div>
         </div>
         <div class="card">
           <h3>Recent Activity</h3>
@@ -163,10 +151,66 @@
 
       <section class="page" id="page-apps">
         <div class="page-header">
-          <h2>Managed Applications</h2>
-          <p class="page-subtitle">All applications tracked by ObtainHub</p>
+          <h2>Applications</h2>
+          <p class="page-subtitle">Search GitHub, install, update, and remove software — same engines as the CLI</p>
         </div>
+
         <div class="card">
+          <div class="card-header">
+            <h3>Search &amp; Install</h3>
+          </div>
+          <form class="download-form" id="searchForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="searchQuery">Search GitHub</label>
+                <input type="text" id="searchQuery" placeholder="e.g. cli cli" required>
+              </div>
+              <div class="form-group">
+                <label for="searchLimit">Max results</label>
+                <input type="number" id="searchLimit" value="10" min="1" max="50">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="searchMinStars">Min stars</label>
+                <input type="number" id="searchMinStars" value="0" min="0">
+              </div>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="searchActiveOnly">
+                  <span>Actively maintained only</span>
+                </label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="searchBtn">Search</button>
+            </div>
+          </form>
+          <div class="table-wrapper hidden" id="searchResultsWrap">
+            <table class="data-table" id="searchResultsTable">
+              <thead>
+                <tr>
+                  <th>Repository</th>
+                  <th>Description</th>
+                  <th>Stars</th>
+                  <th>Language</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="searchResultsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Managed Applications</h3>
+            <div class="header-actions">
+              <button class="btn btn-secondary btn-sm" id="checkAllBtn">Check All Updates</button>
+              <button class="btn btn-primary btn-sm" id="refreshAppsBtn">Refresh</button>
+            </div>
+          </div>
           <div class="table-wrapper">
             <table class="data-table" id="appsTable">
               <thead>
@@ -185,6 +229,45 @@
               </tbody>
             </table>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Repositories (Sources)</h3>
+            <button class="btn btn-primary btn-sm" id="showSourceForm">Add Source</button>
+          </div>
+          <form class="download-form hidden" id="sourceForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sourceName">Name *</label>
+                <input type="text" id="sourceName" placeholder="my-org" required>
+              </div>
+              <div class="form-group">
+                <label for="sourceUrl">API URL *</label>
+                <input type="url" id="sourceUrl" placeholder="https://api.github.com" required>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Add Source</button>
+              <button type="button" class="btn btn-secondary" id="hideSourceForm">Cancel</button>
+            </div>
+          </form>
+          <div class="table-wrapper">
+            <table class="data-table" id="sourcesTable">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>URL</th>
+                  <th>Enabled</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="sourcesTableBody">
+                <tr class="loading-row"><td colspan="4">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="empty-state hidden" id="sourcesEmpty">No custom sources configured</div>
         </div>
       </section>
 
@@ -253,9 +336,14 @@
       <section class="page" id="page-config">
         <div class="page-header">
           <h2>Configuration</h2>
-          <p class="page-subtitle">ObtainHub settings and paths</p>
+          <p class="page-subtitle">ObtainHub settings, paths, and GitHub token</p>
         </div>
-        <div class="config-grid" id="configGrid">
+        <div class="token-banner hidden" id="tokenBanner">
+          <strong>GitHub token not set.</strong> Search, install, and update actions hit the GitHub API and will be rate-limited.
+          Add a token below, or run <code>ohub config set github_token &lt;token&gt;</code> in the CLI.
+        </div>
+        <div class="empty-state" id="configLoading">Loading configuration...</div>
+        <div class="config-grid hidden" id="configTableWrap">
           <div class="card config-section">
             <h3>Directories</h3>
             <dl class="config-list" id="configDirs"></dl>
@@ -277,60 +365,67 @@
             <dl class="config-list" id="configAdvanced"></dl>
           </div>
           <div class="card config-section">
-            <h3>Groups & Auth</h3>
+            <h3>Groups &amp; Auth</h3>
             <dl class="config-list" id="configGroups"></dl>
+          </div>
+          <div class="card config-section">
+            <h3>GitHub Token</h3>
+            <p class="page-subtitle" style="margin-bottom:12px">
+              Used for GitHub API actions (search, install, update). Stored in the OS credential store, never shown back.
+              Current status: <span class="badge badge-neutral" id="tokenStatusBadge">checking...</span>
+            </p>
+            <form id="tokenForm">
+              <div class="form-group">
+                <label for="configTokenInput">Personal Access Token</label>
+                <input type="password" id="configTokenInput" placeholder="ghp_... or github_pat_..." autocomplete="off">
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Save Token</button>
+                <button type="button" class="btn btn-danger btn-sm hidden" id="deleteTokenBtn">Remove Token</button>
+              </div>
+            </form>
           </div>
         </div>
       </section>
 
-      <section class="page" id="page-updates">
+      <section class="page" id="page-help">
         <div class="page-header">
-          <h2>Check for Updates</h2>
-          <p class="page-subtitle">Check installed repositories for new releases</p>
+          <h2>Help</h2>
+          <p class="page-subtitle">ohub CLI usage — same commands the WebUI drives. Full docs: <a href="https://github.com/DavoudTeimouri/ObtainHub#readme" target="_blank" rel="noopener">README</a></p>
         </div>
         <div class="card">
           <div class="card-header">
-            <h3>Update Check Options</h3>
+            <h3>Quick reference</h3>
           </div>
-          <form class="update-form" id="updateForm">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="updateRepo">Repository (optional)</label>
-                <input type="text" id="updateRepo" placeholder="owner/repo (leave empty for all)">
-              </div>
-              <div class="form-group">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="updatePrerelease">
-                  <span>Include pre-releases</span>
-                </label>
-              </div>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary" id="checkUpdatesBtn">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="23 4 23 10 17 10"/>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                </svg>
-                Check for Updates
-              </button>
-            </div>
-          </form>
-        </div>
-        <div class="card hidden" id="updateResultsCard">
-          <h3>Results</h3>
           <div class="table-wrapper">
-            <table class="data-table" id="updateResultsTable">
-              <thead>
-                <tr>
-                  <th>Repository</th>
-                  <th>Current Version</th>
-                  <th>Latest Version</th>
-                  <th>Update Available</th>
-                </tr>
-              </thead>
-              <tbody id="updateResultsBody"></tbody>
+            <table class="data-table">
+              <thead><tr><th>Command</th><th>Description</th><th>WebUI equivalent</th></tr></thead>
+              <tbody>
+                <tr><td><code>ohub search &lt;query&gt;</code></td><td>Search GitHub repositories</td><td>Apps → Search &amp; Install</td></tr>
+                <tr><td><code>ohub install &lt;owner/repo&gt;</code></td><td>Download and install a release</td><td>Apps → Install button</td></tr>
+                <tr><td><code>ohub list</code></td><td>List managed applications</td><td>Apps → Managed Applications</td></tr>
+                <tr><td><code>ohub check [repo]</code></td><td>Check for updates</td><td>Apps → Check / Check All</td></tr>
+                <tr><td><code>ohub update [repo]</code></td><td>Update installed software</td><td>Apps → Update button</td></tr>
+                <tr><td><code>ohub uninstall &lt;repo&gt;</code></td><td>Uninstall software</td><td>Apps → Uninstall button</td></tr>
+                <tr><td><code>ohub remove &lt;repo&gt;</code></td><td>Stop managing a repo</td><td>Apps → Remove button</td></tr>
+                <tr><td><code>ohub add &lt;repo&gt;</code></td><td>Add repo to management</td><td>Apps → Install adds it</td></tr>
+                <tr><td><code>ohub source add/list/remove</code></td><td>Manage manifest sources</td><td>Apps → Repositories (Sources)</td></tr>
+                <tr><td><code>ohub config</code></td><td>Show/edit configuration</td><td>Config page</td></tr>
+                <tr><td><code>ohub webui [--auth] [--port N]</code></td><td>Start this WebUI</td><td>—</td></tr>
+                <tr><td><code>ohub self-update</code></td><td>Update ohub itself</td><td>—</td></tr>
+                <tr><td><code>ohub doctor</code></td><td>Diagnose environment</td><td>—</td></tr>
+                <tr><td><code>ohub schedule</code></td><td>Scheduled update checks</td><td>Config → Schedule</td></tr>
+                <tr><td><code>ohub state export</code></td><td>Export state.json</td><td>GET /state/export</td></tr>
+                <tr><td><code>ohub log</code></td><td>View schedule log</td><td>GET /logs</td></tr>
+              </tbody>
             </table>
           </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3><code>ohub --help</code></h3>
+          </div>
+          <pre class="help-pre" id="helpText">Loading...</pre>
         </div>
       </section>
     </main>
@@ -340,20 +435,36 @@
     <div class="modal-backdrop" id="modalBackdrop"></div>
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Authentication Required</h3>
+        <h3>Sign in</h3>
         <button class="modal-close" id="modalClose" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <p>This server requires authentication. Enter your GitHub token to access protected endpoints.</p>
+        <p>Sign in with a <strong>Windows admin account</strong> on this machine. The WebUI validates the credentials locally and issues a session token.</p>
         <form id="loginForm">
           <div class="form-group">
-            <label for="authToken">GitHub Token</label>
-            <input type="password" id="authToken" placeholder="ghp_..." required autocomplete="off">
-            <small>Token is stored in sessionStorage for this session only</small>
+            <label for="loginUser">Windows username</label>
+            <input type="text" id="loginUser" placeholder="Administrator" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="loginPass">Password</label>
+            <input type="password" id="loginPass" required autocomplete="current-password">
           </div>
           <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Login</button>
+            <button type="submit" class="btn btn-primary">Sign in</button>
             <button type="button" class="btn btn-secondary" id="modalCancel">Cancel</button>
+          </div>
+        </form>
+        <p class="page-subtitle" style="margin-top:14px">
+          Prefer a token? <a href="#" id="useTokenLink">Use GitHub token instead</a>
+        </p>
+        <form id="tokenLoginForm" class="hidden">
+          <div class="form-group">
+            <label for="authToken">GitHub token (Bearer)</label>
+            <input type="password" id="authToken" placeholder="ghp_..." autocomplete="off">
+            <small>Stored in sessionStorage for this session only</small>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Use token</button>
           </div>
         </form>
       </div>

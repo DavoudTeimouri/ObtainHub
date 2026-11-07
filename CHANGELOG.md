@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.15] - 2026-11-07
+WebUI feature + layout pass:
+- Removed the server-uptime stat card (this is a client for ohub, not a server monitor).
+- Apps page now has full CLI parity: GitHub search with Install buttons, per-app
+  Check / Update / Uninstall / Remove, Check-All, and a Repositories (Sources)
+  manager. New endpoints: GET /search, POST /apps/install|uninstall|update|check
+  (same engines as the CLI commands), GET /help (live `ohub --help`).
+- Updates page removed; update checking lives on the Apps page.
+- Config page fixed (loader element was missing, so it rendered empty) and now
+  shows every config value plus a GitHub Token card (save/remove, status badge,
+  reminder banner). `GET /config` exposes `has_token`; API actions remind and
+  route to Configuration when no token is set.
+- Sign-in is now a real login: Windows admin username/password validated
+  against the local SAM (PowerShell -EncodedCommand, password never in a
+  process list), issuing a session token accepted by the auth middleware
+  (POST /auth/login, Windows only; token fallback kept in the modal).
+- New Help page with a command quick-reference table and full `ohub --help`.
+- Alignment: single 28px page gutter, `.card > h3` matches `.card-header`,
+  config lists render as aligned dt/dd grids.
+- Fixed `/downloads/{id}/cancel` route (axum 0.7 needs `:id`; `{id}` was a
+  literal segment, so cancel never matched).
+
 ## [v3.0.68-rc.14] - 2026-11-07
 Fix WebUI appearing unstyled with dead navigation: `/static/style.css` and
 `/static/app.js` were served as `text/html`. Browsers refuse to execute a
