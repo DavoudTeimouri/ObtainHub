@@ -39,6 +39,11 @@
   box-sizing: border-box;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
 html, body {
   height: 100%;
   font-family: var(--font-sans);
@@ -101,6 +106,21 @@ a:hover {
   color: var(--accent-primary);
   white-space: nowrap;
   overflow: hidden;
+}
+
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-mark {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .logo {
+  display: none;
 }
 
 .logo-subtitle {
@@ -237,6 +257,14 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Every icon in the header is 20px — never let a bare svg blow up to the
+   300x150 replaced-element default. */
+.header-actions svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .version-badge {

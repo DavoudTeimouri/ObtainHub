@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.11] - 2026-11-07
+WebUI visual fix: header icons (menu toggle, refresh) had no size and rendered at the SVG 300x150 default, breaking the header layout. All header icons now fixed at 20px (`width`/`height` attrs + `.header-actions svg` rule), version badge bumped, logo mark added to the sidebar, `:focus-visible` outlines for keyboard navigation, collapsed sidebar shows only the logo mark.
+
 ## [v3.0.68-rc.10] - 2026-11-07
 RC release with WebUI hardening and real downloads:
 - Auth middleware deduplicated; public-route match is exact-or-child path; `POST /config/github-token` is public only until a token exists (bootstrap), so an exposed `--bind 0.0.0.0 --auth` server cannot be re-keyed
