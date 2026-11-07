@@ -39,18 +39,20 @@ async fn spa() -> Html<String> {
 }
 
 /// Serve embedded static file at `/static/<path>`.
+/// Content-Type matters: `<script type="module">` is rejected by browsers
+/// unless the MIME type is JavaScript, and CSS should be text/css.
 async fn static_file_embedded(
     axum::extract::Path(path): axum::extract::Path<String>,
-) -> Result<Html<String>, axum::http::StatusCode> {
+) -> Result<([(axum::http::header::HeaderName, &'static str); 1], &'static str), axum::http::StatusCode> {
     if path.contains("..") {
         return Err(axum::http::StatusCode::NOT_FOUND);
     }
-    let content = match path.as_str() {
-        "style.css" => Html(STYLE_CSS.to_string()),
-        "app.js" => Html(APP_JS.to_string()),
+    let (content, content_type) = match path.as_str() {
+        "style.css" => (STYLE_CSS, "text/css; charset=utf-8"),
+        "app.js" => (APP_JS, "text/javascript; charset=utf-8"),
         _ => return Err(axum::http::StatusCode::NOT_FOUND),
     };
-    Ok(content)
+    Ok(([(axum::http::header::CONTENT_TYPE, content_type)], content))
 }
 
 /// Path to the WebUI PID file, used by `ohub self-update` to stop the server

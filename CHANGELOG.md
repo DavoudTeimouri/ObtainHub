@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.14] - 2026-11-07
+Fix WebUI appearing unstyled with dead navigation: `/static/style.css` and
+`/static/app.js` were served as `text/html`. Browsers refuse to execute a
+`<script type="module">` unless the MIME type is JavaScript, so app.js never
+ran. Now served as `text/css; charset=utf-8` and `text/javascript; charset=utf-8`.
+
 ## [v3.0.68-rc.13] - 2026-11-07
 Fix `ERROR: The process "N" not found.` during `ohub self-update`: `stop_webui`
 spawned `taskkill` with inherited stderr, so a stale `webui.pid` leaked
