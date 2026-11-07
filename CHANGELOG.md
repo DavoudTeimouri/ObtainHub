@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.16] - 2026-11-07
+- Fix dead WebUI clicks: a bad string escape (`\\'` instead of `\'`) in the
+  spliced app.js made the whole module fail to parse, so no navigation or
+  buttons worked. Verified with a JS parser; served app.js parses clean.
+- Anti-stale-assets: `/`, `/static/style.css`, `/static/app.js` now send
+  `Cache-Control: no-cache` and index.html references them with a `?v=<version>`
+  query, so an updated ohub.exe is never masked by a cached old UI (this is
+  why the login modal looked unchanged).
+- Downloads page explains itself: subtitle states what the page does (start a
+  download into the download folder, watch progress/speed/ETA, Cancel deletes
+  the partial `.part` file); duplicate polling hint removed.
+
 ## [v3.0.68-rc.15] - 2026-11-07
 WebUI feature + layout pass:
 - Removed the server-uptime stat card (this is a client for ohub, not a server monitor).

@@ -406,10 +406,10 @@ class ObtainHubUI {
           '<td>' + this.formatRelativeTime(app.installed_at) + '</td>' +
           '<td>' + this.formatRelativeTime(app.updated_at) + '</td>' +
           '<td class="actions-cell">' +
-            '<button class="action-btn" onclick="app.checkApp(\\'' + repo + '\\')">Check</button> ' +
-            '<button class="action-btn" onclick="app.updateApp(\\'' + repo + '\\')">Update</button> ' +
-            '<button class="action-btn" onclick="app.uninstallApp(\\'' + repo + '\\')">Uninstall</button> ' +
-            '<button class="action-btn btn-danger" onclick="app.removeApp(\\'' + repo + '\\')">Remove</button>' +
+            '<button class="action-btn" onclick="app.checkApp(\'' + repo + '\')">Check</button> ' +
+            '<button class="action-btn" onclick="app.updateApp(\'' + repo + '\')">Update</button> ' +
+            '<button class="action-btn" onclick="app.uninstallApp(\'' + repo + '\')">Uninstall</button> ' +
+            '<button class="action-btn btn-danger" onclick="app.removeApp(\'' + repo + '\')">Remove</button>' +
           '</td>';
         tbody.appendChild(tr);
       });
@@ -458,7 +458,7 @@ class ObtainHubUI {
             '<td>' + r.stargazers_count + '</td>' +
             '<td>' + this.escapeHtml(r.language || '-') + '</td>' +
             '<td>' + this.formatRelativeTime(r.updated_at) + '</td>' +
-            '<td><button class="action-btn action-btn-primary" onclick="app.installApp(\\'' + repo + '\\')">Install</button></td>';
+            '<td><button class="action-btn action-btn-primary" onclick="app.installApp(\'' + repo + '\')">Install</button></td>';
           tbody.appendChild(tr);
         });
       }
@@ -673,7 +673,7 @@ class ObtainHubUI {
           '<td><code>' + name + '</code></td>' +
           '<td><code style="font-size:0.78rem;">' + this.escapeHtml(src.url) + '</code></td>' +
           '<td><span class="badge ' + (src.enabled ? 'badge-success' : 'badge-neutral') + '">' + (src.enabled ? 'Enabled' : 'Disabled') + '</span></td>' +
-          '<td><button class="action-btn btn-danger" onclick="app.removeSource(\\'' + name + '\\')">Remove</button></td>';
+          '<td><button class="action-btn btn-danger" onclick="app.removeSource(\'' + name + '\')">Remove</button></td>';
         tbody.appendChild(tr);
       });
     } catch (err) {

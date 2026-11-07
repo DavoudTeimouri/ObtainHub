@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0e17">
   <title>ObtainHub WebUI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.16">
 </head>
 <body>
   <div class="app">
@@ -90,7 +90,7 @@
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
           </svg>
         </button>
-        <div class="version-badge" id="versionBadge">v3.0.68-rc.15</div>
+        <div class="version-badge" id="versionBadge">v3.0.68-rc.16</div>
       </div>
     </header>
 
@@ -274,7 +274,7 @@
       <section class="page" id="page-downloads">
         <div class="page-header">
           <h2>Downloads</h2>
-          <p class="page-subtitle">Manage and monitor active downloads</p>
+          <p class="page-subtitle">Start a download from any URL into the configured download folder. Watch progress, speed and ETA below; Cancel stops the job and deletes the partial file.</p>
         </div>
         <div class="card">
           <div class="card-header">
@@ -310,6 +310,7 @@
         </div>
         <div class="card">
           <h3>Active Downloads</h3>
+          <p class="polling-info" style="padding: 0 20px 10px;">Auto-refresh: <span id="pollingStatus">Enabled</span> (every 2s) — Cancel removes the job and its <code>.part</code> file.</p>
           <div class="table-wrapper">
             <table class="data-table" id="downloadsTable">
               <thead>
@@ -329,7 +330,6 @@
               </tbody>
             </table>
           </div>
-          <p class="polling-info" id="pollingInfo">Auto-refresh: <span id="pollingStatus">Enabled</span> (every 2s)</p>
         </div>
       </section>
 
@@ -473,6 +473,6 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/app.js?v=3.0.68-rc.16"></script>
 </body>
 </html>

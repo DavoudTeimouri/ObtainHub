@@ -1,4 +1,4 @@
-use axum::{routing::get, Router, middleware, response::Html};
+use axum::{routing::get, Router, middleware};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::fs;
@@ -36,8 +36,15 @@ const APP_JS: &str = include_str!("static/app.js");
 
 /// HTML dashboard handler for `GET /`. Always public (no auth required).
 /// Serves the professional static index.html embedded in the binary.
-async fn spa() -> Html<String> {
-    Html(INDEX_HTML.to_string())
+/// `no-cache` so browsers always pick up the embedded assets after an update.
+async fn spa() -> ([(axum::http::header::HeaderName, &'static str); 2], &'static str) {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
+        INDEX_HTML,
+    )
 }
 
 /// Serve embedded static file at `/static/<path>`.
@@ -45,7 +52,7 @@ async fn spa() -> Html<String> {
 /// unless the MIME type is JavaScript, and CSS should be text/css.
 async fn static_file_embedded(
     axum::extract::Path(path): axum::extract::Path<String>,
-) -> Result<([(axum::http::header::HeaderName, &'static str); 1], &'static str), axum::http::StatusCode> {
+) -> Result<([(axum::http::header::HeaderName, &'static str); 2], &'static str), axum::http::StatusCode> {
     if path.contains("..") {
         return Err(axum::http::StatusCode::NOT_FOUND);
     }
@@ -54,7 +61,13 @@ async fn static_file_embedded(
         "app.js" => (APP_JS, "text/javascript; charset=utf-8"),
         _ => return Err(axum::http::StatusCode::NOT_FOUND),
     };
-    Ok(([(axum::http::header::CONTENT_TYPE, content_type)], content))
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, content_type),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
+        content,
+    ))
 }
 
 /// Path to the WebUI PID file, used by `ohub self-update` to stop the server
