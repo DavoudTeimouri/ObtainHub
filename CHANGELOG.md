@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.12] - 2026-11-07
+WebUI redesign: full design-system rewrite of `style.css` — indigo/violet gradient
+accent on deep-slate background with radial glows, glass sticky header, gradient
+logo wordmark + logo mark, colored stat-icon chips, pill badges with status dots,
+shimmer progress bars, slide-in toasts, centered glass modal, styled scrollbars,
+focus-visible rings, off-canvas sidebar under 900px, `prefers-reduced-motion`
+support. All previously unsized SVGs (nav icons) now explicitly sized. Added
+`color-scheme`/`theme-color` meta and inline SVG favicon.
+
 ## [v3.0.68-rc.11] - 2026-11-07
 WebUI visual fix: header icons (menu toggle, refresh) had no size and rendered at the SVG 300x150 default, breaking the header layout. All header icons now fixed at 20px (`width`/`height` attrs + `.header-actions svg` rule), version badge bumped, logo mark added to the sidebar, `:focus-visible` outlines for keyboard navigation, collapsed sidebar shows only the logo mark.
 
