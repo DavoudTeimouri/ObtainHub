@@ -581,7 +581,7 @@ fn find_binary(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
 /// then fall back to PATH lookup so elevated installer launch works
 /// even when System32 is not in PATH.
 #[cfg(windows)]
-fn find_powershell() -> String {
+pub(crate) fn find_powershell() -> String {
     let candidates = [
         r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
         r"C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe",
@@ -595,7 +595,7 @@ fn find_powershell() -> String {
 }
 
 #[cfg(not(windows))]
-fn find_powershell() -> String {
+pub(crate) fn find_powershell() -> String {
     "powershell".to_string()
 }
 

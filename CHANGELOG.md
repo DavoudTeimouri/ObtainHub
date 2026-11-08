@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.29] - 2026-11-07
+- Login backend: `run_ps` now launches PowerShell via `find_powershell()` which
+  resolves the full path `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`
+  (same proven approach used by `self_update`), then falls back to `pwsh`.
+  Bare-name `Command::new("powershell")` could fail on machines where
+  `powershell.exe` isn't directly in PATH — that was the "PowerShell is not
+  available" error. Now "Use current user" works on any Windows machine with
+  PowerShell installed.
+
 ## [v3.0.68-rc.28] - 2026-11-07
 - Auth lock restored: `auth_required` is `--auth` OR a configured GitHub
   token, so the UI locks every page field until sign-in when a token exists —

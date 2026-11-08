@@ -672,11 +672,11 @@ enum PsResult {
 }
 
 /// Run an encoded PowerShell sign-in script.
-/// Tries `powershell` (Windows PowerShell) then `pwsh` (PowerShell Core).
+/// Tries the full path to powershell.exe (from `find_powershell`) then `pwsh`.
 fn run_ps(script: &str) -> PsResult {
     let encoded = base64_utf16le(script);
-    for shell in ["powershell", "pwsh"] {
-        match std::process::Command::new(shell)
+    for shell in [crate::commands::self_update::find_powershell(), "pwsh".to_string()] {
+        match std::process::Command::new(&shell)
             .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", &encoded])
             .output()
         {
