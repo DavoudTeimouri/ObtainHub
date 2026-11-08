@@ -48,11 +48,6 @@ pub async fn auth_middleware(
         return Ok(next.run(request).await);
     }
 
-    // If auth is not enabled, allow all requests.
-    if !state.auth_enabled {
-        return Ok(next.run(request).await);
-    }
-
     // Get the configured token (release lock before calling next).
     let configured_token = {
         let config_manager = state.config_manager.lock().await;
@@ -64,6 +59,13 @@ pub async fn auth_middleware(
         return Ok(next.run(request).await);
     }
 
+    // Without --auth and without a configured token, the server is in open
+    // bootstrap mode until the first token is saved.
+    if !state.auth_enabled && configured_token.is_none() {
+        return Ok(next.run(request).await);
+    }
+
+    // Require a valid session (or the configured bearer token) for everything else.
     let auth_header = request
         .headers()
         .get(header::AUTHORIZATION)

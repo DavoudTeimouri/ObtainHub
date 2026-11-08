@@ -111,7 +111,7 @@ pub async fn get_config(
         groups: config.groups.keys().cloned().collect(),
         token_source,
         has_token: config_manager.github_token().is_some(),
-        auth_required: app_state.auth_enabled,
+        auth_required: app_state.auth_enabled || config_manager.github_token().is_some(),
     })
 }
 

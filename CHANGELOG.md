@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.21] - 2026-11-07
+- Auth hardening: mutating WebUI routes now require a session whenever
+  `--auth` is set OR a GitHub token already exists. Before the first token
+  is saved (and without --auth) the server stays in open bootstrap mode so
+  the token can be configured; after that every write route (config,
+  sources, apps install/uninstall/update/check, downloads, update-check,
+  state export, logs) is locked behind sign-in. `auth_required` in
+  `GET /config` drives the UI lock state.
+
 ## [v3.0.68-rc.20] - 2026-11-07
 - Anti-stale-UI hardening: index.html now sends `Cache-Control: no-cache,
   no-store, must-revalidate` + `Pragma`/`Expires` meta tags on top of the
