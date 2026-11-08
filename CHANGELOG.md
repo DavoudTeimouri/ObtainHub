@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.28] - 2026-11-07
+- Auth lock restored: `auth_required` is `--auth` OR a configured GitHub
+  token, so the UI locks every page field until sign-in when a token exists —
+  matching the backend middleware, which already rejects unauthenticated
+  writes (config, sources, apps install/uninstall/update/check, downloads,
+  state export, logs) with 401.
+- Login backend: clearer errors — "Current user is not an administrator",
+  "Invalid Windows username or password", or "PowerShell is not available on
+  this machine — use a GitHub token instead". Tries `powershell` then `pwsh`
+  with `-ExecutionPolicy Bypass`.
+
 ## [v3.0.68-rc.27] - 2026-11-07
 - Login popup: background page blurred via `.app.blur-bg` (whole app
   container, not individual sections) so every section blurs uniformly;
