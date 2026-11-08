@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.24] - 2026-11-07
+- Login fixed: `run_ps` tries `powershell` then `pwsh` (PowerShell Core) so
+  "Use current user" works on machines that only have one shell. Sign-in
+  errors now surface the real backend message instead of a generic failure.
+- Copyright aligned: footer-panel left-aligned with tighter spacing.
+- Removed duplicate page titles: each page now shows its title only once
+  (in the main header bar), not again in the page content area.
+
 ## [v3.0.68-rc.23] - 2026-11-07
 - Professional layout: sidebar footer rebuilt — Refresh + Login on one aligned
   flex row (equal-width buttons), version badge + copyright panel below it.

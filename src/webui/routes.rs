@@ -661,16 +661,22 @@ fn issue_session(app_state: &std::sync::Arc<crate::webui::AppState>) -> String {
 }
 
 /// Run an encoded PowerShell script; returns stdout on success.
+/// Tries `powershell` (Windows PowerShell) then `pwsh` (PowerShell Core).
 fn run_ps(script: &str) -> Result<String, String> {
     let encoded = base64_utf16le(script);
-    match std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
-        .output()
-    {
-        Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).trim().to_string()),
-        Ok(_) => Err("rejected".to_string()),
-        Err(e) => Err(format!("Login backend unavailable: {e}")),
+    for shell in ["powershell", "pwsh"] {
+        match std::process::Command::new(shell)
+            .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+            }
+            Ok(_) => continue, // wrong credentials / not admin — try next shell
+            Err(_e) => continue, // shell not found — try next shell
+        }
     }
+    Err("Login backend unavailable: neither powershell nor pwsh could run the sign-in script".to_string())
 }
 
 /// Sign in with a Windows admin account on this machine.
@@ -695,7 +701,10 @@ pub async fn login(
     }
     let verified_user = if body.use_current_user == Some(true) {
         let script = "$wi = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $wp = New-Object System.Security.Principal.WindowsPrincipal($wi); if ($wp.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) { $wi.Name; exit 0 } else { exit 1 }";
-        run_ps(script).ok()
+        match run_ps(script) {
+            Ok(name) => Some(name),
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        }
     } else {
         let username = body.username.unwrap_or_default();
         let password = body.password.unwrap_or_default();
@@ -711,7 +720,6 @@ pub async fn login(
         );
         match run_ps(&script) {
             Ok(_) => Some(username),
-            Err(e) if e == "rejected" => None,
             Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
         }
     };
