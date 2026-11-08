@@ -323,7 +323,7 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
         let script = format!(
             r#"$ErrorActionPreference = 'Continue'
 Start-Sleep -Seconds 3
-while (Get-Process ohub -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
+while (Get-Process ohub -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 1 }}
 Start-Process '{staged}' -ArgumentList '/S' -Verb RunAs -Wait
 Remove-Item '{staged}' -ErrorAction SilentlyContinue
 Start-Process '{exe}'

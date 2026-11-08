@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.26] - 2026-11-07
+- Self-update CI fix: escaped PowerShell `{` `}` braces as `{{` `}}` in the
+  Rust `format!` restart-script template (rc.25 broke compilation on stable).
+
 ## [v3.0.68-rc.25] - 2026-11-07
 - Login: `run_ps` now adds `-ExecutionPolicy Bypass` and tries both
   `powershell` and `pwsh`, so "Use current user" works on more Windows
