@@ -10,7 +10,7 @@
   <meta http-equiv="Expires" content="0">
   <title>ObtainHub WebUI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.21">
+  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.22">
 </head>
 <body>
   <div class="app">
@@ -77,7 +77,7 @@
             </svg>
             <span>Refresh</span>
           </button>
-          <div class="version-badge" id="versionBadge">v3.0.68-rc.21</div>
+          <div class="version-badge" id="versionBadge">v3.0.68-rc.22</div>
         </div>
         <div class="auth-status" id="authStatus">
           <span class="status-dot" id="statusDot"></span>
@@ -160,11 +160,48 @@
         </div>
 
         <div class="subtabs" id="appsTabs">
-          <button class="subtab active" data-apps-tab="installed" type="button">Installed</button>
-          <button class="subtab" data-apps-tab="search" type="button">Find &amp; Install</button>
+          <button class="subtab active" data-apps-tab="list" type="button">List</button>
+          <button class="subtab" data-apps-tab="search" type="button">Search &amp; Install</button>
+          <button class="subtab" data-apps-tab="check" type="button">Check</button>
+          <button class="subtab" data-apps-tab="update" type="button">Update</button>
+          <button class="subtab" data-apps-tab="uninstall" type="button">Uninstall</button>
+          <button class="subtab" data-apps-tab="remove" type="button">Remove</button>
+          <button class="subtab" data-apps-tab="add" type="button">Add</button>
           <button class="subtab" data-apps-tab="sources" type="button">Sources</button>
         </div>
 
+        <!-- List: ohub list / per-app check/update/uninstall/remove -->
+        <div class="apps-panel active" id="appsTab-list">
+        <div class="card">
+          <div class="card-header">
+            <h3>Managed Applications</h3>
+            <div class="header-actions">
+              <button class="btn btn-secondary btn-sm" id="checkAllBtn">Check All Updates</button>
+              <button class="btn btn-primary btn-sm" id="refreshAppsBtn">Refresh</button>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table" id="appsTable">
+              <thead>
+                <tr>
+                  <th>Repository</th>
+                  <th>Name</th>
+                  <th>Version</th>
+                  <th>Status</th>
+                  <th>Installed</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="appsTableBody">
+                <tr class="loading-row"><td colspan="7">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        </div>
+
+        <!-- Search & Install: ohub search + install -->
         <div class="apps-panel" id="appsTab-search">
         <div class="card">
           <div class="card-header">
@@ -213,40 +250,139 @@
             </table>
           </div>
         </div>
-
         </div>
 
-        <div class="apps-panel active" id="appsTab-installed">
+        <!-- Check: ohub check -->
+        <div class="apps-panel" id="appsTab-check">
         <div class="card">
-          <div class="card-header">
-            <h3>Managed Applications</h3>
-            <div class="header-actions">
-              <button class="btn btn-secondary btn-sm" id="checkAllBtn">Check All Updates</button>
-              <button class="btn btn-primary btn-sm" id="refreshAppsBtn">Refresh</button>
+          <div class="card-header"><h3>ohub check</h3></div>
+          <form class="download-form" id="checkForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="checkRepo">Repository (owner/repo)</label>
+                <input type="text" id="checkRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+              </div>
+              <div class="form-group">
+                <label class="checkbox-label"><input type="checkbox" id="checkAll"> Check all managed apps</label>
+              </div>
             </div>
-          </div>
-          <div class="table-wrapper">
-            <table class="data-table" id="appsTable">
-              <thead>
-                <tr>
-                  <th>Repository</th>
-                  <th>Name</th>
-                  <th>Version</th>
-                  <th>Status</th>
-                  <th>Installed</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="appsTableBody">
-                <tr class="loading-row"><td colspan="7">Loading...</td></tr>
-              </tbody>
-            </table>
+            <div class="form-row">
+              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="checkPrerelease"> Include pre-releases</label></div>
+              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="checkCandidates"> Show update candidates</label></div>
+              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="checkReset"> Reset check cache</label></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="checkBtn">Check</button>
+              <button type="button" class="btn btn-secondary" id="clearCheckResult">Clear</button>
+            </div>
+          </form>
+          <div class="table-wrapper hidden" id="checkResultWrap">
+            <div class="card-header"><h3>Result</h3></div>
+            <pre id="checkResult"></pre>
           </div>
         </div>
-
         </div>
 
+        <!-- Update: ohub update -->
+        <div class="apps-panel" id="appsTab-update">
+        <div class="card">
+          <div class="card-header"><h3>ohub update</h3></div>
+          <form class="download-form" id="updateForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="updateRepo">Repository (owner/repo)</label>
+                <input type="text" id="updateRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+              </div>
+              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="updatePrerelease"> Include pre-releases</label></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="updateYes"> Assume yes</label></div>
+              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="updateForce"> Force reinstall</label></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="updateBtn">Update</button>
+              <button type="button" class="btn btn-secondary" id="clearUpdateResult">Clear</button>
+            </div>
+          </form>
+          <div class="table-wrapper hidden" id="updateResultWrap">
+            <div class="card-header"><h3>Result</h3></div>
+            <pre id="updateResult"></pre>
+          </div>
+        </div>
+        </div>
+
+        <!-- Uninstall: ohub uninstall -->
+        <div class="apps-panel" id="appsTab-uninstall">
+        <div class="card">
+          <div class="card-header"><h3>ohub uninstall</h3></div>
+          <form class="download-form" id="uninstallForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="uninstallRepo">Repository (owner/repo)</label>
+                <input type="text" id="uninstallRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+              </div>
+              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="uninstallPurge"> Purge install directory</label></div>
+              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="uninstallYes"> Assume yes</label></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-danger" id="uninstallBtn">Uninstall</button>
+              <button type="button" class="btn btn-secondary" id="clearUninstallResult">Clear</button>
+            </div>
+          </form>
+          <div class="table-wrapper hidden" id="uninstallResultWrap">
+            <div class="card-header"><h3>Result</h3></div>
+            <pre id="uninstallResult"></pre>
+          </div>
+        </div>
+        </div>
+
+        <!-- Remove: ohub remove -->
+        <div class="apps-panel" id="appsTab-remove">
+        <div class="card">
+          <div class="card-header"><h3>ohub remove</h3></div>
+          <form class="download-form" id="removeForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="removeRepo">Repository (owner/repo)</label>
+                <input type="text" id="removeRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-danger" id="removeBtn">Remove from management</button>
+              <button type="button" class="btn btn-secondary" id="clearRemoveResult">Clear</button>
+            </div>
+          </form>
+          <div class="table-wrapper hidden" id="removeResultWrap">
+            <div class="card-header"><h3>Result</h3></div>
+            <pre id="removeResult"></pre>
+          </div>
+        </div>
+        </div>
+
+        <!-- Add: ohub add -->
+        <div class="apps-panel" id="appsTab-add">
+        <div class="card">
+          <div class="card-header"><h3>ohub add</h3></div>
+          <form class="download-form" id="addForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="addRepo">Repository (owner/repo)</label>
+                <input type="text" id="addRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="addBtn">Add to management</button>
+              <button type="button" class="btn btn-secondary" id="clearAddResult">Clear</button>
+            </div>
+          </form>
+          <div class="table-wrapper hidden" id="addResultWrap">
+            <div class="card-header"><h3>Result</h3></div>
+            <pre id="addResult"></pre>
+          </div>
+        </div>
+        </div>
+
+        <!-- Sources: ohub source -->
         <div class="apps-panel" id="appsTab-sources">
         <div class="card">
           <div class="card-header">
@@ -491,6 +627,6 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script type="module" src="/static/app.js?v=3.0.68-rc.21"></script>
+  <script type="module" src="/static/app.js?v=3.0.68-rc.22"></script>
 </body>
 </html>

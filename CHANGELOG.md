@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.22] - 2026-11-07
+- Feature-per-command Apps page: dedicated panels for List, Search &amp; Install,
+  Check, Update, Uninstall, Remove, Add and Sources. Every ohub CLI option is a
+  button/select/checkbox and is sent to the matching API endpoint
+  (`/apps/check|update|uninstall|add`, `DELETE /apps/:repo`). Check now passes
+  `prerelease`/`candidates`/`reset` through to the check engine. Each action
+  shows its result in a dedicated output block.
+- Backend: `AppAction` gains `candidates` and `reset`; `check_app` forwards them
+  to the check engine.
+
 ## [v3.0.68-rc.21] - 2026-11-07
 - Auth hardening: mutating WebUI routes now require a session whenever
   `--auth` is set OR a GitHub token already exists. Before the first token

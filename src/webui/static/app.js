@@ -81,9 +81,28 @@ class ObtainHubUI {
       loginCurrentUserBtn.addEventListener('click', () => this.loginAsCurrentUser());
     }
 
-    // Apps page sub-tabs (Installed / Find & Install / Sources)
+    // Apps page sub-tabs (List / Search & Install / Check / Update / Uninstall / Remove / Add / Sources)
     document.querySelectorAll('#appsTabs [data-apps-tab]').forEach(btn => {
       btn.addEventListener('click', () => this.showAppsTab(btn.getAttribute('data-apps-tab')));
+    });
+
+    // Command feature forms
+    const wire = (id, handler) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('submit', (e) => { e.preventDefault(); handler(); });
+    };
+    wire('checkForm', () => this.checkAppForm());
+    wire('updateForm', () => this.updateAppForm());
+    wire('uninstallForm', () => this.uninstallAppForm());
+    wire('removeForm', () => this.removeAppForm());
+    wire('addForm', () => this.addAppForm());
+    // Clear result blocks
+    ['check','update','uninstall','remove','add'].forEach(cmd => {
+      const btn = document.getElementById('clear' + cmd.charAt(0).toUpperCase() + cmd.slice(1) + 'Result');
+      if (btn) btn.addEventListener('click', () => {
+        document.getElementById(cmd + 'ResultWrap').classList.add('hidden');
+        document.getElementById(cmd + 'Result').textContent = '';
+      });
     });
 
     // Token fallback login
@@ -254,7 +273,7 @@ class ObtainHubUI {
     document.querySelectorAll('.apps-panel').forEach(p => p.classList.remove('active'));
     const panel = document.getElementById('appsTab-' + name);
     if (panel) panel.classList.add('active');
-    if (name === 'installed') this.loadApps();
+    if (name === 'list') this.loadApps();
     else if (name === 'sources') this.loadSources();
     else if (name === 'search') {
       const q = document.getElementById('searchQuery');
@@ -595,6 +614,42 @@ class ObtainHubUI {
       this.showToast('Failed to remove app: ' + err.message, 'error');
     }
   }
+
+  async runAppAction(form, endpoint, method, successMsg) {
+    if (!(await this.requireToken())) return;
+    const btn = document.getElementById(form.replace('Form', 'Btn'));
+    const out = document.getElementById(form.replace('Form', 'Result'));
+    const wrap = document.getElementById(form.replace('Form', 'ResultWrap'));
+    btn.disabled = true; btn.textContent = 'Working...';
+    out.textContent = '';
+    wrap.classList.add('hidden');
+    try {
+      const body = {};
+      if (method !== 'DELETE') {
+        document.getElementById(form).querySelectorAll('input, select').forEach(el => {
+          if (el.type === 'checkbox') { body[el.id] = el.checked; }
+          else if (el.value.trim() !== '') { body[el.id] = el.value.trim(); }
+        });
+      }
+      await this.api(endpoint, { method: method, body: method !== 'DELETE' ? body : undefined });
+      out.textContent = successMsg;
+      wrap.classList.remove('hidden');
+      this.showToast(successMsg, 'success');
+      this.loadApps();
+    } catch (err) {
+      out.textContent = 'Error: ' + err.message;
+      wrap.classList.remove('hidden');
+      this.showToast('Action failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = btn.dataset.label || btn.textContent;
+    }
+  }
+
+  async checkAppForm() { await this.runAppAction('checkForm', '/apps/check', 'POST', 'Check complete'); }
+  async updateAppForm() { await this.runAppAction('updateForm', '/apps/update', 'POST', 'Update complete'); }
+  async uninstallAppForm() { await this.runAppAction('uninstallForm', '/apps/uninstall', 'POST', 'Uninstalled'); }
+  async removeAppForm() { await this.runAppAction('removeForm', '/apps/' + encodeURIComponent(document.getElementById('removeRepo').value.trim()), 'DELETE', 'Removed from management'); }
+  async addAppForm() { await this.runAppAction('addForm', '/apps', 'POST', 'Added to management'); }
 
   // ---- Config ----
   async loadConfig() {

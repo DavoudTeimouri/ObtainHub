@@ -521,6 +521,10 @@ pub struct AppAction {
     pub purge: bool,
     #[serde(default)]
     pub prerelease: bool,
+    #[serde(default)]
+    pub candidates: bool,
+    #[serde(default)]
+    pub reset: bool,
 }
 
 fn action_result(result: anyhow::Result<()>) -> axum::response::Response {
@@ -620,15 +624,15 @@ pub async fn check_app(
         outdated_only: false,
         prerelease: body.prerelease,
         yes: true,
-        all: false,
-        candidates: false,
-        reset: false,
+        all: body.candidates,
+        candidates: body.candidates,
+        reset: body.reset,
         arch: crate::cli::Arch::Auto,
         timeout: None,
         notes: false,
         force: false,
-        quiet: true,
         dry_run: false,
+        quiet: true,
         log: None,
     };
     let result = {
