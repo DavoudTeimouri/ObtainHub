@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.31] - 2026-11-07
+- Port conflict: `run_webui` returns the actual listening `SocketAddr`; main.rs
+  opens the browser on that address (not the requested default port).
+- Check All: `AppAction.repo` is now optional (`#[serde(default)]`); empty repo
+  means check all managed apps. Backend handles empty repo as check-all.
+- Install button: `requireToken()` skips token check when auth is not required
+  (no --auth, no token configured), so installs proceed without a token.
+- Per-app Check/Update/Uninstall/Remove buttons: `runAppAction` maps form field
+  IDs (`checkRepo`, `updateRepo`, etc.) to backend `repo` field.
+- Apps page: "List" tab is default (`appsTab = 'list'`).
+- Search results: show "Installed" badge, Install/Manage button based on state.
+- Removed "e.g. DavoudTeimouri/ObtainHub" placeholders → "owner/repo".
+- Tab labels are user-friendly: "Check for Updates", "Update Software",
+  "Uninstall", "Remove from Management", "Add to Management".
+- Config page: all values are editable inputs with a "Save Changes" button
+  (PUT /config). Read-only sections (Groups, Token Source) stay read-only.
+- New pages: Doctor (GET /doctor), State Export (GET /state/export),
+  Logs (GET /logs) with nav items.
+
 ## [v3.0.68-rc.30] - 2026-11-07
 - Read-only WebUI usable before sign-in: `applyLock()` now only disables
   mutating buttons (submit, action-btn, btn-primary, btn-danger) plus a

@@ -518,6 +518,7 @@ pub async fn search_repos(
 
 #[derive(Deserialize)]
 pub struct AppAction {
+    #[serde(default)]
     pub repo: String,
     #[serde(default)]
     pub force: bool,
@@ -618,13 +619,15 @@ pub async fn update_app(
     action_result(result)
 }
 
-/// Check one repository for updates (same engine as `ohub check <repo>`). Protected.
+/// Check one repository for updates (same engine as `ohub check <repo>`).
+/// When `repo` is empty, checks all managed apps. Protected.
 pub async fn check_app(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(body): Json<AppAction>,
 ) -> impl IntoResponse {
+    let repo = if body.repo.is_empty() { None } else { Some(body.repo.clone()) };
     let args = crate::cli::CheckArgs {
-        repo: Some(body.repo),
+        repo,
         outdated_only: false,
         prerelease: body.prerelease,
         yes: true,
@@ -745,6 +748,33 @@ pub async fn login(
             "error": "Invalid Windows credentials or current user is not an administrator"
         }))).into_response(),
     }
+}
+
+// ---------- Doctor ----------
+
+/// Diagnose the ObtainHub environment and configuration. Public.
+pub async fn doctor(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+) -> impl IntoResponse {
+    let config = app_state.config_manager.lock().await;
+    let cfg = config.get();
+    let info = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "install_dir": cfg.install_dir.display().to_string(),
+        "download_dir": cfg.download_dir.display().to_string(),
+        "shim_dir": cfg.shim_dir.display().to_string(),
+        "github_token_configured": config.github_token().is_some(),
+        "token_source": config.token_source().to_string(),
+        "schedule_enabled": cfg.schedule.enabled,
+        "schedule_interval_hours": cfg.schedule.interval_hours,
+        "parallel_downloads": cfg.parallel_downloads,
+        "timeout_seconds": cfg.timeout_seconds,
+        "verify_checksums": cfg.verify_checksums,
+        "auto_cleanup": cfg.auto_cleanup,
+    });
+    Json(info)
 }
 
 // ---------- Help ----------

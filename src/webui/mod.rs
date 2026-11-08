@@ -114,7 +114,7 @@ pub async fn run_webui(
     config_manager: crate::core::config::ConfigManager,
     state_manager: crate::core::state::StateManager,
     auth_enabled: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<SocketAddr> {
     let app_state = Arc::new(AppState {
         config_manager: Arc::new(Mutex::new(config_manager)),
         state_manager: Arc::new(Mutex::new(state_manager)),
@@ -162,6 +162,7 @@ pub async fn run_webui(
         .route("/state/export", get(routes::export_state))
         .route("/logs", get(routes::tail_logs))
         .route("/auth/login", axum::routing::post(routes::login))
+        .route("/doctor", get(routes::doctor))
         .route("/help", get(routes::help_text))
         .with_state(app_state.clone())
         // Apply auth middleware to all routes — public paths are exempted inside the middleware
@@ -187,12 +188,12 @@ pub async fn run_webui(
     let actual_addr = listener.local_addr()?;
     info!("WebUI listening on {actual_addr}");
 
-    let result = axum::serve(listener, app)
+    let _ = axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await
         .context("WebUI server error");
     remove_pid_file();
-    result
+    Ok(actual_addr)
 }

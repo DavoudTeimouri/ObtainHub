@@ -60,8 +60,10 @@ async fn main() -> Result<()> {
             let bind_addr: std::net::SocketAddr = format!("{}:{}", args.bind, args.port)
                 .parse()
                 .context("Invalid bind address")?;
-            // Open default browser automatically
-            let url = format!("http://{}", bind_addr);
+            // Open default browser automatically using the actual listening port
+            // (run_webui may switch to port+1 if the default is in use).
+            let actual_addr = crate::webui::run_webui(bind_addr, config_manager, state_manager, args.auth).await?;
+            let url = format!("http://{}", actual_addr);
             let opener = if cfg!(windows) { "cmd" } else { "xdg-open" };
             let opener_args: Vec<&str> = if cfg!(windows) {
                 vec!["/c", "start", "", &url]
@@ -71,7 +73,7 @@ async fn main() -> Result<()> {
             let _ = std::process::Command::new(opener)
                 .args(&opener_args)
                 .spawn();
-            crate::webui::run_webui(bind_addr, config_manager, state_manager, args.auth).await
+            Ok(())
         }
         Commands::Group(args) => commands::group::execute(args, &mut config_manager, &mut state_manager).await,
         Commands::Shim(args) => commands::shim::execute(args, &config_manager, &state_manager).await,

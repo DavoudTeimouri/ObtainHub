@@ -9,7 +9,7 @@ class ObtainHubUI {
     this.currentPage = 'dashboard';
     this.pollInterval = null;
     this.authRequired = false;
-    this.appsTab = 'installed';
+    this.appsTab = 'list';
     this.init();
   }
 
@@ -126,6 +126,14 @@ class ObtainHubUI {
         tokenLoginForm.classList.remove('hidden');
       });
     }
+
+    // Doctor / State Export / Logs buttons
+    const doctorBtn = document.getElementById('doctorBtn');
+    if (doctorBtn) doctorBtn.addEventListener('click', () => this.runDoctor());
+    const stateBtn = document.getElementById('stateBtn');
+    if (stateBtn) stateBtn.addEventListener('click', () => this.exportState());
+    const logsBtn = document.getElementById('logsBtn');
+    if (logsBtn) logsBtn.addEventListener('click', () => this.loadLogs());
 
     // Modal close
     const modalClose = document.getElementById('modalClose');
@@ -253,6 +261,12 @@ class ObtainHubUI {
       this.startDownloadsPoll();
     } else if (page === 'help') {
       this.loadHelp();
+    } else if (page === 'doctor') {
+      // doctor page loads on demand via button
+    } else if (page === 'state') {
+      // state page loads on demand via button
+    } else if (page === 'logs') {
+      this.loadLogs();
     } else {
       this.stopDownloadsPoll();
     }
@@ -468,6 +482,8 @@ class ObtainHubUI {
 
   // ---- Apps ----
   async loadApps() {
+    this.installedRepos = this.installedRepos || new Set();
+    this.installedRepos.clear();
     const tbody = document.getElementById('appsTableBody');
     if (!tbody) return;
     try {
@@ -478,6 +494,7 @@ class ObtainHubUI {
       }
       tbody.innerHTML = '';
       apps.forEach(app => {
+        this.installedRepos.add(app.repo);
         const tr = document.createElement('tr');
         const statusClass = 'status-' + (app.status || 'unknown').toLowerCase();
         const repo = this.escapeHtml(app.repo);
@@ -502,7 +519,9 @@ class ObtainHubUI {
   }
 
   // GitHub API actions need a token — remind and guide instead of failing.
+  // If auth is not required (no --auth and no token configured), proceed without token.
   async requireToken() {
+    if (!this.authRequired) return true;
     try {
       const config = await this.api('/config');
       if (config && config.has_token) return true;
@@ -529,19 +548,21 @@ class ObtainHubUI {
       const tbody = document.getElementById('searchResultsBody');
       wrap.classList.remove('hidden');
       if (!results || results.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No results</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No results</td></tr>';
       } else {
         tbody.innerHTML = '';
         results.forEach(r => {
           const tr = document.createElement('tr');
           const repo = this.escapeHtml(r.full_name);
+          const installed = this.installedRepos && this.installedRepos.has(r.full_name);
           tr.innerHTML =
             '<td><a href="' + this.escapeHtml(r.html_url) + '" target="_blank" rel="noopener"><code>' + repo + '</code></a></td>' +
             '<td>' + this.escapeHtml(r.description || '') + '</td>' +
             '<td>' + r.stargazers_count + '</td>' +
             '<td>' + this.escapeHtml(r.language || '-') + '</td>' +
             '<td>' + this.formatRelativeTime(r.updated_at) + '</td>' +
-            '<td><button class="action-btn action-btn-primary" onclick="app.installApp(\'' + repo + '\')">Install</button></td>';
+            '<td><span class="badge ' + (installed ? 'badge-success' : 'badge-neutral') + '">' + (installed ? 'Installed' : '-') + '</span></td>' +
+            '<td><button class="action-btn action-btn-primary" onclick="app.installApp(\'' + repo + '\')">' + (installed ? 'Manage' : 'Install') + '</button></td>';
           tbody.appendChild(tr);
         });
       }
@@ -643,9 +664,24 @@ class ObtainHubUI {
       const body = {};
       if (method !== 'DELETE') {
         document.getElementById(form).querySelectorAll('input, select').forEach(el => {
-          if (el.type === 'checkbox') { body[el.id] = el.checked; }
-          else if (el.value.trim() !== '') { body[el.id] = el.value.trim(); }
+          if (el.type === 'checkbox') {
+            body[el.id] = el.checked;
+          } else if (el.value.trim() !== '') {
+            // Map form field IDs to backend field names.
+            let key = el.id;
+            if (key === 'checkRepo') key = 'repo';
+            else if (key === 'updateRepo') key = 'repo';
+            else if (key === 'uninstallRepo') key = 'repo';
+            else if (key === 'removeRepo') key = 'repo';
+            else if (key === 'addRepo') key = 'repo';
+            body[key] = el.value.trim();
+          }
         });
+        // For Check form: if "Check all managed apps" is checked, send empty repo
+        // so the backend checks all managed apps (backend handles empty repo as check-all).
+        if (form === 'checkForm' && body.checkAll) {
+          body.repo = body.repo || '';
+        }
       }
       await this.api(endpoint, { method: method, body: method !== 'DELETE' ? body : undefined });
       out.textContent = successMsg;
@@ -687,41 +723,80 @@ class ObtainHubUI {
       const delBtn = document.getElementById('deleteTokenBtn');
       if (delBtn) delBtn.classList.toggle('hidden', !config.has_token);
 
-      const sections = {
-        configDirs: [
-          ['Install Dir', config.install_dir],
-          ['Download Dir', config.download_dir],
-          ['Shim Dir', config.shim_dir]
-        ],
-        configNetwork: [
-          ['Proxy', config.proxy || 'none'],
-          ['HTTP Retries', String(config.http_retries)],
-          ['HTTP Retry Delay (ms)', String(config.http_retry_delay_ms)],
-          ['HTTP Retry Backoff', String(config.http_retry_backoff)],
-          ['Bandwidth Limit', config.download_bandwidth_limit ? String(config.download_bandwidth_limit) + ' B/s' : 'unlimited']
-        ],
-        configBehavior: [
-          ['Parallel Downloads', String(config.parallel_downloads)],
-          ['Timeout (s)', String(config.timeout_seconds)],
-          ['Auto Cleanup', config.auto_cleanup ? 'true' : 'false'],
-          ['Verify Checksums', config.verify_checksums ? 'true' : 'false']
-        ],
-        configSchedule: [
-          ['Schedule Enabled', config.schedule_enabled ? 'true' : 'false'],
-          ['Interval (h)', String(config.schedule_interval_hours)],
-          ['Notify on Update', config.schedule_notify_on_update ? 'true' : 'false'],
-          ['Run on Startup', config.schedule_run_on_startup ? 'true' : 'false']
-        ],
-        configAdvanced: [
-          ['Update Check Interval (h)', String(config.update_check_interval_hours)]
-        ],
+      // Build editable config fields. Key = backend field name, value = current value.
+      const fields = [
+        { section: 'configDirs', label: 'Install Dir', key: 'install_dir', type: 'text', value: config.install_dir },
+        { section: 'configDirs', label: 'Download Dir', key: 'download_dir', type: 'text', value: config.download_dir },
+        { section: 'configDirs', label: 'Shim Dir', key: 'shim_dir', type: 'text', value: config.shim_dir },
+        { section: 'configNetwork', label: 'Proxy', key: 'proxy', type: 'text', value: config.proxy || '' },
+        { section: 'configNetwork', label: 'HTTP Retries', key: 'http_retries', type: 'number', value: config.http_retries },
+        { section: 'configNetwork', label: 'HTTP Retry Delay (ms)', key: 'http_retry_delay_ms', type: 'number', value: config.http_retry_delay_ms },
+        { section: 'configNetwork', label: 'HTTP Retry Backoff', key: 'http_retry_backoff', type: 'number', value: config.http_retry_backoff, step: '0.1' },
+        { section: 'configNetwork', label: 'Bandwidth Limit (B/s)', key: 'download_bandwidth_limit', type: 'number', value: config.download_bandwidth_limit || '' },
+        { section: 'configBehavior', label: 'Parallel Downloads', key: 'parallel_downloads', type: 'number', value: config.parallel_downloads },
+        { section: 'configBehavior', label: 'Timeout (s)', key: 'timeout_seconds', type: 'number', value: config.timeout_seconds },
+        { section: 'configBehavior', label: 'Auto Cleanup', key: 'auto_cleanup', type: 'checkbox', value: config.auto_cleanup },
+        { section: 'configBehavior', label: 'Verify Checksums', key: 'verify_checksums', type: 'checkbox', value: config.verify_checksums },
+        { section: 'configSchedule', label: 'Schedule Enabled', key: 'schedule_enabled', type: 'checkbox', value: config.schedule_enabled },
+        { section: 'configSchedule', label: 'Interval (h)', key: 'schedule_interval_hours', type: 'number', value: config.schedule_interval_hours },
+        { section: 'configSchedule', label: 'Notify on Update', key: 'schedule_notify_on_update', type: 'checkbox', value: config.schedule_notify_on_update },
+        { section: 'configSchedule', label: 'Run on Startup', key: 'schedule_run_on_startup', type: 'checkbox', value: config.schedule_run_on_startup },
+        { section: 'configAdvanced', label: 'Update Check Interval (h)', key: 'update_check_interval_hours', type: 'number', value: config.update_check_interval_hours },
+      ];
+
+      // Group fields by section
+      const bySection = {};
+      fields.forEach(f => {
+        if (!bySection[f.section]) bySection[f.section] = [];
+        bySection[f.section].push(f);
+      });
+
+      Object.entries(bySection).forEach(([sectionId, entries]) => {
+        const dl = document.getElementById(sectionId);
+        if (!dl) return;
+        dl.innerHTML = '';
+        entries.forEach(f => {
+          const dt = document.createElement('dt');
+          dt.textContent = f.label;
+          const dd = document.createElement('dd');
+          let input;
+          if (f.type === 'checkbox') {
+            input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = f.value === true;
+            input.id = 'cfg_' + f.key;
+          } else {
+            input = document.createElement('input');
+            input.type = f.type;
+            input.value = f.value;
+            input.id = 'cfg_' + f.key;
+            if (f.step) input.step = f.step;
+          }
+          dd.appendChild(input);
+          dl.appendChild(dt);
+          dl.appendChild(dd);
+        });
+      });
+
+      // Add Save button if not already present
+      if (!document.getElementById('configSaveBtn')) {
+        const saveBtn = document.createElement('button');
+        saveBtn.id = 'configSaveBtn';
+        saveBtn.type = 'button';
+        saveBtn.className = 'btn btn-primary';
+        saveBtn.textContent = 'Save Changes';
+        saveBtn.onclick = () => this.saveConfig();
+        wrap.parentNode.insertBefore(saveBtn, wrap.nextSibling);
+      }
+
+      // Read-only info sections
+      const readOnly = {
         configGroups: [
           ['Groups', config.groups && config.groups.length ? config.groups.join(', ') : 'none'],
           ['Token Source', config.token_source || 'not set']
         ]
       };
-
-      Object.entries(sections).forEach(([sectionId, entries]) => {
+      Object.entries(readOnly).forEach(([sectionId, entries]) => {
         const dl = document.getElementById(sectionId);
         if (!dl) return;
         dl.innerHTML = '';
@@ -729,20 +804,35 @@ class ObtainHubUI {
           const dt = document.createElement('dt');
           dt.textContent = key;
           const dd = document.createElement('dd');
-          if (key === 'Token Source') {
-            dd.innerHTML = '<span class="badge badge-neutral">[OS credential store]</span>';
-          } else if (['true', 'false'].includes(value)) {
-            dd.innerHTML = '<span class="badge ' + (value === 'true' ? 'badge-success' : 'badge-neutral') + '">' + value + '</span>';
-          } else {
-            dd.textContent = value;
-          }
+          dd.textContent = value;
           dl.appendChild(dt);
           dl.appendChild(dd);
         });
       });
+
     } catch (err) {
       if (loading) loading.textContent = 'Failed to load config: ' + err.message;
       this.showToast('Failed to load config: ' + err.message, 'error');
+    }
+  }
+
+  async saveConfig() {
+    if (!(await this.requireToken())) return;
+    const body = {};
+    document.querySelectorAll('#configTableWrap input').forEach(el => {
+      const key = el.id.replace('cfg_', '');
+      if (el.type === 'checkbox') {
+        body[key] = el.checked;
+      } else if (el.value.trim() !== '') {
+        body[key] = el.type === 'number' ? Number(el.value) : el.value.trim();
+      }
+    });
+    try {
+      await this.api('/config', { method: 'PUT', body: body });
+      this.showToast('Configuration saved', 'success');
+      this.loadConfig();
+    } catch (err) {
+      this.showToast('Failed to save config: ' + err.message, 'error');
     }
   }
 
@@ -769,6 +859,45 @@ class ObtainHubUI {
       this.loadConfig();
     } catch (err) {
       this.showToast('Failed to remove token: ' + err.message, 'error');
+    }
+  }
+
+  async runDoctor() {
+    try {
+      const res = await this.api('/doctor');
+      const wrap = document.getElementById('doctorResultWrap');
+      const out = document.getElementById('doctorResult');
+      wrap.classList.remove('hidden');
+      out.textContent = typeof res === 'string' ? res : JSON.stringify(res, null, 2);
+      this.showToast('Diagnosis complete', 'success');
+    } catch (err) {
+      this.showToast('Doctor failed: ' + err.message, 'error');
+    }
+  }
+
+  async exportState() {
+    try {
+      const res = await this.api('/state/export');
+      const wrap = document.getElementById('stateResultWrap');
+      const out = document.getElementById('stateResult');
+      wrap.classList.remove('hidden');
+      out.textContent = typeof res === 'string' ? res : JSON.stringify(res, null, 2);
+      this.showToast('State exported', 'success');
+    } catch (err) {
+      this.showToast('State export failed: ' + err.message, 'error');
+    }
+  }
+
+  async loadLogs() {
+    try {
+      const res = await this.api('/logs');
+      const wrap = document.getElementById('logsResultWrap');
+      const out = document.getElementById('logsResult');
+      wrap.classList.remove('hidden');
+      out.textContent = typeof res === 'string' ? res : JSON.stringify(res, null, 2);
+    } catch (err) {
+      const out = document.getElementById('logsResult');
+      if (out) out.textContent = 'Failed to load logs: ' + err.message;
     }
   }
 

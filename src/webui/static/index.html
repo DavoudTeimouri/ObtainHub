@@ -10,7 +10,7 @@
   <meta http-equiv="Expires" content="0">
   <title>ObtainHub WebUI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.30">
+  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.31">
 </head>
 <body>
   <div class="app">
@@ -59,6 +59,14 @@
           </svg>
           <span>Config</span>
         </a>
+        <a href="#doctor" class="nav-item" data-page="doctor">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="5" r="1"/>
+            <path d="M12 1a4 4 0 0 0-4 4v4a4 4 0 0 0 4 4 4 4 0 0 0 4-4V5a4 4 0 0 0-4-4z"/>
+            <path d="M9 20h6l4 4-6-2-6 2z"/>
+          </svg>
+          <span>Doctor</span>
+        </a>
         <a href="#help" class="nav-item" data-page="help">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
@@ -89,7 +97,7 @@
           <span style="color:var(--text-muted); font-size:11px;">Sign in required for changes — use Login, or add a GitHub token in Configuration.</span>
         </div>
         <div class="footer-panel">
-          <div class="footer-version" id="versionBadge">v3.0.68-rc.30</div>
+          <div class="footer-version" id="versionBadge">v3.0.68-rc.31</div>
           <div class="footer-copyright">© 2026 ObtainHub</div>
         </div>
       </div>
@@ -166,13 +174,13 @@
         </div>
 
         <div class="subtabs" id="appsTabs">
-          <button class="subtab active" data-apps-tab="list" type="button">List</button>
-          <button class="subtab" data-apps-tab="search" type="button">Search &amp; Install</button>
-          <button class="subtab" data-apps-tab="check" type="button">Check</button>
-          <button class="subtab" data-apps-tab="update" type="button">Update</button>
+          <button class="subtab active" data-apps-tab="list" type="button">Managed Apps</button>
+          <button class="subtab" data-apps-tab="search" type="button">Search & Install</button>
+          <button class="subtab" data-apps-tab="check" type="button">Check for Updates</button>
+          <button class="subtab" data-apps-tab="update" type="button">Update Software</button>
           <button class="subtab" data-apps-tab="uninstall" type="button">Uninstall</button>
-          <button class="subtab" data-apps-tab="remove" type="button">Remove</button>
-          <button class="subtab" data-apps-tab="add" type="button">Add</button>
+          <button class="subtab" data-apps-tab="remove" type="button">Remove from Management</button>
+          <button class="subtab" data-apps-tab="add" type="button">Add to Management</button>
           <button class="subtab" data-apps-tab="sources" type="button">Sources</button>
         </div>
 
@@ -249,6 +257,7 @@
                   <th>Stars</th>
                   <th>Language</th>
                   <th>Updated</th>
+                  <th>Installed</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -258,15 +267,15 @@
         </div>
         </div>
 
-        <!-- Check: ohub check -->
+        <!-- Check for Updates -->
         <div class="apps-panel" id="appsTab-check">
         <div class="card">
-          <div class="card-header"><h3>ohub check</h3></div>
+          <div class="card-header"><h3>Check for Updates</h3></div>
           <form class="download-form" id="checkForm">
             <div class="form-row">
               <div class="form-group">
                 <label for="checkRepo">Repository (owner/repo)</label>
-                <input type="text" id="checkRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+                <input type="text" id="checkRepo" placeholder="owner/repo">
               </div>
               <div class="form-group">
                 <label class="checkbox-label"><input type="checkbox" id="checkAll"> Check all managed apps</label>
@@ -289,15 +298,15 @@
         </div>
         </div>
 
-        <!-- Update: ohub update -->
+        <!-- Update Software -->
         <div class="apps-panel" id="appsTab-update">
         <div class="card">
-          <div class="card-header"><h3>ohub update</h3></div>
+          <div class="card-header"><h3>Update Software</h3></div>
           <form class="download-form" id="updateForm">
             <div class="form-row">
               <div class="form-group">
                 <label for="updateRepo">Repository (owner/repo)</label>
-                <input type="text" id="updateRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+                <input type="text" id="updateRepo" placeholder="owner/repo">
               </div>
               <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="updatePrerelease"> Include pre-releases</label></div>
             </div>
@@ -317,15 +326,15 @@
         </div>
         </div>
 
-        <!-- Uninstall: ohub uninstall -->
+        <!-- Uninstall -->
         <div class="apps-panel" id="appsTab-uninstall">
         <div class="card">
-          <div class="card-header"><h3>ohub uninstall</h3></div>
+          <div class="card-header"><h3>Uninstall</h3></div>
           <form class="download-form" id="uninstallForm">
             <div class="form-row">
               <div class="form-group">
                 <label for="uninstallRepo">Repository (owner/repo)</label>
-                <input type="text" id="uninstallRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+                <input type="text" id="uninstallRepo" placeholder="owner/repo">
               </div>
               <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="uninstallPurge"> Purge install directory</label></div>
               <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="uninstallYes"> Assume yes</label></div>
@@ -342,15 +351,15 @@
         </div>
         </div>
 
-        <!-- Remove: ohub remove -->
+        <!-- Remove from Management -->
         <div class="apps-panel" id="appsTab-remove">
         <div class="card">
-          <div class="card-header"><h3>ohub remove</h3></div>
+          <div class="card-header"><h3>Remove from Management</h3></div>
           <form class="download-form" id="removeForm">
             <div class="form-row">
               <div class="form-group">
                 <label for="removeRepo">Repository (owner/repo)</label>
-                <input type="text" id="removeRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+                <input type="text" id="removeRepo" placeholder="owner/repo">
               </div>
             </div>
             <div class="form-actions">
@@ -365,15 +374,15 @@
         </div>
         </div>
 
-        <!-- Add: ohub add -->
+        <!-- Add to Management -->
         <div class="apps-panel" id="appsTab-add">
         <div class="card">
-          <div class="card-header"><h3>ohub add</h3></div>
+          <div class="card-header"><h3>Add to Management</h3></div>
           <form class="download-form" id="addForm">
             <div class="form-row">
               <div class="form-group">
                 <label for="addRepo">Repository (owner/repo)</label>
-                <input type="text" id="addRepo" placeholder="e.g. DavoudTeimouri/ObtainHub">
+                <input type="text" id="addRepo" placeholder="owner/repo">
               </div>
             </div>
             <div class="form-actions">
@@ -557,22 +566,22 @@
             <table class="data-table">
               <thead><tr><th>Command</th><th>Description</th><th>WebUI equivalent</th></tr></thead>
               <tbody>
-                <tr><td><code>ohub search &lt;query&gt;</code></td><td>Search GitHub repositories</td><td>Apps → Find &amp; Install</td></tr>
+                <tr><td><code>ohub search &lt;query&gt;</code></td><td>Search GitHub repositories</td><td>Apps → Search & Install</td></tr>
                 <tr><td><code>ohub install &lt;owner/repo&gt;</code></td><td>Download and install a release</td><td>Apps → Install button</td></tr>
-                <tr><td><code>ohub list</code></td><td>List managed applications</td><td>Apps → Installed</td></tr>
-                <tr><td><code>ohub check [repo]</code></td><td>Check for updates</td><td>Apps → Check / Check All</td></tr>
-                <tr><td><code>ohub update [repo]</code></td><td>Update installed software</td><td>Apps → Update button</td></tr>
-                <tr><td><code>ohub uninstall &lt;repo&gt;</code></td><td>Uninstall software</td><td>Apps → Uninstall button</td></tr>
-                <tr><td><code>ohub remove &lt;repo&gt;</code></td><td>Stop managing a repo</td><td>Apps → Remove button</td></tr>
-                <tr><td><code>ohub add &lt;repo&gt;</code></td><td>Add repo to management</td><td>Apps → Install adds it</td></tr>
+                <tr><td><code>ohub list</code></td><td>List managed applications</td><td>Apps → Managed Apps</td></tr>
+                <tr><td><code>ohub check [repo]</code></td><td>Check for updates</td><td>Apps → Check for Updates</td></tr>
+                <tr><td><code>ohub update [repo]</code></td><td>Update installed software</td><td>Apps → Update Software</td></tr>
+                <tr><td><code>ohub uninstall &lt;repo&gt;</code></td><td>Uninstall software</td><td>Apps → Uninstall</td></tr>
+                <tr><td><code>ohub remove &lt;repo&gt;</code></td><td>Stop managing a repo</td><td>Apps → Remove from Management</td></tr>
+                <tr><td><code>ohub add &lt;repo&gt;</code></td><td>Add repo to management</td><td>Apps → Add to Management</td></tr>
                 <tr><td><code>ohub source add/list/remove</code></td><td>Manage manifest sources</td><td>Apps → Sources</td></tr>
                 <tr><td><code>ohub config</code></td><td>Show/edit configuration</td><td>Config page</td></tr>
                 <tr><td><code>ohub webui [--auth] [--port N]</code></td><td>Start this WebUI</td><td>—</td></tr>
                 <tr><td><code>ohub self-update</code></td><td>Update ohub itself</td><td>—</td></tr>
-                <tr><td><code>ohub doctor</code></td><td>Diagnose environment</td><td>—</td></tr>
+                <tr><td><code>ohub doctor</code></td><td>Diagnose environment</td><td>Doctor page</td></tr>
                 <tr><td><code>ohub schedule</code></td><td>Scheduled update checks</td><td>Config → Schedule</td></tr>
-                <tr><td><code>ohub state export</code></td><td>Export state.json</td><td>GET /state/export</td></tr>
-                <tr><td><code>ohub log</code></td><td>View schedule log</td><td>GET /logs</td></tr>
+                <tr><td><code>ohub state export</code></td><td>Export state.json</td><td>State Export page</td></tr>
+                <tr><td><code>ohub log</code></td><td>View schedule log</td><td>Logs page</td></tr>
               </tbody>
             </table>
           </div>
@@ -582,6 +591,57 @@
             <h3><code>ohub --help</code></h3>
           </div>
           <pre class="help-pre" id="helpText">Loading...</pre>
+        </div>
+      </section>
+
+      <!-- Doctor -->
+      <section class="page" id="page-doctor">
+        <div class="page-header">
+          <p class="page-subtitle">Diagnose the ObtainHub environment and configuration.</p>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Doctor</h3></div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="doctorBtn">Run Diagnosis</button>
+          </div>
+          <div class="table-wrapper hidden" id="doctorResultWrap">
+            <div class="card-header"><h3>Result</h3></div>
+            <pre id="doctorResult"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- State Export -->
+      <section class="page" id="page-state">
+        <div class="page-header">
+          <p class="page-subtitle">Export the full ObtainHub state as JSON.</p>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>State Export</h3></div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="stateBtn">Export State</button>
+          </div>
+          <div class="table-wrapper hidden" id="stateResultWrap">
+            <div class="card-header"><h3>Result</h3></div>
+            <pre id="stateResult"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Logs -->
+      <section class="page" id="page-logs">
+        <div class="page-header">
+          <p class="page-subtitle">View the schedule log.</p>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Schedule Log</h3></div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="logsBtn">Refresh Log</button>
+          </div>
+          <div class="table-wrapper hidden" id="logsResultWrap">
+            <div class="card-header"><h3>Log</h3></div>
+            <pre id="logsResult"></pre>
+          </div>
         </div>
       </section>
     </main>
@@ -637,6 +697,6 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script type="module" src="/static/app.js?v=3.0.68-rc.30"></script>
+  <script type="module" src="/static/app.js?v=3.0.68-rc.31"></script>
 </body>
 </html>
