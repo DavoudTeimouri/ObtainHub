@@ -691,10 +691,7 @@ pub async fn login(
     }
     let verified_user = if body.use_current_user == Some(true) {
         let script = "$wi = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $wp = New-Object System.Security.Principal.WindowsPrincipal($wi); if ($wp.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) { $wi.Name; exit 0 } else { exit 1 }";
-        match run_ps(script) {
-            Ok(name) => Some(name),
-            Err(_) => None,
-        }
+        run_ps(script).ok()
     } else {
         let username = body.username.unwrap_or_default();
         let password = body.password.unwrap_or_default();

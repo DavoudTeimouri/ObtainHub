@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.19] - 2026-11-07
+- Fix CI failure on v3.0.68-rc.18: clippy on stable (1.99) flagged
+  `manual_ok_err` in the `use_current_user` login branch (lint did not exist
+  in the local 1.85 toolchain). Replaced with `run_ps(script).ok()`.
+
 ## [v3.0.68-rc.18] - 2026-11-07
 - Readonly-until-login: `/config` now reports `auth_required`; when the server
   runs with `--auth` and no session token exists, every input/button on every
