@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.27] - 2026-11-07
+- Login popup: background page blurred via `.app.blur-bg` (whole app
+  container, not individual sections) so every section blurs uniformly;
+  modal close / backdrop / Cancel now clear the blur so sections don't stay
+  blurred after one try.
+- Login backend: `run_ps` distinguishes "shell not found" from "script
+  rejected (not admin / bad credentials)". "Use current user" now reports
+  "Current user is not an administrator" instead of a generic backend
+  failure; username/password reports "Invalid Windows username or password".
+  Missing PowerShell suggests the GitHub token fallback.
+
 ## [v3.0.68-rc.26] - 2026-11-07
 - Self-update CI fix: escaped PowerShell `{` `}` braces as `{{` `}}` in the
   Rust `format!` restart-script template (rc.25 broke compilation on stable).

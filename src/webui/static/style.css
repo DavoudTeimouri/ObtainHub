@@ -1092,9 +1092,8 @@ body.locked main .page button:disabled {
   animation: fade-in 0.15s ease;
 }
 
-/* Blur the whole app behind the login popup */
-.app.blur-bg > .sidebar,
-.app.blur-bg > main {
+/* Blur the whole app behind the login popup (modal lives outside .app) */
+.app.blur-bg {
   filter: blur(6px);
   pointer-events: none;
   user-select: none;

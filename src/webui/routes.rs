@@ -664,9 +664,16 @@ fn issue_session(app_state: &std::sync::Arc<crate::webui::AppState>) -> String {
     token
 }
 
-/// Run an encoded PowerShell script; returns stdout on success.
+/// Result of running a PowerShell sign-in script.
+enum PsResult {
+    Ok(String),      // script succeeded, stdout is the user name
+    Rejected,        // shell ran but script exited non-zero (bad creds / not admin)
+    NotFound,        // neither powershell nor pwsh exists on this machine
+}
+
+/// Run an encoded PowerShell sign-in script.
 /// Tries `powershell` (Windows PowerShell) then `pwsh` (PowerShell Core).
-fn run_ps(script: &str) -> Result<String, String> {
+fn run_ps(script: &str) -> PsResult {
     let encoded = base64_utf16le(script);
     for shell in ["powershell", "pwsh"] {
         match std::process::Command::new(shell)
@@ -674,13 +681,13 @@ fn run_ps(script: &str) -> Result<String, String> {
             .output()
         {
             Ok(out) if out.status.success() => {
-                return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+                return PsResult::Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
             }
-            Ok(_) => continue, // wrong credentials / not admin — try next shell
-            Err(_e) => continue, // shell not found — try next shell
+            Ok(_) => return PsResult::Rejected,   // shell exists, script rejected
+            Err(_) => continue,                    // shell not found, try next
         }
     }
-    Err("Login backend unavailable: neither powershell nor pwsh could run the sign-in script. On this machine, use the GitHub token instead (Sign in → Use GitHub token) or run: ohub config set github_token <token>".to_string())
+    PsResult::NotFound
 }
 
 /// Sign in with a Windows admin account on this machine.
@@ -706,8 +713,9 @@ pub async fn login(
     let verified_user = if body.use_current_user == Some(true) {
         let script = "$wi = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $wp = New-Object System.Security.Principal.WindowsPrincipal($wi); if ($wp.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) { $wi.Name; exit 0 } else { exit 1 }";
         match run_ps(script) {
-            Ok(name) => Some(name),
-            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+            PsResult::Ok(name) => Some(name),
+            PsResult::Rejected => return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Current user is not an administrator. Sign in with a Windows admin username/password, or configure a GitHub token instead."}))).into_response(),
+            PsResult::NotFound => return (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "PowerShell is not available on this machine. Use a GitHub token instead (Sign in → Use GitHub token)."}))).into_response(),
         }
     } else {
         let username = body.username.unwrap_or_default();
@@ -723,8 +731,9 @@ pub async fn login(
             p = password.replace('\'', "''")
         );
         match run_ps(&script) {
-            Ok(_) => Some(username),
-            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+            PsResult::Ok(_) => Some(username),
+            PsResult::Rejected => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Invalid Windows username or password"}))).into_response(),
+            PsResult::NotFound => return (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "PowerShell is not available on this machine. Use a GitHub token instead (Sign in → Use GitHub token)."}))).into_response(),
         }
     };
     match verified_user {

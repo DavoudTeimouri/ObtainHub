@@ -130,6 +130,8 @@ class ObtainHubUI {
     const closeModal = () => {
       const modal = document.getElementById('loginModal');
       if (modal) modal.classList.add('hidden');
+      const app = document.querySelector('.app');
+      if (app) app.classList.remove('blur-bg');
     };
     if (modalClose) modalClose.addEventListener('click', closeModal);
     if (modalBackdrop) modalBackdrop.addEventListener('click', closeModal);
