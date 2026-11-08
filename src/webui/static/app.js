@@ -312,11 +312,15 @@ class ObtainHubUI {
   showLoginModal() {
     const modal = document.getElementById('loginModal');
     if (modal) modal.classList.remove('hidden');
+    const app = document.querySelector('.app');
+    if (app) app.classList.add('blur-bg');
   }
 
   hideLoginModal() {
     const modal = document.getElementById('loginModal');
     if (modal) modal.classList.add('hidden');
+    const app = document.querySelector('.app');
+    if (app) app.classList.remove('blur-bg');
   }
 
   async api(endpoint, options = {}) {
@@ -918,6 +922,10 @@ class ObtainHubUI {
     this.stopDownloadsPoll();
     this.setupAuthUI();
     this.applyLock();
+    const modal = document.getElementById('loginModal');
+    if (modal) modal.classList.add('hidden');
+    const app = document.querySelector('.app');
+    if (app) app.classList.remove('blur-bg');
     this.showToast('Logged out', 'info');
     this.navigate('dashboard');
   }

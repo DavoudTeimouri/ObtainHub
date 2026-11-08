@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.25] - 2026-11-07
+- Login: `run_ps` now adds `-ExecutionPolicy Bypass` and tries both
+  `powershell` and `pwsh`, so "Use current user" works on more Windows
+  machines. Errors surface the real backend message plus a GitHub-token
+  fallback hint.
+- Auth: reverted `auth_required` to `--auth` only. A configured GitHub token
+  no longer locks the WebUI — it stays usable and the token is sent as
+  `Authorization: Bearer` on API actions via the login modal.
+- Login popup: background page is now blurred (`.app.blur-bg`) when the sign-in
+  dialog is open; backdrop is fixed-position full-cover.
+- Self-update: on Windows, installer updates are handed to a restart helper
+  script (`ohub-update-restart.ps1`) that runs after ohub exits, so the locked
+  running exe no longer blocks replacement ("Access is denied").
+
 ## [v3.0.68-rc.24] - 2026-11-07
 - Login fixed: `run_ps` tries `powershell` then `pwsh` (PowerShell Core) so
   "Use current user" works on machines that only have one shell. Sign-in

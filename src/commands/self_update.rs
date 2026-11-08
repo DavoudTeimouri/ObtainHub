@@ -306,9 +306,44 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
     // Handle installer assets (.exe, .msi) vs portable zip
     let is_installer = asset_name.ends_with(".exe") || asset_name.ends_with(".msi");
 
-    // Rename running ohub.exe so the installer can replace it (Windows locks running EXEs).
-    // Renaming frees the name; installer creates a fresh ohub.exe.
     let current_exe = std::env::current_exe().context("Failed to get current exe path")?;
+
+    // On Windows the running ohub.exe is locked (and often installed in Program
+    // Files without write permission for a non-elevated process), so it cannot
+    // be renamed or replaced while alive. Hand the installer update to a restart
+    // helper script: it runs after ohub exits, waits for ohub to quit, runs the
+    // installer elevated, then relaunches ohub.exe.
+    #[cfg(windows)]
+    if is_installer {
+        let exe_dir = current_exe.parent().context("Failed to get exe directory")?;
+        let staged_installer = exe_dir.join("ohub-update-staging.exe");
+        fs::copy(download_path, &staged_installer)
+            .context("Failed to stage installer for restart")?;
+        let script_path = exe_dir.join("ohub-update-restart.ps1");
+        let script = format!(
+            r#"$ErrorActionPreference = 'Continue'
+Start-Sleep -Seconds 3
+while (Get-Process ohub -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
+Start-Process '{staged}' -ArgumentList '/S' -Verb RunAs -Wait
+Remove-Item '{staged}' -ErrorAction SilentlyContinue
+Start-Process '{exe}'
+"#,
+            staged = staged_installer.to_string_lossy().replace("'", "''"),
+            exe = current_exe.to_string_lossy().replace("'", "''"),
+        );
+        fs::write(&script_path, script)
+            .context("Failed to write update restart script")?;
+        process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script_path)
+            .stdout(process::Stdio::null())
+            .stderr(process::Stdio::null())
+            .stdin(process::Stdio::null())
+            .spawn()
+            .context("Failed to spawn update restart helper")?;
+        return Ok(());
+    }
+
     let backup_exe = current_exe.with_extension("exe.old");
     let exe_renamed = if current_exe.exists() {
         match std::fs::rename(&current_exe, &backup_exe) {

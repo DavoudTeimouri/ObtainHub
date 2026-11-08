@@ -111,7 +111,11 @@ pub async fn get_config(
         groups: config.groups.keys().cloned().collect(),
         token_source,
         has_token: config_manager.github_token().is_some(),
-        auth_required: app_state.auth_enabled || config_manager.github_token().is_some(),
+        // Whether the WebUI locks the UI until sign-in (`--auth` only). A
+        // configured GitHub token is an alternative Bearer credential, not a
+        // UI lock — the WebUI stays usable and the token is sent as
+        // `Authorization: Bearer` on API actions via the login modal.
+        auth_required: app_state.auth_enabled,
     })
 }
 
@@ -666,7 +670,7 @@ fn run_ps(script: &str) -> Result<String, String> {
     let encoded = base64_utf16le(script);
     for shell in ["powershell", "pwsh"] {
         match std::process::Command::new(shell)
-            .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", &encoded])
             .output()
         {
             Ok(out) if out.status.success() => {
@@ -676,7 +680,7 @@ fn run_ps(script: &str) -> Result<String, String> {
             Err(_e) => continue, // shell not found — try next shell
         }
     }
-    Err("Login backend unavailable: neither powershell nor pwsh could run the sign-in script".to_string())
+    Err("Login backend unavailable: neither powershell nor pwsh could run the sign-in script. On this machine, use the GitHub token instead (Sign in → Use GitHub token) or run: ohub config set github_token <token>".to_string())
 }
 
 /// Sign in with a Windows admin account on this machine.

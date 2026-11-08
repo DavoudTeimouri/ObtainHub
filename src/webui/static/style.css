@@ -1085,11 +1085,20 @@ body.locked main .page button:disabled {
 }
 
 .modal-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  background: rgba(5, 7, 13, 0.7);
-  backdrop-filter: blur(4px);
+  background: rgba(5, 7, 13, 0.65);
+  backdrop-filter: blur(6px);
   animation: fade-in 0.15s ease;
+}
+
+/* Blur the whole app behind the login popup */
+.app.blur-bg > .sidebar,
+.app.blur-bg > main {
+  filter: blur(6px);
+  pointer-events: none;
+  user-select: none;
+  transition: filter 0.15s ease;
 }
 
 .modal-content {
