@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.23] - 2026-11-07
+- Professional layout: sidebar footer rebuilt — Refresh + Login on one aligned
+  flex row (equal-width buttons), version badge + copyright panel below it.
+- Alignment: consistent card header/body grid, aligned form groups/labels,
+  uniform gaps; every page shares the same 28px gutter so components line up.
+- Button actions restore their original label after completing instead of
+  staying stuck on "Working...".
+
 ## [v3.0.68-rc.22] - 2026-11-07
 - Feature-per-command Apps page: dedicated panels for List, Search &amp; Install,
   Check, Update, Uninstall, Remove, Add and Sources. Every ohub CLI option is a

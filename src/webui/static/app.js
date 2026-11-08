@@ -618,6 +618,7 @@ class ObtainHubUI {
   async runAppAction(form, endpoint, method, successMsg) {
     if (!(await this.requireToken())) return;
     const btn = document.getElementById(form.replace('Form', 'Btn'));
+    const originalLabel = btn.textContent;
     const out = document.getElementById(form.replace('Form', 'Result'));
     const wrap = document.getElementById(form.replace('Form', 'ResultWrap'));
     btn.disabled = true; btn.textContent = 'Working...';
@@ -641,7 +642,7 @@ class ObtainHubUI {
       wrap.classList.remove('hidden');
       this.showToast('Action failed: ' + err.message, 'error');
     } finally {
-      btn.disabled = false; btn.textContent = btn.dataset.label || btn.textContent;
+      btn.disabled = false; btn.textContent = originalLabel;
     }
   }
 
