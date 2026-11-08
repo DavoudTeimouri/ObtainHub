@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.32] - 2026-11-07
+- Browser auto-open: run_webui() returns the actual SocketAddr; main.rs opens the
+  browser BEFORE run_webui() because axum::serve blocks forever.
+- Race condition: init() now awaits loadAuthMode() before navigating, so
+  authRequired is set before any page loads.
+- All fetch errors now include the endpoint URL (e.g. "Failed to fetch /config:
+  Failed to fetch") so users can see the exact URL and verify the port.
+- Dashboard shows the server URL (window.location.origin) so users can verify
+  they're on the right port.
+- requireToken(): On /config fetch error, shows toast and returns false instead
+  of navigating away, preventing the config page from loading in a broken state.
+- All 10 reported issues fixed: port conflict, check-all, install, per-app
+  buttons, manage button, default List tab, removable placeholders, editable
+  config, user-friendly tab labels, Doctor/State/Logs pages.
+
 ## [v3.0.68-rc.31] - 2026-11-07
 - Port conflict: `run_webui` returns the actual listening `SocketAddr`; main.rs
   opens the browser on that address (not the requested default port).

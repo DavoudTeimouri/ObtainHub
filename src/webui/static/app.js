@@ -10,14 +10,14 @@ class ObtainHubUI {
     this.pollInterval = null;
     this.authRequired = false;
     this.appsTab = 'list';
+    this.installedRepos = new Set();
     this.init();
   }
 
   init() {
     this.setupNavigation();
     window.addEventListener('hashchange', () => this.route());
-    this.loadAuthMode();
-    this.route();
+    this.loadAuthMode().then(() => this.route());
   }
 
   // Fetch /config (public) to learn whether the server runs with --auth.
@@ -374,7 +374,7 @@ class ObtainHubUI {
       return res.text();
     } catch (err) {
       if (err.message === 'Authentication required') throw err;
-      throw err;
+      throw new Error('Failed to fetch ' + endpoint + ': ' + err.message);
     }
   }
 
@@ -442,6 +442,9 @@ class ObtainHubUI {
         this.api('/apps'),
         this.api('/config')
       ]);
+      // Show server URL so user can verify they're on the right port
+      const serverUrlEl = document.getElementById('serverUrlValue');
+      if (serverUrlEl) serverUrlEl.textContent = window.location.origin;
 
       // Update stat cards
       const statApps = document.getElementById('statApps');
@@ -525,7 +528,12 @@ class ObtainHubUI {
     try {
       const config = await this.api('/config');
       if (config && config.has_token) return true;
-    } catch (e) { /* fall through to reminder */ }
+    } catch (e) {
+      // /config is public; if it fails, the server may be unreachable.
+      // Don't navigate away — just warn and let the call fail naturally.
+      this.showToast('Server not reachable: ' + e.message, 'error');
+      return false;
+    }
     this.showToast('GitHub token required — add it in Configuration, GitHub Token (or run: ohub config set github_token <token>)', 'warning');
     this.navigate('config');
     return false;
@@ -812,7 +820,7 @@ class ObtainHubUI {
 
     } catch (err) {
       if (loading) loading.textContent = 'Failed to load config: ' + err.message;
-      this.showToast('Failed to load config: ' + err.message, 'error');
+      this.showToast('Failed to load config from ' + window.location.origin + '/config — ' + err.message, 'error');
     }
   }
 
