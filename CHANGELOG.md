@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.30] - 2026-11-07
+- Read-only WebUI usable before sign-in: `applyLock()` now only disables
+  mutating buttons (submit, action-btn, btn-primary, btn-danger) plus a
+  sign-in hint; viewing apps, config, downloads, help stays accessible.
+  Backend still 401s unauthenticated writes; `requireToken()` guides the user.
+- Login password cleared on Cancel / X / backdrop close so it never lingers.
+- Professional login dialog with ObtainHub logo mark + title in modal header.
+- "Use current user" error now says: "Current process is not running as
+  administrator. Right-click ohub and run as administrator, or sign in with a
+  Windows admin username/password below." (IsInRole checks the process token,
+  not the account — run ohub elevated.)
+
 ## [v3.0.68-rc.29] - 2026-11-07
 - Login backend: `run_ps` now launches PowerShell via `find_powershell()` which
   resolves the full path `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`

@@ -33,7 +33,11 @@ class ObtainHubUI {
   applyLock() {
     const locked = this.authRequired && !this.token;
     document.body.classList.toggle('locked', locked);
-    document.querySelectorAll('main .page input, main .page select, main .page textarea, main .page button')
+    const hint = document.getElementById('signinHint');
+    if (hint) hint.style.display = locked ? 'block' : 'none';
+    // Only disable mutating action buttons; read-only viewing stays usable.
+    // Backend enforces auth (401) and requireToken() guides the user.
+    document.querySelectorAll('main .page button[type="submit"], main .page .action-btn, main .page .btn-primary, main .page .btn-danger')
       .forEach(el => { el.disabled = locked; });
   }
 
@@ -132,6 +136,9 @@ class ObtainHubUI {
       if (modal) modal.classList.add('hidden');
       const app = document.querySelector('.app');
       if (app) app.classList.remove('blur-bg');
+      // Clear password fields after cancel/close
+      const pass = document.getElementById('loginPass');
+      if (pass) pass.value = '';
     };
     if (modalClose) modalClose.addEventListener('click', closeModal);
     if (modalBackdrop) modalBackdrop.addEventListener('click', closeModal);
@@ -323,6 +330,8 @@ class ObtainHubUI {
     if (modal) modal.classList.add('hidden');
     const app = document.querySelector('.app');
     if (app) app.classList.remove('blur-bg');
+    const pass = document.getElementById('loginPass');
+    if (pass) pass.value = '';
   }
 
   async api(endpoint, options = {}) {

@@ -431,12 +431,15 @@ code {
   letter-spacing: 0.2px;
 }
 
-/* Locked (pre-login) state: disabled controls are visibly dimmed */
-body.locked main .page input:disabled,
-body.locked main .page select:disabled,
-body.locked main .page textarea:disabled,
-body.locked main .page button:disabled {
-  opacity: 0.45;
+/* Locked (pre-login) state: hint that sign-in is required for changes.
+   Read-only viewing stays usable; mutating actions are enforced by the
+   backend (401) and guided by requireToken() toast. */
+body.locked .signin-hint { display: block; }
+body.locked main .page button[type="submit"],
+body.locked main .page .action-btn,
+body.locked main .page .btn-primary,
+body.locked main .page .btn-danger {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -1110,6 +1113,27 @@ body.locked main .page button:disabled {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   animation: pop-in 0.18s ease;
+}
+
+.modal-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 10px;
+}
+
+.modal-logo .logo-mark {
+  width: 28px;
+  height: 28px;
+  color: var(--accent-primary);
+  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.55));
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.2px;
 }
 
 @keyframes pop-in {

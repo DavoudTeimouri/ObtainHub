@@ -714,7 +714,7 @@ pub async fn login(
         let script = "$wi = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $wp = New-Object System.Security.Principal.WindowsPrincipal($wi); if ($wp.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) { $wi.Name; exit 0 } else { exit 1 }";
         match run_ps(script) {
             PsResult::Ok(name) => Some(name),
-            PsResult::Rejected => return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Current user is not an administrator. Sign in with a Windows admin username/password, or configure a GitHub token instead."}))).into_response(),
+            PsResult::Rejected => return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Current process is not running as administrator. Right-click ohub and run as administrator, or sign in with a Windows admin username/password below."}))).into_response(),
             PsResult::NotFound => return (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "PowerShell is not available on this machine. Use a GitHub token instead (Sign in → Use GitHub token)."}))).into_response(),
         }
     } else {
