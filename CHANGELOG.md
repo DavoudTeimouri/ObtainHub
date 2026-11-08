@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.20] - 2026-11-07
+- Anti-stale-UI hardening: index.html now sends `Cache-Control: no-cache,
+  no-store, must-revalidate` + `Pragma`/`Expires` meta tags on top of the
+  server-side `no-cache` headers and `?v=` asset URLs, so a browser that
+  heuristically cached the old stylesheet (pre-rc.16 binary sent no cache
+  headers) can no longer render unstyled pages with huge SVG icons.
+- Login persists across browser restarts: session token moved from
+  sessionStorage to localStorage (cleared on 401/logout), so the sidebar
+  status stays "Authenticated" instead of resetting every new browser
+  session.
+
 ## [v3.0.68-rc.19] - 2026-11-07
 - Fix CI failure on v3.0.68-rc.18: clippy on stable (1.99) flagged
   `manual_ok_err` in the `use_current_user` login branch (lint did not exist

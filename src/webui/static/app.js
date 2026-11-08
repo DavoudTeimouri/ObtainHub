@@ -5,7 +5,7 @@
 
 class ObtainHubUI {
   constructor() {
-    this.token = sessionStorage.getItem('ohub_token') || null;
+    this.token = localStorage.getItem('ohub_token') || null;
     this.currentPage = 'dashboard';
     this.pollInterval = null;
     this.authRequired = false;
@@ -310,7 +310,7 @@ class ObtainHubUI {
       const res = await fetch(endpoint, config);
       if (res.status === 401) {
         this.stopDownloadsPoll();
-        sessionStorage.removeItem('ohub_token');
+        localStorage.removeItem('ohub_token');
         this.token = null;
         this.setupAuthUI();
         this.applyLock();
@@ -849,7 +849,7 @@ class ObtainHubUI {
   async login(token) {
     if (!token) { this.showToast('Please enter a token', 'error'); return; }
     this.token = token;
-    sessionStorage.setItem('ohub_token', token);
+    localStorage.setItem('ohub_token', token);
     this.setupAuthUI();
     this.applyLock();
     this.hideLoginModal();
@@ -858,7 +858,7 @@ class ObtainHubUI {
 
   async logout() {
     this.token = null;
-    sessionStorage.removeItem('ohub_token');
+    localStorage.removeItem('ohub_token');
     this.stopDownloadsPoll();
     this.setupAuthUI();
     this.applyLock();
