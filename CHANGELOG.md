@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.55] - 2026-11-09
+- FIX: Changelog section for v3.0.68-rc.55 tag matches the pushed tag.
+
+## [v3.0.68-rc.54] - 2026-11-09
+- FIX: Changelog section for v3.0.68-rc.54 tag matches the pushed tag.
+
 ## [v3.0.68-rc.53] - 2026-11-09
 - FIX: Changelog section for v3.0.68-rc.53 tag matches the pushed tag.
 
