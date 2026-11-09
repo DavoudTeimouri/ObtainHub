@@ -63,7 +63,7 @@ pub async fn execute(args: UninstallArgs, config: &mut ConfigManager, state: &mu
                 let still_installed = crate::core::winreg::scan_uninstall_entries()
                     .iter()
                     .any(|e| crate::core::winreg::find_entry_for_repo(
-                        &[e.clone()],
+                        std::slice::from_ref(e),
                         &args.repo,
                         Some(&entry.version),
                     ).is_some());

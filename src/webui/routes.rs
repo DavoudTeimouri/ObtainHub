@@ -266,16 +266,6 @@ pub struct AppAdd {
 
 fn default_add_type() -> String { "github".to_string() }
 
-/// One candidate repository for an unmanaged installed app.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct CandidateInfo {
-    pub name: String,
-    pub version: String,
-    pub install_path: String,
-    pub uninstaller: Option<String>,
-    pub candidates: Vec<String>,
-}
-
 pub async fn post_app(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(payload): Json<AppAdd>,
@@ -321,7 +311,7 @@ pub async fn post_app(
         .iter()
         .find_map(|e| {
             crate::core::winreg::find_entry_for_repo(
-                &[e.clone()],
+                std::slice::from_ref(e),
                 &repo,
                 None,
             ).map(|found| (e.clone(), found.clone()))
