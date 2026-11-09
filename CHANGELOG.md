@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.39] - 2026-11-09
+- FIX: clippy clean — removed unit-value `let _ = open_browser(...)`, added `#[allow(dead_code)]` on `AppAdd.add_type`.
+
 ## [v3.0.68-rc.38] - 2026-11-09
 - FIX: `check_self_update` no longer calls `stop_webui()` in check-only mode — "Check for updates" from WebUI no longer kills the WebUI server.
 - FIX: Single instance enforcement — `ohub webui` checks PID file; if already running, reports PID and opens existing WebUI instead of starting duplicate.

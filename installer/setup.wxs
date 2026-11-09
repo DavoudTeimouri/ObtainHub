@@ -13,7 +13,7 @@
              Platform="x64"
              Description="ObtainHub CLI installer"
              Manufacturer="DavoudTeimouri"
-             Comments="ObtainHub v3.0.68-rc.39"
+             Comments="ObtainHub v3.0.68-rc.40"
              SummaryCodepage="1252" />
 
     <Icon Id="AppIcon" SourceFile="installer/icon.ico" />
