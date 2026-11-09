@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.36] - 2026-11-07
+- Button fixes: removed requireToken() from all per-app action buttons
+  (Check, Update, Uninstall, Remove), Install, search, config save, and
+  form actions. Buttons now call the API directly; backend returns 401 if
+  --auth is set and no session, triggering the login modal. Buttons no
+  longer silently fail.
+- Config page redesigned: all config values are editable inputs with
+  per-field types (text/number/checkbox), "Save Changes" button sends PUT
+  /config with all values. Read-only sections (Groups, Token Source) shown
+  as plain text. Added Config Actions bar.
+
 ## [v3.0.68-rc.35] - 2026-11-07
 - Auth middleware fixed: without `--auth`, ALL WebUI requests pass through
   regardless of whether a GitHub token is configured. Previously, a configured

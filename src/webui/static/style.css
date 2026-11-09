@@ -443,6 +443,38 @@ body.locked main .page .btn-danger {
   cursor: not-allowed;
 }
 
+/* Config page styling */
+.config-actions {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 10px;
+}
+
+.config-list input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-sans);
+}
+
+.config-list input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.config-list input[type="checkbox"] {
+  width: auto;
+  margin-right: 8px;
+  accent-color: var(--accent);
+}
+
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }

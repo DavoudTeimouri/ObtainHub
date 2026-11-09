@@ -554,7 +554,6 @@ class ObtainHubUI {
   }
 
   async searchApps() {
-    if (!(await this.requireToken())) return;
     const q = document.getElementById('searchQuery').value.trim();
     if (!q) { this.showToast('Enter a search query', 'error'); return; }
     const limit = document.getElementById('searchLimit').value || 10;
@@ -597,11 +596,8 @@ class ObtainHubUI {
   }
 
   async installApp(repo) {
-    if (!(await this.requireToken())) return;
-    if (!confirm('Install ' + repo + '?')) return;
-    this.showToast('Installing ' + repo + '...', 'info');
     try {
-      await this.api('/apps/install', { method: 'POST', body: { repo: repo } });
+      const res = await this.api('/apps/install', { method: 'POST', body: { repo: repo } });
       this.showToast('Installed: ' + repo, 'success');
       this.loadApps();
     } catch (err) {
@@ -610,10 +606,8 @@ class ObtainHubUI {
   }
 
   async updateApp(repo) {
-    if (!(await this.requireToken())) return;
-    this.showToast('Updating ' + repo + '...', 'info');
     try {
-      await this.api('/apps/update', { method: 'POST', body: { repo: repo } });
+      const res = await this.api('/apps/update', { method: 'POST', body: { repo: repo } });
       this.showToast('Update complete: ' + repo, 'success');
       this.loadApps();
     } catch (err) {
@@ -622,9 +616,8 @@ class ObtainHubUI {
   }
 
   async checkApp(repo) {
-    if (!(await this.requireToken())) return;
     try {
-      await this.api('/apps/check', { method: 'POST', body: { repo: repo } });
+      const res = await this.api('/apps/check', { method: 'POST', body: { repo: repo } });
       this.showToast('Checked: ' + repo, 'success');
       this.loadApps();
     } catch (err) {
@@ -651,7 +644,6 @@ class ObtainHubUI {
   }
 
   async uninstallApp(repo) {
-    if (!(await this.requireToken())) return;
     if (!confirm('Uninstall ' + repo + '? (stays managed)')) return;
     try {
       await this.api('/apps/uninstall', { method: 'POST', body: { repo: repo, purge: false } });
@@ -674,7 +666,6 @@ class ObtainHubUI {
   }
 
   async runAppAction(form, endpoint, method, successMsg) {
-    if (!(await this.requireToken())) return;
     const btn = document.getElementById(form.replace('Form', 'Btn'));
     const originalLabel = btn.textContent;
     const out = document.getElementById(form.replace('Form', 'Result'));
@@ -839,7 +830,6 @@ class ObtainHubUI {
   }
 
   async saveConfig() {
-    if (!(await this.requireToken())) return;
     const body = {};
     document.querySelectorAll('#configTableWrap input').forEach(el => {
       const key = el.id.replace('cfg_', '');
