@@ -35,20 +35,9 @@ class ObtainHubUI {
     document.body.classList.toggle('locked', locked);
     const hint = document.getElementById('signinHint');
     if (hint) hint.style.display = locked ? 'block' : 'none';
-    // Only disable mutating form buttons; per-app action buttons stay enabled
-    // so the backend 401 can guide the user to sign in. Tooltips explain lock.
-    document.querySelectorAll('main .page button[type="submit"], main .page .btn-primary, main .page .btn-danger')
+    // Disable mutating form buttons and all per-app action buttons when locked
+    document.querySelectorAll('main .page button[type="submit"], main .page .btn-primary, main .page .btn-danger, main .page .action-btn')
       .forEach(el => { el.disabled = locked; });
-    // Add/remove lock tooltip on per-app action buttons
-    document.querySelectorAll('main .page .action-btn').forEach(el => {
-      if (locked) {
-        el.title = 'Sign in required to perform this action';
-        el.dataset.originalTitle = el.title || el.textContent;
-      } else {
-        el.title = el.dataset.originalTitle || '';
-        delete el.dataset.originalTitle;
-      }
-    });
   }
 
   setupNavigation() {
@@ -549,7 +538,6 @@ class ObtainHubUI {
       return false;
     }
     this.showToast('GitHub token required — add it in Configuration, GitHub Token (or run: ohub config set github_token <token>)', 'warning');
-    this.navigate('config');
     return false;
   }
 
@@ -606,6 +594,7 @@ class ObtainHubUI {
   }
 
   async updateApp(repo) {
+    if (!(await this.requireToken())) return;
     try {
       const res = await this.api('/apps/update', { method: 'POST', body: { repo: repo } });
       this.showToast('Update complete: ' + repo, 'success');
@@ -616,6 +605,7 @@ class ObtainHubUI {
   }
 
   async checkApp(repo) {
+    if (!(await this.requireToken())) return;
     try {
       const res = await this.api('/apps/check', { method: 'POST', body: { repo: repo } });
       this.showToast('Checked: ' + repo, 'success');
@@ -644,6 +634,7 @@ class ObtainHubUI {
   }
 
   async uninstallApp(repo) {
+    if (!(await this.requireToken())) return;
     if (!confirm('Uninstall ' + repo + '? (stays managed)')) return;
     try {
       await this.api('/apps/uninstall', { method: 'POST', body: { repo: repo, purge: false } });
@@ -655,6 +646,7 @@ class ObtainHubUI {
   }
 
   async removeApp(repo) {
+    if (!(await this.requireToken())) return;
     if (!confirm('Remove ' + repo + ' from management?')) return;
     try {
       await this.api('/apps/' + encodeURIComponent(repo), { method: 'DELETE' });
@@ -1083,4 +1075,4 @@ class ObtainHubUI {
   }
 }
 
-const app = new ObtainHubUI();
+window.app = new ObtainHubUI();

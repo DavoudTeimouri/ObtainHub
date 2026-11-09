@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.37] - 2026-11-07
+- ROOT CAUSE FIX: `<script type="module">` put app.js in module scope — `const app = new ObtainHubUI()` was NOT attached to `window`, so all inline `onclick="app.checkApp(...)"` handlers threw `ReferenceError: app is not defined`. Fixed by removing `type="module"` and using `window.app = new ObtainHubUI()`.
+- All per-app buttons (Check, Update, Uninstall, Remove), Install, and form actions now have `requireToken()` guards for consistency with `--auth` mode.
+- `requireToken()` no longer navigates away on failure — just shows toast + returns false, keeping user on current page.
+- `applyLock()` now disables `.action-btn` too (per-app buttons disabled when locked, not just form buttons).
+
 ## [v3.0.68-rc.36] - 2026-11-07
 - Button fixes: removed requireToken() from all per-app action buttons
   (Check, Update, Uninstall, Remove), Install, search, config save, and
