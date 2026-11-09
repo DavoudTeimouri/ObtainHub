@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.51] - 2026-11-09
+- FIX: Changelog section for v3.0.68-rc.51 tag matches the pushed tag.
+
 ## [v3.0.68-rc.50] - 2026-11-09
 - FIX: Clippy clean — removed duplicate CandidateInfo struct, replaced &[e.clone()] with std::slice::from_ref(e).
 
