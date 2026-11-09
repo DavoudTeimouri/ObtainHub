@@ -348,6 +348,8 @@ class ObtainHubUI {
   }
 
   async api(endpoint, options = {}) {
+    // Show global loading overlay while any request is in flight
+    this.showLoading(true);
     const headers = { 'Content-Type': 'application/json', ...options.headers };
     if (this.token) headers['Authorization'] = 'Bearer ' + this.token;
     const config = { ...options, headers };
@@ -374,7 +376,24 @@ class ObtainHubUI {
     } catch (err) {
       if (err.message === 'Authentication required') throw err;
       throw new Error('Failed to fetch ' + endpoint + ': ' + err.message);
+    } finally {
+      this.showLoading(false);
     }
+  }
+
+  showLoading(show) {
+    let overlay = document.getElementById('loadingOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'loadingOverlay';
+      overlay.className = 'loading-overlay';
+      overlay.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Working...</span></div>';
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = show ? 'flex' : 'none';
+    // Disable all action buttons while loading to prevent duplicate concurrent requests
+    document.querySelectorAll('main .page .action-btn, main .page button[type="submit"]')
+      .forEach(el => { el.disabled = show; });
   }
 
   showToast(message, type = 'info') {
@@ -569,7 +588,7 @@ class ObtainHubUI {
             '<td>' + this.escapeHtml(r.description || '') + '</td>' +
             '<td>' + r.stargazers_count + '</td>' +
             '<td>' + this.escapeHtml(r.language || '-') + '</td>' +
-            '<td>' + this.formatRelativeTime(r.updated_at) + '</td>' +
+            '<td>' + this.formatRelativeTime(r.published_at || r.updated_at) + '</td>' +
             '<td><span class="badge ' + (installed ? 'badge-success' : 'badge-neutral') + '">' + (installed ? 'Installed' : '-') + '</span></td>' +
             '<td><button class="action-btn action-btn-primary" onclick="app.installApp(\'' + repo + '\')">' + (installed ? 'Manage' : 'Install') + '</button></td>';
           tbody.appendChild(tr);
@@ -584,6 +603,7 @@ class ObtainHubUI {
   }
 
   async installApp(repo) {
+    if (!confirm('Install "' + repo + '"? This will download and register it under ObtainHub management.')) return;
     try {
       const res = await this.api('/apps/install', { method: 'POST', body: { repo: repo } });
       this.showToast('Installed: ' + repo, 'success');
@@ -595,6 +615,7 @@ class ObtainHubUI {
 
   async updateApp(repo) {
     if (!(await this.requireToken())) return;
+    if (!confirm('Update "' + repo + '" to the latest release?')) return;
     try {
       const res = await this.api('/apps/update', { method: 'POST', body: { repo: repo } });
       this.showToast('Update complete: ' + repo, 'success');
@@ -606,6 +627,7 @@ class ObtainHubUI {
 
   async checkApp(repo) {
     if (!(await this.requireToken())) return;
+    if (!confirm('Check "' + repo + '" for updates?')) return;
     try {
       const res = await this.api('/apps/check', { method: 'POST', body: { repo: repo } });
       this.showToast('Checked: ' + repo, 'success');
@@ -635,7 +657,7 @@ class ObtainHubUI {
 
   async uninstallApp(repo) {
     if (!(await this.requireToken())) return;
-    if (!confirm('Uninstall ' + repo + '? (stays managed)')) return;
+    if (!confirm('Uninstall "' + repo + '"? (stays managed)')) return;
     try {
       await this.api('/apps/uninstall', { method: 'POST', body: { repo: repo, purge: false } });
       this.showToast('Uninstalled: ' + repo, 'success');
@@ -647,7 +669,7 @@ class ObtainHubUI {
 
   async removeApp(repo) {
     if (!(await this.requireToken())) return;
-    if (!confirm('Remove ' + repo + ' from management?')) return;
+    if (!confirm('Remove "' + repo + '" from management?')) return;
     try {
       await this.api('/apps/' + encodeURIComponent(repo), { method: 'DELETE' });
       this.showToast('App removed: ' + repo, 'success');
@@ -706,7 +728,20 @@ class ObtainHubUI {
   async updateAppForm() { await this.runAppAction('updateForm', '/apps/update', 'POST', 'Update complete'); }
   async uninstallAppForm() { await this.runAppAction('uninstallForm', '/apps/uninstall', 'POST', 'Uninstalled'); }
   async removeAppForm() { await this.runAppAction('removeForm', '/apps/' + encodeURIComponent(document.getElementById('removeRepo').value.trim()), 'DELETE', 'Removed from management'); }
-  async addAppForm() { await this.runAppAction('addForm', '/apps', 'POST', 'Added to management'); }
+  async addAppForm() {
+    const addType = document.getElementById('addType').value;
+    const addRepo = document.getElementById('addRepo').value.trim();
+    if (!addRepo) { this.showToast('Please enter repository/URL/path', 'error'); return; }
+    const body = { repo: addRepo, add_type: addType };
+    try {
+      await this.api('/apps', { method: 'POST', body });
+      document.getElementById('addRepo').value = '';
+      this.showToast('Added to management: ' + addRepo, 'success');
+      this.loadApps();
+    } catch (err) {
+      this.showToast('Failed to add: ' + err.message, 'error');
+    }
+  }
 
   // ---- Config ----
   async loadConfig() {

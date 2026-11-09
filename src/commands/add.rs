@@ -284,6 +284,66 @@ pub async fn execute(args: AddArgs, config: &mut ConfigManager, state: &mut Stat
                 );
             }
         }
+        AddType::Shim => {
+            // Create a single shim for an existing executable.
+            let exe_path = PathBuf::from(&args.repo);
+            if !exe_path.exists() {
+                anyhow::bail!("Executable '{}' does not exist.", args.repo);
+            }
+            if !exe_path.is_file() {
+                anyhow::bail!("'{}' is not a file.", args.repo);
+            }
+
+            let shim_dir = &config.get().shim_dir;
+            fs::create_dir_all(shim_dir)?;
+
+            let exe_name = exe_path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            #[cfg(windows)]
+            {
+                let bat_path = shim_dir.join(format!("{}.bat", exe_name));
+                let bat_content = format!("@echo off\n\"{}\" %*\n", exe_path.display());
+                fs::write(&bat_path, bat_content)?;
+                println!("Created shim: {} -> {}", bat_path.display(), exe_path.display());
+            }
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let sh_path = shim_dir.join(&exe_name);
+                let sh_content = format!("#!/bin/sh\n\"{}\" \"$@\"\n", exe_path.display());
+                fs::write(&sh_path, &sh_content)?;
+                let mut perms = fs::metadata(&sh_path)?.permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&sh_path, perms)?;
+                println!("Created shim: {} -> {}", sh_path.display(), exe_path.display());
+            }
+
+            let metadata = serde_json::json!({
+                "exe_path": exe_path.display().to_string(),
+                "app_type": "shim"
+            });
+
+            state.add_installed(crate::core::state::InstalledRepo {
+                repo: format!("shim/{}", exe_name),
+                version: "unknown".to_string(),
+                install_path: exe_path,
+                installed_at: chrono::Utc::now(),
+                updated_at: None,
+                checksum: None,
+                metadata,
+                previous_version: None,
+                previous_install_path: None,
+                dependencies: Vec::new(),
+                is_dependency: false,
+                ..Default::default()
+            });
+            state.save()?;
+        }
     }
     
     Ok(())

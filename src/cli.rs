@@ -656,6 +656,7 @@ pub enum AddType {
     Github,
     Zip,
     Folder,
+    Shim,
 }
 
 #[derive(Args, Debug)]

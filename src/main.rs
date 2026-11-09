@@ -2,12 +2,45 @@ use clap::Parser;
 use crate::cli::{Cli, Commands};
 use crate::core::{config, state, logger};
 use anyhow::{Context, Result};
+use std::fs;
+use std::process;
 
 mod cli;
 mod core;
 mod commands;
 mod utils;
 mod webui;
+
+/// Check if a process with the given PID is still alive.
+fn is_process_alive(pid: u32) -> bool {
+    if cfg!(windows) {
+        match process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/FI", &format!("PID eq {}", pid)])
+            .output()
+        {
+            Ok(out) => out.status.success(),
+            Err(_) => false,
+        }
+    } else {
+        match process::Command::new("kill").args(["-0", &pid.to_string()]).output() {
+            Ok(out) => out.status.success(),
+            Err(_) => false,
+        }
+    }
+}
+
+/// Open a URL in the default browser.
+fn open_browser(url: &str) {
+    if cfg!(windows) {
+        let _ = process::Command::new("cmd")
+            .args(["/c", "start", "", url])
+            .spawn();
+    } else {
+        let _ = process::Command::new("xdg-open")
+            .args([url])
+            .spawn();
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -60,9 +93,40 @@ async fn main() -> Result<()> {
             let bind_addr: std::net::SocketAddr = format!("{}:{}", args.bind, args.port)
                 .parse()
                 .context("Invalid bind address")?;
+
+            // Single instance: check if ohub WebUI is already running via PID file.
+            let pid_file = dirs::data_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join("ObtainHub")
+                .join("webui.pid");
+            if pid_file.exists() {
+                if let Ok(pid_str) = fs::read_to_string(&pid_file) {
+                    if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                        // Check if process is still alive
+                        if is_process_alive(pid) {
+                            println!("ohub WebUI is already running (PID {}).", pid);
+                            println!("Opening existing WebUI at http://{}...", bind_addr);
+                            let _ = open_browser(&format!("http://{}", bind_addr));
+                            return Ok(());
+                        }
+                    }
+                }
+                // Stale PID file — remove it
+                let _ = fs::remove_file(&pid_file);
+            }
+
+            // Write PID file
+            if let Some(parent) = pid_file.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::write(&pid_file, std::process::id().to_string());
+
             // Start the WebUI server (blocks until shutdown). Browser opens
             // automatically inside run_webui() on the actual listening port.
             let _ = crate::webui::run_webui(bind_addr, config_manager, state_manager, args.auth).await;
+
+            // Clean up PID file on exit
+            let _ = fs::remove_file(&pid_file);
             Ok(())
         }
         Commands::Group(args) => commands::group::execute(args, &mut config_manager, &mut state_manager).await,

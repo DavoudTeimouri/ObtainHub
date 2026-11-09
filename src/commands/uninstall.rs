@@ -72,7 +72,28 @@ pub async fn execute(args: UninstallArgs, config: &mut ConfigManager, state: &mu
             ),
         }
     }
-    
+
+    // Also clean up the download/staging folder for this repo under ObtainHub's data dir.
+    // The install process downloads to <data_dir>/repos/<owner>/<repo> and this
+    // folder is not removed by the app's own uninstaller.
+    if let Some(data_dir) = dirs::data_dir() {
+        let data_dir = data_dir.join("ObtainHub");
+        let repo_parts: Vec<&str> = args.repo.split('/').collect();
+        if repo_parts.len() == 2 {
+            let repo_folder = data_dir.join("repos").join(repo_parts[0]).join(repo_parts[1]);
+            if repo_folder.exists() {
+                match fs::remove_dir_all(&repo_folder) {
+                    Ok(()) => println!("Removed download folder: {}", repo_folder.display()),
+                    Err(e) => eprintln!(
+                        "Could not remove {}: {}",
+                        repo_folder.display(),
+                        e
+                    ),
+                }
+            }
+        }
+    }
+
     // Remove from state
     state.remove_installed(&args.repo);
     state.save()?;

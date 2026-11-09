@@ -24,7 +24,11 @@ static RELEASE_PUBLIC_KEY_B64: std::sync::OnceLock<String> = std::sync::OnceLock
 
 pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &StateManager, retry_config: &RetryConfig) -> Result<()> {
     // Stop the WebUI server if it's running, so the binary can be replaced.
-    stop_webui();
+    // Skip when called in check-only mode (from WebUI "check for updates")
+    // to avoid killing the WebUI server itself.
+    if !args.check_only {
+        stop_webui();
+    }
 
     info!("Checking for self-update");
 

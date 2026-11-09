@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.38] - 2026-11-09
+- FIX: `check_self_update` no longer calls `stop_webui()` in check-only mode — "Check for updates" from WebUI no longer kills the WebUI server.
+- FIX: Single instance enforcement — `ohub webui` checks PID file; if already running, reports PID and opens existing WebUI instead of starting duplicate.
+- FIX: Uninstall now also removes the download/staging folder under `<data_dir>/ObtainHub/repos/<owner>/<repo>`.
+- FEAT: Search results show last release time (`published_at` from GitHub releases API) instead of last commit push time.
+- FEAT: Global loading overlay during any API request; all action buttons disabled while loading to prevent duplicate concurrent requests.
+- FEAT: Add to Management supports `github`, `zip`, `folder`, `shim` types via type selector in WebUI.
+- FEAT: `AddType::Shim` added to CLI — creates a shim wrapper for an existing executable.
+- FEAT: Install/Update/Check/Uninstall/Remove actions show confirmation dialogs in WebUI.
+- FEAT: Help page expanded with full WebUI feature guide (pages, auth, loading, single instance, CLI commands, add types).
+- Various UX polish: "Updated" column → "Last Release" in search results.
+
 ## [v3.0.68-rc.37] - 2026-11-07
 - ROOT CAUSE FIX: `<script type="module">` put app.js in module scope — `const app = new ObtainHubUI()` was NOT attached to `window`, so all inline `onclick="app.checkApp(...)"` handlers threw `ReferenceError: app is not defined`. Fixed by removing `type="module"` and using `window.app = new ObtainHubUI()`.
 - All per-app buttons (Check, Update, Uninstall, Remove), Install, and form actions now have `requireToken()` guards for consistency with `--auth` mode.

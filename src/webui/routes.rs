@@ -257,7 +257,11 @@ pub async fn delete_github_token(
 #[derive(Deserialize)]
 pub struct AppAdd {
     pub repo: String,
+    #[serde(default = "default_add_type")]
+    pub add_type: String,
 }
+
+fn default_add_type() -> String { "github".to_string() }
 
 pub async fn post_app(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
@@ -467,6 +471,7 @@ pub struct RepoItem {
     pub stargazers_count: u32,
     pub language: Option<String>,
     pub updated_at: String,
+    pub published_at: String,
     pub html_url: String,
 }
 
@@ -493,8 +498,9 @@ pub async fn search_repos(
         url.push_str(&format!("+pushed:>={}", year_ago.format("%Y-%m-%d")));
     }
 
+    let token_clone = token.clone();
     let mut req = minreq::get(&url).with_header("User-Agent", crate::core::USER_AGENT);
-    if let Some(t) = token {
+    if let Some(t) = &token_clone {
         req = req.with_header("Authorization", format!("Bearer {t}"));
     }
 
@@ -505,12 +511,58 @@ pub async fn search_repos(
 
     match req.with_timeout(timeout).send() {
         Ok(resp) if resp.status_code == 200 => match resp.json::<SearchResponse>() {
-            Ok(r) => Json(r.items).into_response(),
+            Ok(r) => {
+                // Fetch published_at from releases API for each item
+                // (search API returns pushed_at = last commit, not release publish time)
+                let mut items_with_published = Vec::new();
+                for item in r.items {
+                    let published_at =
+                        fetch_latest_release_published_at(&item.full_name, token_clone.as_deref(), timeout).await;
+                    items_with_published.push(RepoItem {
+                        full_name: item.full_name,
+                        description: item.description,
+                        stargazers_count: item.stargazers_count,
+                        language: item.language,
+                        updated_at: item.updated_at,
+                        published_at,
+                        html_url: item.html_url,
+                    });
+                }
+                Json(items_with_published).into_response()
+            }
             Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Bad GitHub response: {e}")}))).into_response(),
         },
         Ok(resp) if resp.status_code == 403 => (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({"error": "GitHub API rate limited. Add a GitHub token in Configuration → GitHub Token."}))).into_response(),
         Ok(resp) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("GitHub API returned {}", resp.status_code)}))).into_response(),
         Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Search failed: {e}")}))).into_response(),
+    }
+}
+
+/// Fetch the `published_at` timestamp from the latest release of a GitHub repo.
+/// Falls back to the search result's `updated_at` if the release fetch fails.
+async fn fetch_latest_release_published_at(
+    full_name: &str,
+    token: Option<&str>,
+    timeout: u64,
+) -> String {
+    let url = format!("https://api.github.com/repos/{}/releases/latest", full_name);
+    let token_clone = token.clone();
+    let mut req = minreq::get(&url).with_header("User-Agent", crate::core::USER_AGENT);
+    if let Some(t) = &token_clone {
+        req = req.with_header("Authorization", format!("Bearer {t}"));
+    }
+    match req.with_timeout(timeout).send() {
+        Ok(resp) if resp.status_code == 200 => {
+            #[derive(Deserialize)]
+            struct Release {
+                published_at: String,
+            }
+            match resp.json::<Release>() {
+                Ok(r) => r.published_at,
+                Err(_) => String::new(),
+            }
+        }
+        _ => String::new(),
     }
 }
 
@@ -779,9 +831,58 @@ pub async fn doctor(
 
 // ---------- Help ----------
 
-/// Full `ohub --help` text, always in sync with the clap definition. Public.
+/// Full `ohub --help` text plus WebUI feature explanations. Public.
 pub async fn help_text() -> impl IntoResponse {
     use clap::CommandFactory;
-    let text = crate::cli::Cli::command().render_long_help().to_string();
-    ([(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")], text)
+    let cli_help = crate::cli::Cli::command().render_long_help().to_string();
+    let webui_help = r#"
+
+================================================================================
+ObtainHub WebUI — feature guide
+================================================================================
+
+Pages:
+  Dashboard   — Overview: app count, stats, recent activity.
+  Apps        — List/manage installed apps; search GitHub and install new ones.
+               • Installed tab — Check/Update/Uninstall/Remove per app.
+               • Find & Install — Search GitHub repos, see last release time,
+                 install status badge (Installed / –), Install or Manage button.
+               • Sources — Manage package sources (URLs to search).
+  Config      — All config values editable (Install Dir, Proxy, Timeouts,
+                Schedule, etc.). Click Save Changes to PUT /config.
+                GitHub token section — add/remove token for authenticated
+                GitHub API access (higher rate limits, private repos).
+                Read-only info: Groups, Token Source.
+  Downloads   — Active and completed downloads with progress bars, speed, ETA.
+  Help        — This page.
+  Doctor      — System diagnosis (powershell, pwsh, network, paths).
+  State Export— Download full state.json backup.
+  Logs        — Server-side log tail.
+
+Buttons that require authentication (when --auth or GitHub token set):
+  Check, Update, Uninstall, Remove — require a GitHub token.
+  Install from search — no token required.
+
+Loading / concurrency protection:
+  A global loading overlay appears while any request is in flight.
+  All action buttons are disabled during a request to prevent duplicate
+  concurrent submissions.
+
+Single instance:
+  Running "ohub webui" a second time detects the running instance,
+  reports its PID, and opens the existing WebUI in the browser instead
+  of starting a duplicate server.
+
+CLI commands available in WebUI:
+  ohub search, ohub list, ohub check, ohub update, ohub install,
+  ohub uninstall, ohub remove, ohub add, ohub config, ohub doctor,
+  ohub self-update, ohub rollback, ohub source, ohub shim, ohub state.
+
+Add to management types:
+  github  — GitHub repository (owner/repo)
+  zip     — Direct ZIP URL download
+  folder  — Local folder (creates a shim wrapper)
+"#;
+    let full = format!("{}\n{}", cli_help, webui_help);
+    ([(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")], full)
 }
