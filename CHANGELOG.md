@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.42] - 2026-11-09
+- FIX: Add changelog section for v3.0.68-rc.42 tag so GitHub release step finds release notes.
+
 ## [v3.0.68-rc.41] - 2026-11-09
 - FIX: Add changelog section for v3.0.68-rc.41 tag so GitHub release step finds release notes.
 
