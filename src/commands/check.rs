@@ -165,6 +165,15 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
         }
     }
 
+    // Persist update-available info so the WebUI /apps endpoint can show it.
+    for (repo, _old_version, latest_version) in &outdated {
+        if let Some(entry) = state.get_mut().installed.get_mut(repo) {
+            entry.update_available = true;
+            entry.latest_version = Some(latest_version.clone());
+        }
+    }
+    state.save()?;
+
     if args.candidates {
         if !skipped.is_empty() {
             let mut sorted_skipped: Vec<&crate::core::state::InstalledRepo> = skipped.iter().collect();
@@ -288,10 +297,11 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                             previous_install_path: None,
                                             dependencies: Vec::new(),
                                             is_dependency: false,
-                                        };
-                                        state.add_installed(new_repo.clone());
-                                        state.save()?;
-                                        println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+                                            ..Default::default()
+                                            };
+                                            state.add_installed(new_repo.clone());
+                                            state.save()?;
+                                            println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
 
                                         let pb = ProgressBar::new_spinner();
                                         pb.set_style(
@@ -348,10 +358,11 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                                     previous_install_path: None,
                                                     dependencies: Vec::new(),
                                                     is_dependency: false,
-                                                };
-                                                state.add_installed(new_repo.clone());
-                                                state.save()?;
-                                                println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+                                                    ..Default::default()
+                                                    };
+                                                    state.add_installed(new_repo.clone());
+                                                    state.save()?;
+                                                    println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
 
                                                 let pb = ProgressBar::new_spinner();
                                                 pb.set_style(
@@ -441,10 +452,11 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                 previous_install_path: None,
                                 dependencies: Vec::new(),
                                 is_dependency: false,
-                            };
-                            state.add_installed(new_repo.clone());
-                            state.save()?;
-                            println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+                                ..Default::default()
+                                };
+                                state.add_installed(new_repo.clone());
+                                state.save()?;
+                                println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
 
                             let pb = ProgressBar::new_spinner();
                             pb.set_style(
@@ -502,10 +514,11 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                                         previous_install_path: None,
                                         dependencies: Vec::new(),
                                         is_dependency: false,
-                                    };
-                                    state.add_installed(new_repo.clone());
-                                    state.save()?;
-                                    println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
+                                        ..Default::default()
+                                        };
+                                        state.add_installed(new_repo.clone());
+                                        state.save()?;
+                                        println!("Added '{}' (via {}) to managed repositories.", app_name, selected_repo);
 
                                     let pb = ProgressBar::new_spinner();
                                     pb.set_style(
@@ -813,6 +826,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
             dependencies: Vec::new(),
             is_dependency: false,
             uninstaller,
+            ..Default::default()
         });
     }
 
@@ -862,6 +876,7 @@ fn partition_git_hub_managed(
                     .uninstaller
                     .clone()
                     .or_else(|| entry.uninstaller.clone()),
+            ..Default::default()
             });
         } else {
             skipped.push(entry.clone());

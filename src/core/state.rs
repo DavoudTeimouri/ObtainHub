@@ -41,6 +41,12 @@ pub struct InstalledRepo {
     /// uninstall registry. Used by `ohub uninstall` to actually remove the app.
     #[serde(default)]
     pub uninstaller: Option<String>,
+    /// Whether a newer version is available (set by `ohub check`)
+    #[serde(default)]
+    pub update_available: bool,
+    /// Latest version from GitHub releases (set by `ohub check`)
+    #[serde(default)]
+    pub latest_version: Option<String>,
 }
 
 pub struct StateManager {

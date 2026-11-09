@@ -520,7 +520,7 @@ class ObtainHubUI {
         const statusClass = 'status-' + (app.status || 'unknown').toLowerCase();
         const repo = this.escapeHtml(app.repo);
         const updateBadge = app.update_available
-          ? '<span class="badge badge-update">Update available</span>'
+          ? '<span class="badge badge-update">Update available → v' + this.escapeHtml(app.latest_version || '') + '</span>'
           : '<span class="badge badge-neutral">-</span>';
         tr.innerHTML =
           '<td><code>' + repo + '</code></td>' +

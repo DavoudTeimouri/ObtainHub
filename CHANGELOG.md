@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.46] - 2026-11-09
+- FIX: `list_apps()` now reads `update_available` and `latest_version` from state instead of hardcoding `false` — WebUI update column shows actual new version (e.g. "Update available → v2.5.0").
+- FIX: `ohub check` persists `update_available: true` and `latest_version` to state for each outdated app.
+- FIX: `ohub update` clears `update_available` and bumps `version` in state after a successful update.
+- FEAT: Frontend update badge shows the new version number (e.g. "Update available → v2.5.0").
+
 ## [v3.0.68-rc.45] - 2026-11-09
 - FIX: Changelog section for v3.0.68-rc.45 tag matches the pushed tag.
 

@@ -259,6 +259,13 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                 let selected_asset = select_installer_asset(&release, &args.arch, args.quiet)?;
                 match install_release(repo_name, &latest_version, &release, token, config, state, Some(selected_asset), args.quiet, Some(current_version.to_string()), &args.arch).await {
                     Ok(_) => {
+                        // Clear update-available flag and bump version in state.
+                        if let Some(entry) = state.get_mut().installed.get_mut(repo_name) {
+                            entry.version = latest_version.clone();
+                            entry.update_available = false;
+                            entry.latest_version = None;
+                            entry.updated_at = Some(chrono::Utc::now());
+                        }
                         updated.push((repo_name.clone(), current_version.clone(), latest_version.clone()));
                         reporter.say(&format!("  Updated to {}", latest_version));
                     }
@@ -602,6 +609,7 @@ pub(crate) async fn install_release(
         dependencies: Vec::new(),
         is_dependency: false,
         uninstaller: detected_uninstaller,
+        ..Default::default()
     };
     state.add_installed(new_repo.clone());
     state.save()?;

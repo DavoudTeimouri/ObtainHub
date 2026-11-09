@@ -30,6 +30,7 @@ pub struct AppInfo {
     pub updated_at: Option<String>,
     pub status: String,
     pub update_available: bool,
+    pub latest_version: Option<String>,
 }
 
 /// List all managed applications.
@@ -48,7 +49,8 @@ pub async fn list_apps(
             installed_at: app.installed_at.to_rfc3339(),
             updated_at: app.updated_at.map(|dt| dt.to_rfc3339()),
             status: "installed".to_string(),
-            update_available: false,
+            update_available: app.update_available,
+            latest_version: app.latest_version.clone(),
         }
     }).collect();
     Json(apps)
@@ -292,6 +294,7 @@ pub async fn post_app(
         dependencies: Vec::new(),
         is_dependency: false,
         uninstaller: None,
+        ..Default::default()
     };
     state_manager.add_installed(installed);
 
