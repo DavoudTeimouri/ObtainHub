@@ -29,6 +29,14 @@ fn is_process_alive(pid: u32) -> bool {
     }
 }
 
+/// Write PID file, ignoring errors (best-effort single-instance guard).
+fn write_pid_file(pid_file: &std::path::Path) {
+    if let Some(parent) = pid_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(pid_file, std::process::id().to_string());
+}
+
 /// Open a URL in the default browser.
 fn open_browser(url: &str) {
     if cfg!(windows) {
@@ -106,7 +114,7 @@ async fn main() -> Result<()> {
                         if is_process_alive(pid) {
                             println!("ohub WebUI is already running (PID {}).", pid);
                             println!("Opening existing WebUI at http://{}...", bind_addr);
-                            let _ = open_browser(&format!("http://{}", bind_addr));
+                            open_browser(&format!("http://{}", bind_addr));
                             return Ok(());
                         }
                     }
@@ -116,10 +124,7 @@ async fn main() -> Result<()> {
             }
 
             // Write PID file
-            if let Some(parent) = pid_file.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            let _ = fs::write(&pid_file, std::process::id().to_string());
+            write_pid_file(&pid_file);
 
             // Start the WebUI server (blocks until shutdown). Browser opens
             // automatically inside run_webui() on the actual listening port.

@@ -258,6 +258,7 @@ pub async fn delete_github_token(
 pub struct AppAdd {
     pub repo: String,
     #[serde(default = "default_add_type")]
+    #[allow(dead_code)]
     pub add_type: String,
 }
 
@@ -498,7 +499,7 @@ pub async fn search_repos(
         url.push_str(&format!("+pushed:>={}", year_ago.format("%Y-%m-%d")));
     }
 
-    let token_clone = token.clone();
+    let token_clone = token;
     let mut req = minreq::get(&url).with_header("User-Agent", crate::core::USER_AGENT);
     if let Some(t) = &token_clone {
         req = req.with_header("Authorization", format!("Bearer {t}"));
@@ -546,7 +547,7 @@ async fn fetch_latest_release_published_at(
     timeout: u64,
 ) -> String {
     let url = format!("https://api.github.com/repos/{}/releases/latest", full_name);
-    let token_clone = token.clone();
+    let token_clone = token;
     let mut req = minreq::get(&url).with_header("User-Agent", crate::core::USER_AGENT);
     if let Some(t) = &token_clone {
         req = req.with_header("Authorization", format!("Bearer {t}"));
