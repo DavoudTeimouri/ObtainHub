@@ -1322,6 +1322,41 @@ body.locked main .page .btn-danger {
   }
 }
 
+/* ---------- Help multi-page ---------- */
+.help-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border, #ddd);
+  padding-bottom: 8px;
+}
+.help-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--muted-foreground, #666);
+  transition: all 0.15s;
+}
+.help-tab.active {
+  color: var(--accent, #3b82f6);
+  border-bottom-color: var(--accent, #3b82f6);
+  font-weight: 600;
+}
+.help-tab:hover {
+  background: var(--accent-soft, #eef6ff);
+  color: var(--accent, #3b82f6);
+}
+.help-page {
+  display: none;
+}
+.help-page.active {
+  display: block;
+}
+
 /* ---------- Loading overlay ---------- */
 .loading-overlay {
   display: none;

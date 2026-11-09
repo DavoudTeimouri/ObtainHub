@@ -10,7 +10,7 @@
   <meta http-equiv="Expires" content="0">
   <title>ObtainHub WebUI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.47">
+  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.48">
 </head>
 <body>
   <div class="app">
@@ -97,7 +97,7 @@
           <span style="color:var(--text-muted); font-size:11px;">Sign in required for changes — use Login, or add a GitHub token in Configuration.</span>
         </div>
         <div class="footer-panel">
-          <div class="footer-version" id="versionBadge">v3.0.68-rc.47</div>
+          <div class="footer-version" id="versionBadge">v3.0.68-rc.48</div>
           <div class="footer-copyright">© 2026 ObtainHub</div>
         </div>
       </div>
@@ -567,43 +567,200 @@
         </div>
       </section>
 
+      <!-- Help: multi-page guide -->
       <section class="page" id="page-help">
         <div class="page-header">
-          <p class="page-subtitle">ohub CLI usage — same commands the WebUI drives. Full docs: <a href="https://github.com/DavoudTeimouri/ObtainHub#readme" target="_blank" rel="noopener">README</a></p>
+          <p class="page-subtitle">ObtainHub WebUI — complete user guide. Pick a topic below.</p>
         </div>
-        <div class="card">
-          <div class="card-header">
-            <h3>Quick reference</h3>
+
+        <!-- Help sub-tabs -->
+        <div class="help-tabs" id="helpTabs">
+          <button class="help-tab active" data-help-tab="getting-started" onclick="app.showHelpTab('getting-started', this)">Getting Started</button>
+          <button class="help-tab" data-help-tab="apps" onclick="app.showHelpTab('apps', this)">Apps Page</button>
+          <button class="help-tab" data-help-tab="config" onclick="app.showHelpTab('config', this)">Config Page</button>
+          <button class="help-tab" data-help-tab="downloads" onclick="app.showHelpTab('downloads', this)">Downloads Page</button>
+          <button class="help-tab" data-help-tab="auth" onclick="app.showHelpTab('auth', this)">Authentication</button>
+          <button class="help-tab" data-help-tab="doctor" onclick="app.showHelpTab('doctor', this)">Doctor / State / Logs</button>
+          <button class="help-tab" data-help-tab="cli" onclick="app.showHelpTab('cli', this)">CLI Reference</button>
+          <button class="help-tab" data-help-tab="troubleshooting" onclick="app.showHelpTab('troubleshooting', this)">Troubleshooting</button>
+        </div>
+
+        <!-- Page: Getting Started -->
+        <div class="help-page active" id="helpPage-getting-started">
+          <div class="card">
+            <div class="card-header"><h3>What is ObtainHub WebUI?</h3></div>
+            <div class="card-body">
+              <p>ObtainHub WebUI is a browser-based interface for the <code>ohub</code> command-line tool. It lets you manage installed applications, check for updates, install new software from GitHub, configure settings, and view downloads — all without touching the terminal.</p>
+              <p><strong>Start the WebUI:</strong> <code>ohub webui</code> — your browser opens automatically at <code>http://127.0.0.1:8080</code> (or the port shown in your terminal).</p>
+              <p><strong>Port already in use?</strong> ohub picks the next free port (8081, 8082, …). A second <code>ohub webui</code> detects the running instance and opens the existing one instead of starting a duplicate.</p>
+            </div>
           </div>
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead><tr><th>Command</th><th>Description</th><th>WebUI equivalent</th></tr></thead>
-              <tbody>
-                <tr><td><code>ohub search &lt;query&gt;</code></td><td>Search GitHub repositories</td><td>Apps → Search & Install</td></tr>
-                <tr><td><code>ohub install &lt;owner/repo&gt;</code></td><td>Download and install a release</td><td>Apps → Install button</td></tr>
-                <tr><td><code>ohub list</code></td><td>List managed applications</td><td>Apps → Managed Apps</td></tr>
-                <tr><td><code>ohub check [repo]</code></td><td>Check for updates</td><td>Apps → Check for Updates</td></tr>
-                <tr><td><code>ohub update [repo]</code></td><td>Update installed software</td><td>Apps → Update Software</td></tr>
-                <tr><td><code>ohub uninstall &lt;repo&gt;</code></td><td>Uninstall software</td><td>Apps → Uninstall</td></tr>
-                <tr><td><code>ohub remove &lt;repo&gt;</code></td><td>Stop managing a repo</td><td>Apps → Remove from Management</td></tr>
-                <tr><td><code>ohub add &lt;repo&gt;</code></td><td>Add repo to management</td><td>Apps → Add to Management</td></tr>
-                <tr><td><code>ohub source add/list/remove</code></td><td>Manage manifest sources</td><td>Apps → Sources</td></tr>
-                <tr><td><code>ohub config</code></td><td>Show/edit configuration</td><td>Config page</td></tr>
-                <tr><td><code>ohub webui [--auth] [--port N]</code></td><td>Start this WebUI</td><td>—</td></tr>
-                <tr><td><code>ohub self-update</code></td><td>Update ohub itself</td><td>—</td></tr>
-                <tr><td><code>ohub doctor</code></td><td>Diagnose environment</td><td>Doctor page</td></tr>
-                <tr><td><code>ohub schedule</code></td><td>Scheduled update checks</td><td>Config → Schedule</td></tr>
-                <tr><td><code>ohub state export</code></td><td>Export state.json</td><td>State Export page</td></tr>
-                <tr><td><code>ohub log</code></td><td>View schedule log</td><td>Logs page</td></tr>
-              </tbody>
-            </table>
+          <div class="card">
+            <div class="card-header"><h3>Navigation</h3></div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr><th>Page</th><th>What it does</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Apps</strong></td><td>List managed apps, check/update/uninstall/remove each one, search GitHub and install new apps, manage sources, add to management.</td></tr>
+                  <tr><td><strong>Config</strong></td><td>Edit all configuration values (install dir, proxy, timeouts, schedule, etc.) and save changes. Manage GitHub token.</td></tr>
+                  <tr><td><strong>Downloads</strong></td><td>View active and completed downloads with progress bars, speed, and ETA.</td></tr>
+                  <tr><td><strong>Help</strong></td><td>This guide.</td></tr>
+                  <tr><td><strong>Doctor</strong></td><td>Diagnose the environment (powershell, pwsh, network, paths).</td></tr>
+                  <tr><td><strong>State Export</strong></td><td>Download a full <code>state.json</code> backup.</td></tr>
+                  <tr><td><strong>Logs</strong></td><td>View server-side log tail.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-        <div class="card">
-          <div class="card-header">
-            <h3><code>ohub --help</code></h3>
+
+        <!-- Page: Apps -->
+        <div class="help-page" id="helpPage-apps">
+          <div class="card">
+            <div class="card-header"><h3>Apps Page</h3></div>
+            <div class="card-body">
+              <p>The Apps page has sub-tabs for each action:</p>
+              <table class="data-table">
+                <thead><tr><th>Sub-tab</th><th>What it does</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Managed Apps</strong></td><td>Lists every app under ObtainHub management. Shows version, status, and whether an update is available. Per-app buttons: Check, Update, Uninstall, Remove.</td></tr>
+                  <tr><td><strong>Find &amp; Install</strong></td><td>Search GitHub repositories. Shows stars, language, last release time, and install status badge (Installed / –). Install or Manage button per result. Results are sortable by stars.</td></tr>
+                  <tr><td><strong>Sources</strong></td><td>Manage manifest sources (URLs to search for packages). Add or remove sources.</td></tr>
+                  <tr><td><strong>Add to Management</strong></td><td>Register an existing app under ObtainHub management. Choose type: GitHub repository, ZIP archive URL, Local folder (scans for executables), or Single executable (creates a shim).</td></tr>
+                </tbody>
+              </table>
+              <p><strong>Update badge:</strong> If <code>ohub check</code> found a newer release, the Update column shows <span class="badge badge-update">Update available → v2.5.0</span> with the new version number. Run "Check All Updates" to refresh.</p>
+            </div>
           </div>
-          <pre class="help-pre" id="helpText">Loading...</pre>
+        </div>
+
+        <!-- Page: Config -->
+        <div class="help-page" id="helpPage-config">
+          <div class="card">
+            <div class="card-header"><h3>Config Page</h3></div>
+            <div class="card-body">
+              <p>All configuration values are editable:</p>
+              <ul>
+                <li><strong>Install Dir</strong>, <strong>Download Dir</strong>, <strong>Shim Dir</strong> — filesystem paths</li>
+                <li><strong>Proxy</strong> — HTTP proxy URL</li>
+                <li><strong>HTTP Retries</strong>, <strong>Retry Delay (ms)</strong>, <strong>Retry Backoff</strong> — network retry behavior</li>
+                <li><strong>Bandwidth Limit (B/s)</strong> — download speed cap</li>
+                <li><strong>Parallel Downloads</strong>, <strong>Timeout (s)</strong> — concurrency and timeouts</li>
+                <li><strong>Auto Cleanup</strong>, <strong>Verify Checksums</strong> — checkboxes</li>
+                <li><strong>Schedule Enabled</strong>, <strong>Interval (h)</strong>, <strong>Notify on Update</strong>, <strong>Run on Startup</strong> — scheduled checks</li>
+                <li><strong>Update Check Interval (h)</strong> — how often to check for updates</li>
+              </ul>
+              <p>Click <strong>Save Changes</strong> to send <code>PUT /config</code> and persist your edits.</p>
+              <p><strong>Read-only sections:</strong> Groups and Token Source are shown as plain text (not editable).</p>
+              <p><strong>GitHub Token:</strong> Add a token for authenticated GitHub API access (higher rate limits, access to private repos). Configured token shows as green.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page: Downloads -->
+        <div class="help-page" id="helpPage-downloads">
+          <div class="card">
+            <div class="card-header"><h3>Downloads Page</h3></div>
+            <div class="card-body">
+              <p>Shows active and completed downloads with:</p>
+              <ul>
+                <li>Download ID and URL</li>
+                <li>Status badge (pending / completed / failed)</li>
+                <li>Progress bar with percentage</li>
+                <li>Bytes downloaded / total</li>
+                <li>Transfer speed and ETA</li>
+              </ul>
+              <p>The page auto-refreshes every 2 seconds while you're on it. Use the Download form to start a new manual download (URL, destination, optional label and token).</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page: Auth -->
+        <div class="help-page" id="helpPage-auth">
+          <div class="card">
+            <div class="card-header"><h3>Authentication</h3></div>
+            <div class="card-body">
+              <p>When ohub is started with <code>--auth</code>, the WebUI requires a GitHub token before mutating actions (Check, Update, Uninstall, Remove, Config save).</p>
+              <ul>
+                <li><strong>Sign in as current user:</strong> Uses Windows admin credentials via PowerShell.</li>
+                <li><strong>Use GitHub token:</strong> Paste a personal access token. Token is stored in config and shown as configured (green).</li>
+                <li><strong>Remove token:</strong> Clears the stored token and locks mutating actions again.</li>
+              </ul>
+              <p>If PowerShell is unavailable on your machine, use the GitHub token instead: <code>ohub config set github_token &lt;token&gt;</code></p>
+              <p>When auth is not required (no <code>--auth</code> and no token configured), all pages and actions are unlocked.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page: Doctor / State / Logs -->
+        <div class="help-page" id="helpPage-doctor">
+          <div class="card">
+            <div class="card-header"><h3>Doctor / State Export / Logs</h3></div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Doctor</strong></td><td>Runs system diagnosis: checks for powershell/pwsh, network connectivity, install paths, and configuration. Click "Run Diagnosis" to see results.</td></tr>
+                  <tr><td><strong>State Export</strong></td><td>Downloads a full <code>state.json</code> backup containing all managed apps, config, and sources.</td></tr>
+                  <tr><td><strong>Logs</strong></td><td>Shows the server-side log tail for debugging.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page: CLI Reference -->
+        <div class="help-page" id="helpPage-cli">
+          <div class="card">
+            <div class="card-header"><h3>CLI Reference</h3></div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr><th>Command</th><th>Description</th><th>WebUI equivalent</th></tr></thead>
+                <tbody>
+                  <tr><td><code>ohub search &lt;query&gt;</code></td><td>Search GitHub repositories</td><td>Apps → Find &amp; Install</td></tr>
+                  <tr><td><code>ohub install &lt;owner/repo&gt;</code></td><td>Download and install a release</td><td>Apps → Install button</td></tr>
+                  <tr><td><code>ohub list</code></td><td>List managed applications</td><td>Apps → Managed Apps</td></tr>
+                  <tr><td><code>ohub check [repo]</code></td><td>Check for updates</td><td>Apps → Check for Updates</td></tr>
+                  <tr><td><code>ohub update [repo]</code></td><td>Update installed software</td><td>Apps → Update Software</td></tr>
+                  <tr><td><code>ohub uninstall &lt;repo&gt;</code></td><td>Uninstall software</td><td>Apps → Uninstall</td></tr>
+                  <tr><td><code>ohub remove &lt;repo&gt;</code></td><td>Stop managing a repo</td><td>Apps → Remove from Management</td></tr>
+                  <tr><td><code>ohub add &lt;repo&gt;</code></td><td>Add repo to management</td><td>Apps → Add to Management</td></tr>
+                  <tr><td><code>ohub source add/list/remove</code></td><td>Manage manifest sources</td><td>Apps → Sources</td></tr>
+                  <tr><td><code>ohub config</code></td><td>Show/edit configuration</td><td>Config page</td></tr>
+                  <tr><td><code>ohub webui [--auth] [--port N]</code></td><td>Start this WebUI</td><td>—</td></tr>
+                  <tr><td><code>ohub self-update</code></td><td>Update ohub itself</td><td>—</td></tr>
+                  <tr><td><code>ohub doctor</code></td><td>Diagnose environment</td><td>Doctor page</td></tr>
+                  <tr><td><code>ohub schedule</code></td><td>Scheduled update checks</td><td>Config → Schedule</td></tr>
+                  <tr><td><code>ohub state export</code></td><td>Export state.json</td><td>State Export page</td></tr>
+                  <tr><td><code>ohub log</code></td><td>View schedule log</td><td>Logs page</td></tr>
+                </tbody>
+              </table>
+              <p>Full CLI help is also available via <code>ohub --help</code> in your terminal.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page: Troubleshooting -->
+        <div class="help-page" id="helpPage-troubleshooting">
+          <div class="card">
+            <div class="card-header"><h3>Troubleshooting</h3></div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr><th>Problem</th><th>Solution</th></tr></thead>
+                <tbody>
+                  <tr><td>Browser doesn't open automatically</td><td>Open <code>http://127.0.0.1:8080</code> manually (or the port shown in terminal). A second instance points to the running one.</td></tr>
+                  <tr><td>"Check all managed apps" fails with "Failed to load config"</td><td>Run "Check All Updates" again. The endpoint is public; if auth is required, add a GitHub token first.</td></tr>
+                  <tr><td>Update column always shows "-"</td><td>Run "Check All Updates" to populate update_available state. New version appears as "Update available → vX.Y.Z".</td></tr>
+                  <tr><td>Install button does nothing</td><td>Confirm the action in the dialog. Check the loading overlay — requests are serialized to prevent duplicates.</td></tr>
+                  <tr><td>Uninstall reports success but app remains</td><td>ohub now removes the download/staging folder after uninstall. Some installers leave files behind; remove them manually if needed.</td></tr>
+                  <tr><td>Config fields are locked</td><td>ohub is running with <code>--auth</code> and you don't have a token. Sign in or add a GitHub token.</td></tr>
+                  <tr><td>Login fails with "PowerShell is not available"</td><td>Use "Use GitHub token" instead, or run <code>ohub config set github_token &lt;token&gt;</code>.</td></tr>
+                  <tr><td>"ohub webui" won't start — another instance running</td><td>ohub reports the existing PID and opens the existing WebUI URL in your browser.</td></tr>
+                </tbody>
+              </table>
+              <p>Still stuck? Run <code>ohub doctor</code> from the Doctor page, or export state via State Export and file an issue at <a href="https://github.com/DavoudTeimouri/ObtainHub/issues" target="_blank" rel="noopener">GitHub Issues</a>.</p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -710,6 +867,6 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="/static/app.js?v=3.0.68-rc.47"></script>
+  <script src="/static/app.js?v=3.0.68-rc.48"></script>
 </body>
 </html>

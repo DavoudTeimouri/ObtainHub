@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.48] - 2026-11-09
+- FEAT: Help page is now multi-page with sub-tabs: Getting Started, Apps Page, Config Page, Downloads Page, Authentication, Doctor / State / Logs, CLI Reference, Troubleshooting.
+- Help content is pure HTML (no more `/help` text fetch). Each page explains what the page does, how to use it, and common troubleshooting.
+
 ## [v3.0.68-rc.47] - 2026-11-09
 - FIX: Cancelled update no longer marks app as upgraded — `install_release` returns error if installer didn't register a new install (`detected_install_dir` is None for .exe/.msi), so `update_available` stays true and version isn't bumped.
 - FIX: Add confirmation dialog to "Update" form action (was missing — only per-app buttons had it).

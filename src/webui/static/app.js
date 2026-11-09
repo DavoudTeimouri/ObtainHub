@@ -1005,13 +1005,25 @@ class ObtainHubUI {
 
   // ---- Help ----
   async loadHelp() {
+    // Help content is now pure HTML (multi-page guide). Nothing to fetch.
     const el = document.getElementById('helpText');
-    if (!el || el.dataset.loaded) return;
-    try {
-      el.textContent = await this.api('/help');
-      el.dataset.loaded = '1';
-    } catch (err) {
-      el.textContent = 'Failed to load help: ' + err.message;
+    if (el) el.style.display = 'none';
+    this.showHelpTab('getting-started', null);
+  }
+
+  showHelpTab(tabName, btnEl) {
+    // Hide all help pages
+    document.querySelectorAll('.help-page').forEach(p => p.classList.remove('active'));
+    // Deactivate all tabs
+    document.querySelectorAll('.help-tab').forEach(t => t.classList.remove('active'));
+    // Show selected page
+    const page = document.getElementById('helpPage-' + tabName);
+    if (page) page.classList.add('active');
+    // Activate selected tab
+    if (btnEl) btnEl.classList.add('active');
+    else {
+      const defaultBtn = document.querySelector('.help-tab[data-help-tab="' + tabName + '"]');
+      if (defaultBtn) defaultBtn.classList.add('active');
     }
   }
 
