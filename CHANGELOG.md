@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.50] - 2026-11-09
+- FIX: Clippy clean — removed duplicate CandidateInfo struct, replaced &[e.clone()] with std::slice::from_ref(e).
+
 ## [v3.0.68-rc.49] - 2026-11-09
 - FEAT: "Detect Installed" sub-tab — scans Windows registry for unmanaged software and suggests matching GitHub repos (ohub check --candidates via WebUI). Select a candidate repo and click Add to bring it under ObtainHub management.
 - FEAT: `ohub add` now auto-detects installed software from the Windows uninstall registry — version, install path, and uninstaller are populated automatically instead of placeholders.
