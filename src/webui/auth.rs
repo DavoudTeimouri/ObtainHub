@@ -59,9 +59,10 @@ pub async fn auth_middleware(
         return Ok(next.run(request).await);
     }
 
-    // Without --auth and without a configured token, the server is in open
-    // bootstrap mode until the first token is saved.
-    if !state.auth_enabled && configured_token.is_none() {
+    // Without --auth, allow all requests. A configured GitHub token is just
+    // an optional Bearer credential for GitHub API calls, not an auth
+    // requirement for the WebUI itself.
+    if !state.auth_enabled {
         return Ok(next.run(request).await);
     }
 

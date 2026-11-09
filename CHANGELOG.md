@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.35] - 2026-11-07
+- Auth middleware fixed: without `--auth`, ALL WebUI requests pass through
+  regardless of whether a GitHub token is configured. Previously, a configured
+  token caused all protected API calls (Check, Update, Uninstall, Remove,
+  Install) to return 401 without a session token, making buttons appear broken.
+  A configured GitHub token is now only an optional Bearer credential for
+  GitHub API calls, not a WebUI auth requirement.
+- `auth_required` reverted to `--auth` only: UI fields lock only when `--auth`
+  is set, not when a token merely exists in config.
+
 ## [v3.0.68-rc.34] - 2026-11-07
 - Per-app buttons fixed: `applyLock()` no longer disables `.action-btn`
   (Check/Update/Uninstall/Remove per-app). Buttons stay enabled so the

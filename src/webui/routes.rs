@@ -113,11 +113,9 @@ pub async fn get_config(
         groups: config.groups.keys().cloned().collect(),
         token_source,
         has_token: config_manager.github_token().is_some(),
-        // UI locks until sign-in when --auth is set OR a token already exists.
-        // A configured GitHub token is an alternative Bearer credential; the
-        // WebUI stays usable (token sent as Authorization: Bearer on writes)
-        // but mutating actions require a session.
-        auth_required: app_state.auth_enabled || config_manager.github_token().is_some(),
+        // UI locks until sign-in only when --auth is set. A configured GitHub
+        // token is an alternative Bearer credential, not a UI lock.
+        auth_required: app_state.auth_enabled,
     })
 }
 
