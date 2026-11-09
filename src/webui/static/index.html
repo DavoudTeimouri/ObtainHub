@@ -10,7 +10,7 @@
   <meta http-equiv="Expires" content="0">
   <title>ObtainHub WebUI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.48">
+  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.49">
 </head>
 <body>
   <div class="app">
@@ -97,7 +97,7 @@
           <span style="color:var(--text-muted); font-size:11px;">Sign in required for changes — use Login, or add a GitHub token in Configuration.</span>
         </div>
         <div class="footer-panel">
-          <div class="footer-version" id="versionBadge">v3.0.68-rc.48</div>
+          <div class="footer-version" id="versionBadge">v3.0.68-rc.49</div>
           <div class="footer-copyright">© 2026 ObtainHub</div>
         </div>
       </div>
@@ -177,9 +177,7 @@
           <button class="subtab active" data-apps-tab="list" type="button">Managed Apps</button>
           <button class="subtab" data-apps-tab="search" type="button">Search & Install</button>
           <button class="subtab" data-apps-tab="check" type="button">Check for Updates</button>
-          <button class="subtab" data-apps-tab="update" type="button">Update Software</button>
-          <button class="subtab" data-apps-tab="uninstall" type="button">Uninstall</button>
-          <button class="subtab" data-apps-tab="remove" type="button">Remove from Management</button>
+          <button class="subtab" data-apps-tab="candidates" type="button">Detect Installed</button>
           <button class="subtab" data-apps-tab="add" type="button">Add to Management</button>
           <button class="subtab" data-apps-tab="sources" type="button">Sources</button>
         </div>
@@ -299,78 +297,30 @@
         </div>
         </div>
 
-        <!-- Update Software -->
-        <div class="apps-panel" id="appsTab-update">
+        <!-- Detect Installed: ohub check --candidates -->
+        <div class="apps-panel" id="appsTab-candidates">
         <div class="card">
-          <div class="card-header"><h3>Update Software</h3></div>
-          <form class="download-form" id="updateForm">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="updateRepo">Repository (owner/repo)</label>
-                <input type="text" id="updateRepo" placeholder="owner/repo">
-              </div>
-              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="updatePrerelease"> Include pre-releases</label></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="updateYes"> Assume yes</label></div>
-              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="updateForce"> Force reinstall</label></div>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary" id="updateBtn">Update</button>
-              <button type="button" class="btn btn-secondary" id="clearUpdateResult">Clear</button>
-            </div>
-          </form>
-          <div class="table-wrapper hidden" id="updateResultWrap">
-            <div class="card-header"><h3>Result</h3></div>
-            <pre id="updateResult"></pre>
+          <div class="card-header">
+            <h3>Detect Installed Software</h3>
+            <p class="page-subtitle">Scans Windows registry for installed apps not yet managed by ObtainHub, and suggests matching GitHub repositories.</p>
           </div>
-        </div>
-        </div>
-
-        <!-- Uninstall -->
-        <div class="apps-panel" id="appsTab-uninstall">
-        <div class="card">
-          <div class="card-header"><h3>Uninstall</h3></div>
-          <form class="download-form" id="uninstallForm">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="uninstallRepo">Repository (owner/repo)</label>
-                <input type="text" id="uninstallRepo" placeholder="owner/repo">
-              </div>
-              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="uninstallPurge"> Purge install directory</label></div>
-              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="uninstallYes"> Assume yes</label></div>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary btn-danger" id="uninstallBtn">Uninstall</button>
-              <button type="button" class="btn btn-secondary" id="clearUninstallResult">Clear</button>
-            </div>
-          </form>
-          <div class="table-wrapper hidden" id="uninstallResultWrap">
-            <div class="card-header"><h3>Result</h3></div>
-            <pre id="uninstallResult"></pre>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="candidatesBtn">Scan for Installed Apps</button>
+            <button class="btn btn-secondary" id="clearCandidatesResult">Clear</button>
           </div>
-        </div>
-        </div>
-
-        <!-- Remove from Management -->
-        <div class="apps-panel" id="appsTab-remove">
-        <div class="card">
-          <div class="card-header"><h3>Remove from Management</h3></div>
-          <form class="download-form" id="removeForm">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="removeRepo">Repository (owner/repo)</label>
-                <input type="text" id="removeRepo" placeholder="owner/repo">
-              </div>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary btn-danger" id="removeBtn">Remove from management</button>
-              <button type="button" class="btn btn-secondary" id="clearRemoveResult">Clear</button>
-            </div>
-          </form>
-          <div class="table-wrapper hidden" id="removeResultWrap">
-            <div class="card-header"><h3>Result</h3></div>
-            <pre id="removeResult"></pre>
+          <div class="table-wrapper hidden" id="candidatesResultWrap">
+            <table class="data-table" id="candidatesTable">
+              <thead>
+                <tr>
+                  <th>Installed App</th>
+                  <th>Version</th>
+                  <th>Install Path</th>
+                  <th>Candidate Repositories</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="candidatesTableBody"></tbody>
+            </table>
           </div>
         </div>
         </div>
@@ -867,6 +817,6 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="/static/app.js?v=3.0.68-rc.48"></script>
+  <script src="/static/app.js?v=3.0.68-rc.49"></script>
 </body>
 </html>

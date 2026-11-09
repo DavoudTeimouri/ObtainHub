@@ -54,8 +54,27 @@ pub async fn execute(args: UninstallArgs, config: &mut ConfigManager, state: &mu
     // Run the app's own uninstaller if its installer registered one.
     // This is what actually removes third-party apps from Program Files.
     if let Some(uninstaller) = &entry.uninstaller {
-        match crate::core::run_uninstaller(uninstaller) {
-            Ok(true) => println!("Ran uninstaller: {}", uninstaller),
+        match crate::core::run_uninstaller(uninstaller, args.interactive) {
+            Ok(true) => {
+                // After running the uninstaller, check if the app is still
+                // detected in the Windows uninstall registry. If it is, the
+                // user cancelled or the uninstaller didn't actually remove
+                // anything — don't mark it as uninstalled.
+                let still_installed = crate::core::winreg::scan_uninstall_entries()
+                    .iter()
+                    .any(|e| crate::core::winreg::find_entry_for_repo(
+                        &[e.clone()],
+                        &args.repo,
+                        Some(&entry.version),
+                    ).is_some());
+                if still_installed {
+                    return Err(anyhow::anyhow!(
+                        "Uninstall was cancelled or did not complete — {} is still installed",
+                        args.repo
+                    ));
+                }
+                println!("Ran uninstaller: {}", uninstaller);
+            }
             Ok(false) => println!("Registered uninstaller not runnable: {}", uninstaller),
             Err(e) => eprintln!("Uninstaller failed: {}", e),
         }

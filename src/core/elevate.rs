@@ -78,14 +78,17 @@ pub fn run_installer(installer_path: &Path) -> Result<()> {
 /// - `MsiExec.exe /I{GUID}`             (MSI - needs `/X` to uninstall)
 /// - `"C:\...\uninstall.exe" /I`        (Burn bundle - needs `/X`)
 ///
+/// When `interactive` is true, silent flags (`/S`, `/qn`) are omitted so the
+/// user sees the uninstaller UI and can cancel.
+///
 /// Returns false when the string does not describe something we can run.
-pub fn run_uninstaller(uninstall_string: &str) -> Result<bool> {
+pub fn run_uninstaller(uninstall_string: &str, interactive: bool) -> Result<bool> {
     let s = uninstall_string.trim();
     if s.is_empty() {
         return Ok(false);
     }
 
-    // MSI: "MsiExec.exe /I{GUID}" -> "msiexec.exe /X{GUID} /qn"
+    // MSI: "MsiExec.exe /I{GUID}" -> "msiexec.exe /X{GUID} [/qn]"
     let lower = s.to_lowercase();
     if lower.contains("msiexec") {
         let guid = s
@@ -96,8 +99,9 @@ pub fn run_uninstaller(uninstall_string: &str) -> Result<bool> {
             return Ok(false);
         }
         let mode = "/X";
+        let silent = if interactive { "" } else { " /qn /norestart" };
         let body = format!(
-            "Start-Process 'msiexec.exe' -ArgumentList '{mode}{} /qn /norestart' -Verb RunAs -Wait",
+            "Start-Process 'msiexec.exe' -ArgumentList '{mode}{}{silent}' -Verb RunAs -Wait",
             guid.trim_start_matches('/').trim_start_matches('I')
         );
         run_elevated(&body)?;
@@ -126,7 +130,9 @@ pub fn run_uninstaller(uninstall_string: &str) -> Result<bool> {
         }
     }
     // NSIS uninstallers take /S for silent; Burn takes /X only.
-    let arg_str = if args.is_empty() {
+    let arg_str = if interactive {
+        args.join(" ")
+    } else if args.is_empty() {
         "/S".to_string()
     } else {
         args.join(" ")

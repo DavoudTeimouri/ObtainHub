@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.49] - 2026-11-09
+- FEAT: "Detect Installed" sub-tab — scans Windows registry for unmanaged software and suggests matching GitHub repos (ohub check --candidates via WebUI). Select a candidate repo and click Add to bring it under ObtainHub management.
+- FEAT: `ohub add` now auto-detects installed software from the Windows uninstall registry — version, install path, and uninstaller are populated automatically instead of placeholders.
+- FEAT: Uninstall supports interactive mode (user sees uninstaller UI) and detects cancellation — if the app is still registered after the uninstaller runs, the update is rejected and state is NOT changed.
+- REMOVED: "Update Software", "Uninstall", "Remove from Management" tabs — all actions now happen from the Managed Apps list via per-app Check/Update/Uninstall/Remove buttons.
+
 ## [v3.0.68-rc.48] - 2026-11-09
 - FEAT: Help page is now multi-page with sub-tabs: Getting Started, Apps Page, Config Page, Downloads Page, Authentication, Doctor / State / Logs, CLI Reference, Troubleshooting.
 - Help content is pure HTML (no more `/help` text fetch). Each page explains what the page does, how to use it, and common troubleshooting.

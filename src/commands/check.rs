@@ -735,6 +735,48 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
     Ok(())
 }
 
+/// Result of scanning for unmanaged software + candidate GitHub repos.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CandidateInfo {
+    pub name: String,
+    pub version: String,
+    pub install_path: String,
+    pub uninstaller: Option<String>,
+    pub candidates: Vec<String>,
+}
+
+/// Scan the Windows uninstall registry for unmanaged software and find
+/// candidate GitHub repositories for each. No interactive dialogs — safe
+/// to call from the WebUI.
+pub async fn scan_candidates(
+    config: &crate::core::ConfigManager,
+    state: &crate::core::StateManager,
+    retry_config: &crate::utils::retry::RetryConfig,
+) -> Result<Vec<CandidateInfo>> {
+    let token_owned = config.github_token();
+    let token = token_owned.as_deref();
+
+    let all = crate::commands::check::enumerate_all_installed_software()?;
+    let tracked = state.list_installed();
+    let (_matched, skipped) = crate::commands::check::partition_git_hub_managed(&all, &tracked);
+
+    let mut results = Vec::new();
+    for entry in &skipped {
+        let candidates = find_candidate_repos(&entry.repo, token, retry_config).await
+            .unwrap_or_default();
+        results.push(CandidateInfo {
+            name: entry.repo.clone(),
+            version: entry.version.clone(),
+            install_path: entry.install_path.display().to_string(),
+            uninstaller: entry.uninstaller.clone(),
+            candidates,
+        });
+    }
+
+    results.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(results)
+}
+
 /// Print the release notes of the given repos - the `check --notes` output.
 async fn print_release_notes(
     repos: &[(String, String, String)],

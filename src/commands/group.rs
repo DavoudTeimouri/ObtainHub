@@ -147,6 +147,7 @@ pub async fn execute(
                     purge: false,
                     yes: false,
                     force,
+                    interactive: false,
                 };
                 if let Err(e) = crate::commands::uninstall::execute(uninstall_args, config, state).await {
                     println!("  {repo} failed: {e}");

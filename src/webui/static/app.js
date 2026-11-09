@@ -151,6 +151,19 @@ class ObtainHubUI {
     if (modalBackdrop) modalBackdrop.addEventListener('click', closeModal);
     if (modalCancel) modalCancel.addEventListener('click', closeModal);
 
+    // Candidates scan button
+    const candidatesBtn = document.getElementById('candidatesBtn');
+    if (candidatesBtn) {
+      candidatesBtn.addEventListener('click', () => this.loadCandidates());
+    }
+    const clearCandidatesBtn = document.getElementById('clearCandidatesResult');
+    if (clearCandidatesBtn) {
+      clearCandidatesBtn.addEventListener('click', () => {
+        document.getElementById('candidatesResultWrap').classList.add('hidden');
+        document.getElementById('candidatesTableBody').innerHTML = '';
+      });
+    }
+
     // Download form toggle
     const showDownloadForm = document.getElementById('showDownloadForm');
     const hideDownloadForm = document.getElementById('hideDownloadForm');
@@ -297,6 +310,7 @@ class ObtainHubUI {
     if (panel) panel.classList.add('active');
     if (name === 'list') this.loadApps();
     else if (name === 'sources') this.loadSources();
+    else if (name === 'candidates') this.loadCandidates();
     else if (name === 'search') {
       const q = document.getElementById('searchQuery');
       if (q) q.focus();
@@ -971,6 +985,58 @@ class ObtainHubUI {
       });
     } catch (err) {
       tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Failed to load sources: ' + this.escapeHtml(err.message) + '</td></tr>';
+    }
+  }
+
+  async loadCandidates() {
+    const btn = document.getElementById('candidatesBtn');
+    const wrap = document.getElementById('candidatesResultWrap');
+    const tbody = document.getElementById('candidatesTableBody');
+    if (!tbody) return;
+    btn.disabled = true;
+    btn.textContent = 'Scanning...';
+    wrap.classList.remove('hidden');
+    try {
+      const candidates = await this.api('/apps/candidates', { method: 'POST' });
+      if (!candidates || candidates.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No unmanaged installed apps found.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = '';
+      candidates.forEach(c => {
+        const candList = c.candidates && c.candidates.length
+          ? c.candidates.map(r => '<code>' + this.escapeHtml(r) + '</code>').join(', ')
+          : '<span class="empty-state">none found</span>';
+        const hasCandidates = c.candidates && c.candidates.length > 0;
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><code>' + this.escapeHtml(c.name) + '</code></td>' +
+          '<td>' + this.escapeHtml(c.version || 'unknown') + '</td>' +
+          '<td><code style="font-size:0.75rem;">' + this.escapeHtml(c.install_path || '-') + '</code></td>' +
+          '<td>' + candList + '</td>' +
+          '<td>' +
+          (hasCandidates
+            ? '<button class="action-btn btn-primary" onclick="app.addCandidate(\\'' + c.name + '\\', \\'' + c.candidates[0] + '\\')\">Add</button>'
+            : '<span class="empty-state">-</span>') +
+          '</td>';
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Scan failed: ' + this.escapeHtml(err.message) + '</td></tr>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Scan for Installed Apps';
+    }
+  }
+
+  async addCandidate(name, repo) {
+    if (!confirm('Add "' + name + '" to management as "' + repo + '"?')) return;
+    try {
+      await this.api('/apps', { method: 'POST', body: { repo: repo } });
+      this.showToast('Added: ' + name + ' as ' + repo, 'success');
+      this.loadCandidates();
+    } catch (err) {
+      this.showToast('Failed to add: ' + err.message, 'error');
     }
   }
 

@@ -593,7 +593,11 @@ pub struct UninstallArgs {
     /// Force uninstall even if it's a dependency of other repos
     #[arg(long)]
     pub force: bool,
-}
+
+    /// Run uninstaller interactively (user sees the UI, can cancel)
+    #[arg(long)]
+    pub interactive: bool,
+    }
 
 #[derive(Args, Debug)]
 #[command(after_help = EX_REMOVE)]

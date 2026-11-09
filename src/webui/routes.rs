@@ -266,6 +266,16 @@ pub struct AppAdd {
 
 fn default_add_type() -> String { "github".to_string() }
 
+/// One candidate repository for an unmanaged installed app.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CandidateInfo {
+    pub name: String,
+    pub version: String,
+    pub install_path: String,
+    pub uninstaller: Option<String>,
+    pub candidates: Vec<String>,
+}
+
 pub async fn post_app(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(payload): Json<AppAdd>,
@@ -304,7 +314,50 @@ pub async fn post_app(
         }))).into_response();
     }
 
-    (StatusCode::OK, Json(serde_json::json!({"status": "added", "repo": repo}))).into_response()
+    // Detect installed software from the Windows uninstall registry so the
+    // WebUI shows the real version and install path instead of placeholders.
+    // Best-effort: if no registry entry matches, we keep the placeholder data.
+    let detected = crate::core::winreg::scan_uninstall_entries()
+        .iter()
+        .find_map(|e| {
+            crate::core::winreg::find_entry_for_repo(
+                &[e.clone()],
+                &repo,
+                None,
+            ).map(|found| (e.clone(), found.clone()))
+        });
+    if let Some((entry, found)) = detected {
+        let mut corrected = state_manager.get_installed(&repo).cloned().unwrap_or_default();
+        corrected.version = if found.display_version.is_empty() {
+            corrected.version
+        } else {
+            found.display_version.clone()
+        };
+        corrected.install_path = found.install_dir().unwrap_or_default();
+        corrected.uninstaller = Some(entry.uninstall_string.clone());
+        state_manager.add_installed(corrected);
+        let _ = state_manager.save();
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({"status": "added", "repo": repo})))
+        .into_response()
+}
+
+/// Scan for unmanaged installed software and find candidate GitHub repos.
+/// Returns a list of CandidateInfo — one per unmanaged app with candidate repos.
+pub async fn candidates(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+) -> impl IntoResponse {
+    let cm = app_state.config_manager.lock().await;
+    let rc = crate::utils::retry::RetryConfig::from_config(&cm);
+    let sm = app_state.state_manager.lock().await;
+    let result = crate::commands::check::scan_candidates(&cm, &sm, &rc).await;
+    match result {
+        Ok(candidates) => (StatusCode::OK, Json(candidates)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "error": format!("{e:#}")
+        }))).into_response(),
+    }
 }
 
 /// Remove an app/repo from management. Requires auth when --auth is set.
@@ -586,6 +639,9 @@ pub struct AppAction {
     pub candidates: bool,
     #[serde(default)]
     pub reset: bool,
+    /// Run uninstaller interactively (user sees the UI, can cancel)
+    #[serde(default)]
+    pub interactive: bool,
 }
 
 fn action_result(result: anyhow::Result<()>) -> axum::response::Response {
@@ -637,6 +693,7 @@ pub async fn uninstall_app(
         purge: body.purge,
         yes: true,
         force: body.force,
+        interactive: body.interactive,
     };
     let result = {
         let mut cm = app_state.config_manager.lock().await;
