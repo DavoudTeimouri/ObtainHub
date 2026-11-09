@@ -593,6 +593,14 @@ pub(crate) async fn install_release(
         }
     }
 
+    // If the installer ran but didn't register a new install (user cancelled,
+    // or silent installer exited 0 without changes), don't mark state as updated.
+    if is_installer && detected_install_dir.is_none() {
+        return Err(anyhow::anyhow!(
+            "Installer did not register a new installation — update may have been cancelled"
+        ));
+    }
+
     // Update state
     let new_repo = crate::core::state::InstalledRepo {
         repo: repo.to_string(),

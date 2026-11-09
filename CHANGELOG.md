@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.47] - 2026-11-09
+- FIX: Cancelled update no longer marks app as upgraded — `install_release` returns error if installer didn't register a new install (`detected_install_dir` is None for .exe/.msi), so `update_available` stays true and version isn't bumped.
+- FIX: Add confirmation dialog to "Update" form action (was missing — only per-app buttons had it).
+
 ## [v3.0.68-rc.46] - 2026-11-09
 - FIX: `list_apps()` now reads `update_available` and `latest_version` from state instead of hardcoding `false` — WebUI update column shows actual new version (e.g. "Update available → v2.5.0").
 - FIX: `ohub check` persists `update_available: true` and `latest_version` to state for each outdated app.

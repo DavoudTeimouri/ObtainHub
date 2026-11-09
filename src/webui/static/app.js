@@ -725,7 +725,12 @@ class ObtainHubUI {
   }
 
   async checkAppForm() { await this.runAppAction('checkForm', '/apps/check', 'POST', 'Check complete'); }
-  async updateAppForm() { await this.runAppAction('updateForm', '/apps/update', 'POST', 'Update complete'); }
+  async updateAppForm() {
+    const repo = document.getElementById('updateRepo').value.trim();
+    if (!repo) { this.showToast('Enter a repository (owner/repo)', 'error'); return; }
+    if (!confirm('Update "' + repo + '" to the latest release?')) return;
+    await this.runAppAction('updateForm', '/apps/update', 'POST', 'Update complete');
+  }
   async uninstallAppForm() { await this.runAppAction('uninstallForm', '/apps/uninstall', 'POST', 'Uninstalled'); }
   async removeAppForm() { await this.runAppAction('removeForm', '/apps/' + encodeURIComponent(document.getElementById('removeRepo').value.trim()), 'DELETE', 'Removed from management'); }
   async addAppForm() {
