@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.34] - 2026-11-07
+- Per-app buttons fixed: `applyLock()` no longer disables `.action-btn`
+  (Check/Update/Uninstall/Remove per-app). Buttons stay enabled so the
+  backend 401 can guide the user to sign in. Tooltips explain the lock.
+  Form buttons (submit, btn-primary, btn-danger) are still disabled when
+  locked. Install button in search results now works when not locked.
+- Update availability column: `AppInfo` gains `update_available` field;
+  Apps list shows "Update available" badge when an update exists.
+- All fetch errors include endpoint URL for easy debugging.
+- Browser auto-open: `run_webui()` binds listener, gets actual address,
+  opens browser in background thread, then serves.
+
 ## [v3.0.68-rc.33] - 2026-11-07
 - Browser auto-open (fixed for real): `run_webui()` now binds the listener,
   gets the actual listening address (may be port+1), opens the default browser

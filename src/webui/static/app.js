@@ -35,10 +35,20 @@ class ObtainHubUI {
     document.body.classList.toggle('locked', locked);
     const hint = document.getElementById('signinHint');
     if (hint) hint.style.display = locked ? 'block' : 'none';
-    // Only disable mutating action buttons; read-only viewing stays usable.
-    // Backend enforces auth (401) and requireToken() guides the user.
-    document.querySelectorAll('main .page button[type="submit"], main .page .action-btn, main .page .btn-primary, main .page .btn-danger')
+    // Only disable mutating form buttons; per-app action buttons stay enabled
+    // so the backend 401 can guide the user to sign in. Tooltips explain lock.
+    document.querySelectorAll('main .page button[type="submit"], main .page .btn-primary, main .page .btn-danger')
       .forEach(el => { el.disabled = locked; });
+    // Add/remove lock tooltip on per-app action buttons
+    document.querySelectorAll('main .page .action-btn').forEach(el => {
+      if (locked) {
+        el.title = 'Sign in required to perform this action';
+        el.dataset.originalTitle = el.title || el.textContent;
+      } else {
+        el.title = el.dataset.originalTitle || '';
+        delete el.dataset.originalTitle;
+      }
+    });
   }
 
   setupNavigation() {
@@ -492,7 +502,7 @@ class ObtainHubUI {
     try {
       const apps = await this.api('/apps');
       if (!apps || apps.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No managed applications. Search GitHub above and install one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No managed applications. Search GitHub above and install one.</td></tr>';
         return;
       }
       tbody.innerHTML = '';
@@ -501,11 +511,15 @@ class ObtainHubUI {
         const tr = document.createElement('tr');
         const statusClass = 'status-' + (app.status || 'unknown').toLowerCase();
         const repo = this.escapeHtml(app.repo);
+        const updateBadge = app.update_available
+          ? '<span class="badge badge-update">Update available</span>'
+          : '<span class="badge badge-neutral">-</span>';
         tr.innerHTML =
           '<td><code>' + repo + '</code></td>' +
           '<td>' + this.escapeHtml(app.name) + '</td>' +
           '<td><code>' + this.escapeHtml(app.version) + '</code></td>' +
           '<td><span class="badge badge-' + statusClass + '">' + this.escapeHtml(app.status) + '</span></td>' +
+          '<td>' + updateBadge + '</td>' +
           '<td>' + this.formatRelativeTime(app.installed_at) + '</td>' +
           '<td>' + this.formatRelativeTime(app.updated_at) + '</td>' +
           '<td class="actions-cell">' +

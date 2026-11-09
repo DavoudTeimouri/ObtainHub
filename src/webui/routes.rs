@@ -29,6 +29,7 @@ pub struct AppInfo {
     pub installed_at: String,
     pub updated_at: Option<String>,
     pub status: String,
+    pub update_available: bool,
 }
 
 /// List all managed applications.
@@ -47,6 +48,7 @@ pub async fn list_apps(
             installed_at: app.installed_at.to_rfc3339(),
             updated_at: app.updated_at.map(|dt| dt.to_rfc3339()),
             status: "installed".to_string(),
+            update_available: false,
         }
     }).collect();
     Json(apps)
