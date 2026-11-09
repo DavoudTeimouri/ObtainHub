@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::fs;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use anyhow::Context;
 
 mod routes;
@@ -171,7 +171,7 @@ pub async fn run_webui(
             crate::webui::auth::auth_middleware,
         ));
 
-    // Port conflict detection: try to bind, if it fails try the next port.
+    // Bind the listener first so we know the actual port (may be port+1).
     let listener = match tokio::net::TcpListener::bind(addr).await {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
@@ -188,12 +188,31 @@ pub async fn run_webui(
     let actual_addr = listener.local_addr()?;
     info!("WebUI listening on {actual_addr}");
 
-    let _ = axum::serve(listener, app)
+    // Open the default browser in a background thread (small delay so the
+    // server is ready to accept connections), then serve on this task so the
+    // process stays alive.
+    let open_url = format!("http://{}", actual_addr);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        let opener = if cfg!(windows) { "cmd" } else { "xdg-open" };
+        let opener_args: Vec<&str> = if cfg!(windows) {
+            vec!["/c", "start", "", &open_url]
+        } else {
+            vec![&open_url]
+        };
+        let _ = std::process::Command::new(opener)
+            .args(&opener_args)
+            .spawn();
+    });
+
+    if let Err(e) = axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await
-        .context("WebUI server error");
+    {
+        error!("WebUI server error: {e}");
+    }
     remove_pid_file();
     Ok(actual_addr)
 }

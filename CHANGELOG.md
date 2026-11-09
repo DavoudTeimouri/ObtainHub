@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.33] - 2026-11-07
+- Browser auto-open (fixed for real): `run_webui()` now binds the listener,
+  gets the actual listening address (may be port+1), opens the default browser
+  in a background thread with an 800ms delay, then serves on the current task
+  so the process stays alive. Browser always opens on the correct port.
+- All fetch errors include endpoint URL for easy debugging.
+- Dashboard shows server URL so users can verify the port.
+- requireToken() handles /config fetch errors without navigating away.
+- All 10 reported issues fixed.
+
 ## [v3.0.68-rc.32] - 2026-11-07
 - Browser auto-open: run_webui() returns the actual SocketAddr; main.rs opens the
   browser BEFORE run_webui() because axum::serve blocks forever.

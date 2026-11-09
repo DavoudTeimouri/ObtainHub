@@ -60,19 +60,8 @@ async fn main() -> Result<()> {
             let bind_addr: std::net::SocketAddr = format!("{}:{}", args.bind, args.port)
                 .parse()
                 .context("Invalid bind address")?;
-            // Open default browser automatically using the requested bind address.
-            // Must open BEFORE run_webui() because axum::serve blocks forever.
-            let url = format!("http://{}", bind_addr);
-            let opener = if cfg!(windows) { "cmd" } else { "xdg-open" };
-            let opener_args: Vec<&str> = if cfg!(windows) {
-                vec!["/c", "start", "", &url]
-            } else {
-                vec![&url]
-            };
-            let _ = std::process::Command::new(opener)
-                .args(&opener_args)
-                .spawn();
-            // Start the WebUI server (blocks until shutdown).
+            // Start the WebUI server (blocks until shutdown). Browser opens
+            // automatically inside run_webui() on the actual listening port.
             let _ = crate::webui::run_webui(bind_addr, config_manager, state_manager, args.auth).await;
             Ok(())
         }
