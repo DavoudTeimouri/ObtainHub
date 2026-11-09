@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.40] - 2026-11-09
+- FIX: Add changelog section for v3.0.68-rc.40 tag so GitHub release step finds release notes.
+
 ## [v3.0.68-rc.39] - 2026-11-09
 - FIX: clippy clean — removed unit-value `let _ = open_browser(...)`, added `#[allow(dead_code)]` on `AppAdd.add_type`.
 
