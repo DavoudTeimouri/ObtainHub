@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.56] - 2026-11-09
+- FIX: JS syntax error in loadCandidates onclick escaping prevented app.js from loading — window.app was never set, so ALL buttons (including login) threw ReferenceError: app is not defined.
+
 ## [v3.0.68-rc.55] - 2026-11-09
 - FIX: Changelog section for v3.0.68-rc.55 tag matches the pushed tag.
 
