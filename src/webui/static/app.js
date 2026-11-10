@@ -1016,7 +1016,7 @@ class ObtainHubUI {
           '<td>' + candList + '</td>' +
           '<td>' +
           (hasCandidates
-            ? '<button class="action-btn btn-primary" onclick="app.addCandidate(\\'' + c.name + '\\', \\'' + c.candidates[0] + '\\')\">Add</button>'
+            ? '<button class="action-btn btn-primary" onclick="app.addCandidate(\'' + c.name + '\', \'' + c.candidates[0] + '\')">Add</button>'
             : '<span class="empty-state">-</span>') +
           '</td>';
         tbody.appendChild(tr);
