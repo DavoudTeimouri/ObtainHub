@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.60] - 2026-11-10
+- FIX: Detect Installed scan appeared hung — per-app GitHub candidate searches now run concurrently (JoinSet) instead of sequentially with retries.
+- FIX: Ctrl+C now drops the listener immediately (select! on ctrl_c) instead of graceful drain that could leave the listen port open.
+- FIX: Busy default port no longer blocks startup — new instance binds next free port (up to +9), previous process keeps its port. Liveness check uses tasklist, not taskkill.
+
 ## [v3.0.68-rc.59] - 2026-11-09
 - FIX: JS syntax error in loadCandidates onclick escaping prevented app.js from loading — window.app was never set, so ALL buttons (including login) threw ReferenceError: app is not defined.
 

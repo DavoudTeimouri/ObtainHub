@@ -1,4 +1,5 @@
 use axum::{routing::get, Router, middleware};
+use std::future::IntoFuture;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::fs;
@@ -172,18 +173,38 @@ pub async fn run_webui(
             crate::webui::auth::auth_middleware,
         ));
 
-    // Bind the listener first so we know the actual port (may be port+1).
-    let listener = match tokio::net::TcpListener::bind(addr).await {
-        Ok(l) => l,
-        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-            let alt_port = addr.port().saturating_add(1);
-            let alt_addr: SocketAddr = format!("{}:{}", addr.ip(), alt_port).parse()
-                .context("Failed to parse alternate address")?;
-            warn!("Port {} is in use, trying {}", addr.port(), alt_port);
-            tokio::net::TcpListener::bind(alt_addr).await
-                .context(format!("Failed to bind WebUI listener on alternate port {alt_port}"))?
+    // Bind the first free port starting at the requested one (up to +9), so a
+    // busy default port does not block a new instance — the previous process
+    // keeps its port and this one opens the next one.
+    let mut listener = None;
+    let mut last_err: Option<std::io::Error> = None;
+    for offset in 0..10u16 {
+        let port = addr.port().saturating_add(offset);
+        let try_addr: SocketAddr = format!("{}:{}", addr.ip(), port)
+            .parse()
+            .context("Failed to parse bind address")?;
+        match tokio::net::TcpListener::bind(try_addr).await {
+            Ok(l) => {
+                if offset > 0 {
+                    warn!("Port {} is in use, using {}", addr.port(), port);
+                }
+                listener = Some(l);
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                last_err = Some(e);
+            }
+            Err(e) => return Err(anyhow::anyhow!("Failed to bind WebUI listener: {e}")),
         }
-        Err(e) => return Err(anyhow::anyhow!("Failed to bind WebUI listener: {e}")),
+    }
+    let listener = match listener {
+        Some(l) => l,
+        None => return Err(anyhow::anyhow!(
+            "Failed to bind WebUI listener on ports {}-{}: {}",
+            addr.port(),
+            addr.port().saturating_add(9),
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        )),
     };
 
     let actual_addr = listener.local_addr()?;
@@ -206,13 +227,20 @@ pub async fn run_webui(
             .spawn();
     });
 
-    if let Err(e) = axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await
-    {
-        error!("WebUI server error: {e}");
+    // Serve until Ctrl+C. On the signal the server future is dropped, which
+    // closes the listener immediately — graceful drain could wait forever on
+    // the browser's keep-alive connection and leave the port open.
+    let server = axum::serve(listener, app).into_future();
+    tokio::pin!(server);
+    tokio::select! {
+        res = &mut server => {
+            if let Err(e) = res {
+                error!("WebUI server error: {e}");
+            }
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Ctrl+C received — shutting down WebUI");
+        }
     }
     remove_pid_file();
     Ok(actual_addr)

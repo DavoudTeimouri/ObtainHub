@@ -14,11 +14,12 @@ mod webui;
 /// Check if a process with the given PID is still alive.
 fn is_process_alive(pid: u32) -> bool {
     if cfg!(windows) {
-        match process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/FI", &format!("PID eq {}", pid)])
+        // tasklist (read-only probe) — taskkill would risk signaling the process.
+        match process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
             .output()
         {
-            Ok(out) => out.status.success(),
+            Ok(out) => String::from_utf8_lossy(&out.stdout).contains(&pid.to_string()),
             Err(_) => false,
         }
     } else {
@@ -35,19 +36,6 @@ fn write_pid_file(pid_file: &std::path::Path) {
         let _ = std::fs::create_dir_all(parent);
     }
     let _ = std::fs::write(pid_file, std::process::id().to_string());
-}
-
-/// Open a URL in the default browser.
-fn open_browser(url: &str) {
-    if cfg!(windows) {
-        let _ = process::Command::new("cmd")
-            .args(["/c", "start", "", url])
-            .spawn();
-    } else {
-        let _ = process::Command::new("xdg-open")
-            .args([url])
-            .spawn();
-    }
 }
 
 #[tokio::main]
@@ -110,17 +98,16 @@ async fn main() -> Result<()> {
             if pid_file.exists() {
                 if let Ok(pid_str) = fs::read_to_string(&pid_file) {
                     if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                        // Check if process is still alive
                         if is_process_alive(pid) {
-                            println!("ohub WebUI is already running (PID {}).", pid);
-                            println!("Opening existing WebUI at http://{}...", bind_addr);
-                            open_browser(&format!("http://{}", bind_addr));
-                            return Ok(());
+                            // Previous instance stays running on its port; this
+                            // instance binds the next free port (see run_webui).
+                            println!("ohub WebUI already running (PID {pid}) — leaving it running; this instance will use the next free port.");
+                        } else {
+                            // Stale PID file — remove it
+                            let _ = fs::remove_file(&pid_file);
                         }
                     }
                 }
-                // Stale PID file — remove it
-                let _ = fs::remove_file(&pid_file);
             }
 
             // Write PID file

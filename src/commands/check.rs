@@ -760,16 +760,35 @@ pub async fn scan_candidates(
     let tracked = state.list_installed();
     let (_matched, skipped) = crate::commands::check::partition_git_hub_managed(&all, &tracked);
 
+    // Search GitHub for every unmanaged app concurrently — sequential searches
+    // with per-request retries made the scan take minutes and looked hung.
+    let mut set = tokio::task::JoinSet::new();
+    for entry in &skipped {
+        let name = entry.repo.clone();
+        let token_owned = token.map(|s| s.to_string());
+        let rc = retry_config.clone();
+        set.spawn(async move {
+            let candidates = find_candidate_repos(&name, token_owned.as_deref(), &rc)
+                .await
+                .unwrap_or_default();
+            (name, candidates)
+        });
+    }
+    let mut found: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    while let Some(res) = set.join_next().await {
+        if let Ok((name, c)) = res {
+            found.insert(name, c);
+        }
+    }
+
     let mut results = Vec::new();
     for entry in &skipped {
-        let candidates = find_candidate_repos(&entry.repo, token, retry_config).await
-            .unwrap_or_default();
         results.push(CandidateInfo {
             name: entry.repo.clone(),
             version: entry.version.clone(),
             install_path: entry.install_path.display().to_string(),
             uninstaller: entry.uninstaller.clone(),
-            candidates,
+            candidates: found.remove(&entry.repo).unwrap_or_default(),
         });
     }
 
