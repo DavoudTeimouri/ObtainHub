@@ -164,6 +164,25 @@ class ObtainHubUI {
       });
     }
 
+    // Candidate repo picker modal
+    const pickModal = document.getElementById('pickModal');
+    const closePick = () => { if (pickModal) pickModal.classList.add('hidden'); };
+    const pickClose = document.getElementById('pickClose');
+    const pickBackdrop = document.getElementById('pickBackdrop');
+    if (pickClose) pickClose.addEventListener('click', closePick);
+    if (pickBackdrop) pickBackdrop.addEventListener('click', closePick);
+    const pickSearch = document.getElementById('pickSearch');
+    if (pickSearch) {
+      let pickTimer = null;
+      pickSearch.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); this.searchPick(); }
+      });
+      pickSearch.addEventListener('input', () => {
+        clearTimeout(pickTimer);
+        pickTimer = setTimeout(() => this.searchPick(), 600);
+      });
+    }
+
     // Download form toggle
     const showDownloadForm = document.getElementById('showDownloadForm');
     const hideDownloadForm = document.getElementById('hideDownloadForm');
@@ -310,7 +329,10 @@ class ObtainHubUI {
     if (panel) panel.classList.add('active');
     if (name === 'list') this.loadApps();
     else if (name === 'sources') this.loadSources();
-    else if (name === 'candidates') this.loadCandidates();
+    else if (name === 'candidates') {
+      // Auto-start the scan the first time the tab is opened.
+      if (!this.candidatesScanned) this.loadCandidates();
+    }
     else if (name === 'search') {
       const q = document.getElementById('searchQuery');
       if (q) q.focus();
@@ -998,42 +1020,89 @@ class ObtainHubUI {
     wrap.classList.remove('hidden');
     try {
       const candidates = await this.api('/apps/candidates', { method: 'POST' });
-      if (!candidates || candidates.length === 0) {
+      this.candidatesData = candidates || [];
+      if (!this.candidatesData.length) {
         tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No unmanaged installed apps found.</td></tr>';
         return;
       }
       tbody.innerHTML = '';
-      candidates.forEach(c => {
+      this.candidatesData.forEach((c, i) => {
         const candList = c.candidates && c.candidates.length
           ? c.candidates.map(r => '<code>' + this.escapeHtml(r) + '</code>').join(', ')
-          : '<span class="empty-state">none found</span>';
-        const hasCandidates = c.candidates && c.candidates.length > 0;
+          : '<span class="empty-state">search on Add</span>';
         const tr = document.createElement('tr');
         tr.innerHTML =
           '<td><code>' + this.escapeHtml(c.name) + '</code></td>' +
           '<td>' + this.escapeHtml(c.version || 'unknown') + '</td>' +
           '<td><code style="font-size:0.75rem;">' + this.escapeHtml(c.install_path || '-') + '</code></td>' +
           '<td>' + candList + '</td>' +
-          '<td>' +
-          (hasCandidates
-            ? '<button class="action-btn btn-primary" onclick="app.addCandidate(\'' + c.name + '\', \'' + c.candidates[0] + '\')">Add</button>'
-            : '<span class="empty-state">-</span>') +
-          '</td>';
+          '<td><button class="action-btn btn-primary" onclick="app.pickCandidate(' + i + ')">Add</button></td>';
         tbody.appendChild(tr);
       });
     } catch (err) {
       tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Scan failed: ' + this.escapeHtml(err.message) + '</td></tr>';
     } finally {
+      this.candidatesScanned = true;
       btn.disabled = false;
       btn.textContent = 'Scan for Installed Apps';
     }
   }
 
-  async addCandidate(name, repo) {
-    if (!confirm('Add "' + name + '" to management as "' + repo + '"?')) return;
+  // Open the repo picker for a detected app; offers its candidate repos and a
+  // GitHub search box so the user chooses which repo to add to management.
+  pickCandidate(index) {
+    const entry = (this.candidatesData || [])[index];
+    if (!entry) return;
+    this.pickAppName = entry.name;
+    this.pickOptions = (entry.candidates || []).slice();
+    document.getElementById('pickAppName').textContent = entry.name;
+    const search = document.getElementById('pickSearch');
+    search.value = entry.name;
+    this.renderPickOptions();
+    document.getElementById('pickModal').classList.remove('hidden');
+    search.focus();
+  }
+
+  renderPickOptions() {
+    const box = document.getElementById('pickResults');
+    if (!this.pickOptions.length) {
+      box.innerHTML = '<p class="empty-state">No candidate repos — search above.</p>';
+      return;
+    }
+    box.innerHTML = '';
+    this.pickOptions.forEach((repo, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-secondary pick-option';
+      b.textContent = repo;
+      b.onclick = () => this.confirmAdd(i);
+      box.appendChild(b);
+    });
+  }
+
+  async searchPick() {
+    const q = document.getElementById('pickSearch').value.trim();
+    if (!q) return;
+    const box = document.getElementById('pickResults');
+    box.innerHTML = '<p class="empty-state">Searching...</p>';
+    try {
+      const res = await this.api('/search?q=' + encodeURIComponent(q) + '&limit=8');
+      const items = (res && res.items) ? res.items : (Array.isArray(res) ? res : []);
+      this.pickOptions = items.map(it => it.full_name || it.repo).filter(Boolean);
+      this.renderPickOptions();
+    } catch (err) {
+      box.innerHTML = '<p class="empty-state">Search failed: ' + this.escapeHtml(err.message) + '</p>';
+    }
+  }
+
+  async confirmAdd(index) {
+    const repo = this.pickOptions[index];
+    if (!repo) return;
     try {
       await this.api('/apps', { method: 'POST', body: { repo: repo } });
-      this.showToast('Added: ' + name + ' as ' + repo, 'success');
+      this.showToast('Added: ' + this.pickAppName + ' as ' + repo, 'success');
+      document.getElementById('pickModal').classList.add('hidden');
+      this.loadApps();
       this.loadCandidates();
     } catch (err) {
       this.showToast('Failed to add: ' + err.message, 'error');

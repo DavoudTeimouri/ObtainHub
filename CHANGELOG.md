@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.61] - 2026-11-10
+- FEAT: Detect Installed tab auto-starts the scan on first open.
+- FEAT: Add button opens a repo picker modal — shows detected candidate repos plus a debounced GitHub search to choose which repo to add to management.
+
 ## [v3.0.68-rc.60] - 2026-11-10
 - FIX: Detect Installed scan appeared hung — per-app GitHub candidate searches now run concurrently (JoinSet) instead of sequentially with retries.
 - FIX: Ctrl+C now drops the listener immediately (select! on ctrl_c) instead of graceful drain that could leave the listen port open.

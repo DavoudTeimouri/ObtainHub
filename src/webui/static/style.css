@@ -1388,3 +1388,18 @@ body.locked main .page .btn-danger {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Candidate repo picker modal */
+.pick-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.pick-option {
+  text-align: left;
+  font-family: monospace;
+  width: 100%;
+}
