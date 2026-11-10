@@ -182,6 +182,8 @@ class ObtainHubUI {
         pickTimer = setTimeout(() => this.searchPick(), 600);
       });
     }
+    const pickSearchBtn = document.getElementById('pickSearchBtn');
+    if (pickSearchBtn) pickSearchBtn.addEventListener('click', () => this.searchPick());
 
     // Download form toggle
     const showDownloadForm = document.getElementById('showDownloadForm');
@@ -1022,13 +1024,13 @@ class ObtainHubUI {
       const candidates = await this.api('/apps/candidates', { method: 'POST' });
       this.candidatesData = candidates || [];
       if (!this.candidatesData.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No unmanaged installed apps found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No unmanaged installed apps found. <button type="button" class="btn btn-secondary" onclick="app.showAppsTab(\'add\')">Add manually</button></td></tr>';
         return;
       }
       tbody.innerHTML = '';
       this.candidatesData.forEach((c, i) => {
         const candList = c.candidates && c.candidates.length
-          ? c.candidates.map(r => '<code>' + this.escapeHtml(r) + '</code>').join(', ')
+          ? c.candidates.map(r => '<button type="button" class="repo-chip" title="Add ' + this.escapeHtml(r) + ' to management" onclick="app.quickAdd(\'' + r + '\')">' + this.escapeHtml(r) + '</button>').join(' ')
           : '<span class="empty-state">search on Add</span>';
         const tr = document.createElement('tr');
         tr.innerHTML =
@@ -1045,6 +1047,18 @@ class ObtainHubUI {
       this.candidatesScanned = true;
       btn.disabled = false;
       btn.textContent = 'Scan for Installed Apps';
+    }
+  }
+
+  // One-click add of a specific candidate repo straight from the results table.
+  async quickAdd(repo) {
+    try {
+      await this.api('/apps', { method: 'POST', body: { repo: repo } });
+      this.showToast('Added to management: ' + repo, 'success');
+      this.loadApps();
+      this.loadCandidates();
+    } catch (err) {
+      this.showToast('Failed to add ' + repo + ': ' + err.message, 'error');
     }
   }
 

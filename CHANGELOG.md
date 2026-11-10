@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.62] - 2026-11-10
+- FEAT: Detect Installed rows now have a per-row Add button AND each candidate repo is a clickable chip (one-click add via POST /apps).
+- FEAT: Repo picker modal has a visible Search button (plus Enter/debounced input).
+- FEAT: Empty scan result shows an "Add manually" button that jumps to the Add to Management tab.
+
 ## [v3.0.68-rc.61] - 2026-11-10
 - FEAT: Detect Installed tab auto-starts the scan on first open.
 - FEAT: Add button opens a repo picker modal — shows detected candidate repos plus a debounced GitHub search to choose which repo to add to management.

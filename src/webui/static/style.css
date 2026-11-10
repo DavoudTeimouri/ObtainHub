@@ -1403,3 +1403,16 @@ body.locked main .page .btn-danger {
   font-family: monospace;
   width: 100%;
 }
+
+/* Clickable candidate repo chips in Detect Installed results */
+.repo-chip {
+  font-family: monospace;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent, #3b82f6);
+  cursor: pointer;
+}
+.repo-chip:hover { background: var(--accent, #3b82f6); color: #fff; }
