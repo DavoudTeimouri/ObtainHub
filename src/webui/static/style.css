@@ -1085,3 +1085,43 @@ a:hover {
 .data-table td:last-child {
   box-shadow: -6px 0 8px -8px rgba(0, 0, 0, 0.55);
 }
+
+/* Vendor exclusion on Detect Installed */
+.vendor-exclusion {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.vendor-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.vendor-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.vendor-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.vendor-list input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+.vendor-list .vendor-chip {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}

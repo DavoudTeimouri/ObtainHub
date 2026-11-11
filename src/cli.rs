@@ -3,7 +3,7 @@ use clap_complete::Shell;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "ohub",
+    name = "ObtainHub CLI",
     version,
     long_version = concat!(
         env!("CARGO_PKG_VERSION"),

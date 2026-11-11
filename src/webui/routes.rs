@@ -880,6 +880,15 @@ pub async fn doctor(
     Json(info)
 }
 
+// ---------- Version ----------
+
+/// Return the ObtainHub CLI version. Public.
+pub async fn version() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
 // ---------- Help ----------
 
 /// Full `ohub --help` text plus WebUI feature explanations. Public.

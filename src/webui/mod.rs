@@ -166,6 +166,7 @@ pub async fn run_webui(
         .route("/auth/login", axum::routing::post(routes::login))
         .route("/doctor", get(routes::doctor))
         .route("/help", get(routes::help_text))
+        .route("/version", get(routes::version))
         .with_state(app_state.clone())
         // Apply auth middleware to all routes — public paths are exempted inside the middleware
         .layer(middleware::from_fn_with_state(

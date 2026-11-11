@@ -164,6 +164,21 @@ class ObtainHubUI {
       });
     }
 
+    // Vendor exclusion on Detect Installed
+    this.excludedVendors = new Set();
+    const vendorWrap = document.getElementById('vendorExclusionWrap');
+    const vendorList = document.getElementById('vendorList');
+    if (vendorList) {
+      vendorList.addEventListener('click', e => {
+        const cb = e.target.closest('input[type="checkbox"]');
+        if (!cb) return;
+        const vendor = cb.value;
+        if (cb.checked) this.excludedVendors.add(vendor);
+        else this.excludedVendors.delete(vendor);
+        this.renderCandidates();
+      });
+    }
+
     // Candidate repo picker modal
     const pickModal = document.getElementById('pickModal');
     const closePick = () => { if (pickModal) pickModal.classList.add('hidden'); };
@@ -307,12 +322,14 @@ class ObtainHubUI {
       this.startDownloadsPoll();
     } else if (page === 'help') {
       this.loadHelp();
-    } else if (page === 'doctor') {
+    }    else if (page === 'doctor') {
       // doctor page loads on demand via button
     } else if (page === 'state') {
       // state page loads on demand via button
     } else if (page === 'logs') {
       this.loadLogs();
+    } else if (page === 'about') {
+      this.loadAbout();
     } else {
       this.stopDownloadsPoll();
     }
@@ -330,6 +347,7 @@ class ObtainHubUI {
       case 'config': this.loadConfig(); break;
       case 'downloads': this.loadDownloads(); break;
       case 'help': this.loadHelp(); break;
+      case 'about': this.loadAbout(); break;
     }
     this.showToast('Refreshed', 'info');
   }
@@ -698,6 +716,8 @@ class ObtainHubUI {
     if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
     try {
       const apps = await this.api('/apps');
+      const prereleaseEl = document.getElementById('checkPrerelease');
+      const resetEl = document.getElementById('checkReset');
       const prerelease = prereleaseEl ? prereleaseEl.checked : false;
       const reset = resetEl ? resetEl.checked : false;
       for (const a of (apps || [])) {
@@ -1056,6 +1076,21 @@ class ObtainHubUI {
     }
   }
 
+  async loadAbout() {
+    try {
+      const info = await this.api('/version');
+      const ver = info && info.version ? info.version : 'unknown';
+      document.getElementById('aboutVersion').textContent = ver;
+      document.getElementById('aboutBuildVersion').textContent = ver;
+      document.getElementById('aboutPlatform').textContent = navigator.platform;
+      document.getElementById('aboutRust').textContent = '1.85+';
+      document.getElementById('aboutBuildTime').textContent = new Date().toISOString();
+    } catch (err) {
+      document.getElementById('aboutVersion').textContent = 'unknown';
+      document.getElementById('aboutBuildVersion').textContent = 'unknown';
+    }
+  }
+
   // ---- Sources (Apps page) ----
   async loadSources() {
     const tbody = document.getElementById('sourcesTableBody');
@@ -1101,6 +1136,7 @@ class ObtainHubUI {
         return;
       }
       this.renderCandidates();
+      this.populateVendors();
     } catch (err) {
       tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Scan failed: ' + this.escapeHtml(err.message) + '</td></tr>';
     } finally {
@@ -1118,8 +1154,13 @@ class ObtainHubUI {
     const tbody = document.getElementById('candidatesTableBody');
     if (!tbody) return;
     tbody.innerHTML = '';
+    const vendorWrap = document.getElementById('vendorExclusionWrap');
+    if (vendorWrap) vendorWrap.classList.toggle('hidden', this.candidatesData.length === 0);
     this.candidatesData.forEach((c, i) => {
       if (this.addedFromCandidates.has(c.name)) return;
+      // Vendor exclusion: skip apps whose vendor is excluded
+      const vendor = this.extractVendor(c.name);
+      if (this.excludedVendors.has(vendor)) return;
       const candList = c.candidates && c.candidates.length
         ? c.candidates.map(r => '<button type="button" class="repo-chip" title="Add ' + this.escapeHtml(r) + ' to management" onclick="app.quickAdd(\'' + r + '\')">' + this.escapeHtml(r) + '</button>').join(' ')
         : '<span class="empty-state">search on Add</span>';
@@ -1133,6 +1174,43 @@ class ObtainHubUI {
       tbody.appendChild(tr);
     });
     this.applyTableFilters();
+  }
+
+  // Extract a vendor name from an installed app's display name (matches CLI
+  // ohub check --candidates vendor exclusion behaviour).
+  extractVendor(name) {
+    if (!name) return '';
+    const known = [
+      'Microsoft', 'Adobe', 'Oracle', 'Apple', 'Intel', 'NVIDIA', 'AMD',
+      'Google', 'Mozilla', 'Valve', 'JetBrains', 'VMware', 'Realtek',
+      'Synaptics', 'Elan', 'Broadcom', 'Qualcomm', 'HP', 'Dell', 'Lenovo',
+      'ASUS', 'Acer', 'Canon', 'Logitech', 'Razer', 'Corsair', 'Zoom',
+      'Slack', 'Discord', 'Spotify', 'Samsung', 'Toshiba', 'Fujitsu',
+      'Brother', 'EPSON', 'Skype',
+    ];
+    const lower = name.toLowerCase();
+    for (const v of known) {
+      if (lower.includes(v.toLowerCase())) return v;
+    }
+    return name.split(/\s+/)[0] || name;
+  }
+
+  // Build vendor exclusion checkboxes from the detected apps' vendor names.
+  populateVendors() {
+    const list = document.getElementById('vendorList');
+    if (!list) return;
+    list.innerHTML = '';
+    const vendors = new Set();
+    (this.candidatesData || []).forEach(c => vendors.add(this.extractVendor(c.name)));
+    [...vendors].sort().forEach(vendor => {
+      const label = document.createElement('label');
+      label.className = 'vendor-chip';
+      label.innerHTML =
+        '<input type="checkbox" value="' + this.escapeHtml(vendor) + '" ' +
+        (this.excludedVendors.has(vendor) ? 'checked' : '') + '>' +
+        this.escapeHtml(vendor);
+      list.appendChild(label);
+    });
   }
 
   // One-click add of a specific candidate repo straight from the results table.

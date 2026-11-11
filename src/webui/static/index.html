@@ -75,6 +75,14 @@
           </svg>
           <span>Help</span>
         </a>
+        <a href="#about" class="nav-item" data-page="about">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5L12 2z"/>
+            <path d="M12 17v-5"/>
+            <path d="M12 3v3"/>
+          </svg>
+          <span>About</span>
+        </a>
       </nav>
       <div class="sidebar-footer">
         <div class="footer-row-top">
@@ -328,6 +336,10 @@
             <input type="search" id="candidatesFilter" class="filter-input" placeholder="Filter detected apps..." autocomplete="off">
             <button class="btn btn-primary" id="candidatesBtn">Scan for Installed Apps</button>
             <button class="btn btn-secondary" id="clearCandidatesResult">Clear</button>
+            <div class="vendor-exclusion hidden" id="vendorExclusionWrap">
+              <label class="vendor-label">Exclude vendors:</label>
+              <div class="vendor-list" id="vendorList"></div>
+            </div>
           </div>
           <div class="table-wrapper hidden" id="candidatesResultWrap">
             <table class="data-table" id="candidatesTable">
@@ -788,6 +800,41 @@
           </div>
         </div>
       </section>
+
+      <!-- About -->
+      <section class="page" id="page-about">
+        <div class="page-header">
+          <p class="page-subtitle">About ObtainHub — versions, license, and build info.</p>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>About</h3></div>
+          <div class="card-body">
+            <p><strong>ObtainHub CLI</strong> <span id="aboutVersion"></span></p>
+            <p>A GitHub-based package updater and manager for Windows x64. Install, update, and track apps from GitHub or custom manifest sources.</p>
+            <div class="config-grid">
+              <div class="config-section">
+                <h4>Build</h4>
+                <div class="config-list">
+                  <dt>Version</dt><dd id="aboutBuildVersion"></dd>
+                  <dt>Platform</dt><dd id="aboutPlatform"></dd>
+                  <dt>Rust</dt><dd id="aboutRust"></dd>
+                  <dt>Built</dt><dd id="aboutBuildTime"></dd>
+                </div>
+              </div>
+              <div class="config-section">
+                <h4>Project</h4>
+                <div class="config-list">
+                  <dt>Repository</dt><dd><a href="https://github.com/DavoudTeimouri/ObtainHub" target="_blank" rel="noopener">DavoudTeimouri/ObtainHub</a></dd>
+                  <dt>License</dt><dd>MIT</dd>
+                  <dt>Authors</dt><dd>Davoud Teimouri</dd>
+                </div>
+              </div>
+            </div>
+            <p class="page-subtitle" style="margin-top:14px">Releases: MSI and NSIS EXE installers only. No standalone executable.</p>
+          </div>
+        </div>
+      </section>
+
     </main>
   </div>
 
