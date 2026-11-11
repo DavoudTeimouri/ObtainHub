@@ -185,6 +185,12 @@ class ObtainHubUI {
     const pickSearchBtn = document.getElementById('pickSearchBtn');
     if (pickSearchBtn) pickSearchBtn.addEventListener('click', () => this.searchPick());
 
+    // Table filters (Managed Apps / Detect Installed / Downloads)
+    ['appsFilter', 'candidatesFilter', 'downloadsFilter'].forEach(id => {
+      const input = document.getElementById(id);
+      if (input) input.addEventListener('input', () => this.applyTableFilters());
+    });
+
     // Download form toggle
     const showDownloadForm = document.getElementById('showDownloadForm');
     const hideDownloadForm = document.getElementById('hideDownloadForm');
@@ -263,6 +269,7 @@ class ObtainHubUI {
 
   navigate(page) {
     this.currentPage = page;
+    this.stopDownloadsPoll();
     window.location.hash = '#/' + page;
 
     // Update nav items
@@ -386,11 +393,13 @@ class ObtainHubUI {
   }
 
   async api(endpoint, options = {}) {
-    // Show global loading overlay while any request is in flight
-    this.showLoading(true);
+    // Background polls pass {silent:true} so the loading overlay doesn't flash.
+    const silent = !!options.silent;
+    if (!silent) this.showLoading(true);
     const headers = { 'Content-Type': 'application/json', ...options.headers };
     if (this.token) headers['Authorization'] = 'Bearer ' + this.token;
-    const config = { ...options, headers };
+    const { silent: _silent, ...fetchOptions } = options;
+    const config = { ...fetchOptions, headers };
     if (config.body && typeof config.body === 'object') config.body = JSON.stringify(config.body);
 
     try {
@@ -415,7 +424,7 @@ class ObtainHubUI {
       if (err.message === 'Authentication required') throw err;
       throw new Error('Failed to fetch ' + endpoint + ': ' + err.message);
     } finally {
-      this.showLoading(false);
+      if (!silent) this.showLoading(false);
     }
   }
 
@@ -576,6 +585,7 @@ class ObtainHubUI {
           '</td>';
         tbody.appendChild(tr);
       });
+      this.applyTableFilters();
     } catch (err) {
       tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load apps: ' + this.escapeHtml(err.message) + '</td></tr>';
     }
@@ -697,7 +707,7 @@ class ObtainHubUI {
     if (!(await this.requireToken())) return;
     if (!confirm('Uninstall "' + repo + '"? (stays managed)')) return;
     try {
-      await this.api('/apps/uninstall', { method: 'POST', body: { repo: repo, purge: false } });
+      await this.api('/apps/uninstall', { method: 'POST', body: { repo: repo, purge: false, interactive: true } });
       this.showToast('Uninstalled: ' + repo, 'success');
       this.loadApps();
     } catch (err) {
@@ -1045,6 +1055,7 @@ class ObtainHubUI {
       tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Scan failed: ' + this.escapeHtml(err.message) + '</td></tr>';
     } finally {
       this.candidatesScanned = true;
+      this.applyTableFilters();
       btn.disabled = false;
       btn.textContent = 'Scan for Installed Apps';
     }
@@ -1176,10 +1187,29 @@ class ObtainHubUI {
     }
   }
 
+  // ---- Table filters ----
+  applyTableFilters() {
+    const pairs = [
+      ['appsFilter', 'appsTableBody'],
+      ['candidatesFilter', 'candidatesTableBody'],
+      ['downloadsFilter', 'downloadsTableBody'],
+    ];
+    pairs.forEach(([inputId, tbodyId]) => {
+      const input = document.getElementById(inputId);
+      const tbody = document.getElementById(tbodyId);
+      if (!input || !tbody) return;
+      const q = input.value.trim().toLowerCase();
+      tbody.querySelectorAll('tr').forEach(tr => {
+        const match = !q || tr.textContent.toLowerCase().includes(q);
+        tr.style.display = match ? '' : 'none';
+      });
+    });
+  }
+
   // ---- Downloads ----
-  async loadDownloads() {
+  async loadDownloads(silent = false) {
     try {
-      const downloads = await this.api('/downloads');
+      const downloads = await this.api('/downloads', { silent });
       const tbody = document.getElementById('downloadsTableBody');
       if (!tbody) return;
 
@@ -1204,6 +1234,7 @@ class ObtainHubUI {
           '<td class="speed-eta">' + (dl.speed ? this.formatBytes(dl.speed) + '/s' : '&ndash;') + (dl.eta ? ' &bull; ETA ' + dl.eta + 's' : '') + '</td>';
         tbody.appendChild(tr);
       });
+      this.applyTableFilters();
     } catch (err) {
       const tbody = document.getElementById('downloadsTableBody');
       if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load downloads: ' + this.escapeHtml(err.message) + '</td></tr>';
@@ -1212,7 +1243,7 @@ class ObtainHubUI {
 
   startDownloadsPoll() {
     if (this.pollInterval) clearInterval(this.pollInterval);
-    this.pollInterval = setInterval(() => this.loadDownloads(), 2000);
+    this.pollInterval = setInterval(() => this.loadDownloads(true), 2000);
   }
 
   stopDownloadsPoll() {

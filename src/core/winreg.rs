@@ -234,6 +234,18 @@ pub fn detect_install_change(
     best.map(|(_, e)| e.clone())
 }
 
+/// Lowercase and collapse separators so "Aether-GUI", "Aether_GUI" and
+/// "Aether GUI" compare equal.
+fn normalize_name(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| if c == '-' || c == '_' { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Find the uninstall entry that belongs to a managed repository.
 ///
 /// The repo id is `owner/Product`; Windows records the product under its
@@ -249,7 +261,7 @@ pub fn find_entry_for_repo<'a>(
     repo: &str,
     version: Option<&str>,
 ) -> Option<&'a UninstallEntry> {
-    let product = repo.rsplit('/').next().unwrap_or(repo).trim().to_lowercase();
+    let product = normalize_name(repo.rsplit('/').next().unwrap_or(repo));
     if product.is_empty() {
         return None;
     }
@@ -257,7 +269,7 @@ pub fn find_entry_for_repo<'a>(
     let candidates: Vec<&UninstallEntry> = entries
         .iter()
         .filter(|e| {
-            let name = e.display_name.trim().to_lowercase();
+            let name = normalize_name(&e.display_name);
             !name.is_empty()
                 && (name == product || name.starts_with(&product) || name.contains(&product))
         })
@@ -282,11 +294,11 @@ pub fn find_entry_for_repo<'a>(
     // product, then the shortest name containing it.
     candidates
         .iter()
-        .find(|e| e.display_name.trim().to_lowercase() == product)
+        .find(|e| normalize_name(&e.display_name) == product)
         .or_else(|| {
             candidates
                 .iter()
-                .filter(|e| e.display_name.trim().to_lowercase().starts_with(&product))
+                .filter(|e| normalize_name(&e.display_name).starts_with(&product))
                 .min_by_key(|e| e.display_name.len())
         })
         .or_else(|| candidates.iter().min_by_key(|e| e.display_name.len()))
@@ -316,6 +328,15 @@ mod tests {
         ];
         let found = detect_install_change(&before, &after, &["OnionHop".to_string()]);
         assert_eq!(found.unwrap().display_name, "OnionHop");
+    }
+
+    #[test]
+    fn repo_name_separators_match_display_name() {
+        // Registry uses spaces, repo ids use hyphens.
+        let entries = vec![entry("Aether GUI", "1.0", "C:\\a\\u.exe")];
+        assert!(find_entry_for_repo(&entries, "MatinSenPai/Aether-GUI", None).is_some());
+        let entries = vec![entry("Aether_GUI", "1.0", "C:\\a\\u.exe")];
+        assert!(find_entry_for_repo(&entries, "MatinSenPai/Aether-GUI", None).is_some());
     }
 
     #[test]

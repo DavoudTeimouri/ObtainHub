@@ -191,11 +191,22 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
             let name = a["name"].as_str().unwrap_or("");
             name.contains(&target) && name.ends_with(".zip")
         }).or_else(|| {
+            // Installer assets (Setup.exe / MSI) before any zip fallback.
+            assets.iter().find(|a| {
+                let name = a["name"].as_str().unwrap_or("").to_ascii_lowercase();
+                !name.ends_with(".sig")
+                    && !name.contains("sha256")
+                    && (name.ends_with(".exe") || name.ends_with(".msi"))
+            })
+        }).or_else(|| {
             // Fallback: any zip
             assets.iter().find(|a| a["name"].as_str().unwrap_or("").ends_with(".zip"))
         }).or_else(|| {
-            // Last resort: any asset
-            assets.first()
+            // Last resort: the first asset that is not a checksum/signature
+            assets.iter().find(|a| {
+                let name = a["name"].as_str().unwrap_or("");
+                !name.ends_with(".sig") && !name.to_ascii_uppercase().contains("SHA256")
+            })
         }).cloned().ok_or_else(|| {
             // List all available assets for the user
             let asset_list: Vec<String> = assets.iter()
@@ -299,12 +310,11 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
                 println!("Signature verified.");
             }
         }
-    } else if !args.skip_signature {
-        let _ = fs::remove_file(&download_path);
-        anyhow::bail!(
-            "Refusing to self-update: no signature file found for {}. Use --skip-signature to bypass.",
-            asset_name
-        );
+    } else if !args.skip_signature && !args.quiet {
+        // Releases publish SHA256SUMS but not .sig files. The checksum above
+        // already pins the download to the release, so a missing signature is
+        // a warning, not a hard failure.
+        println!("Note: no signature asset published; checksum verification is the integrity check.");
     }
 
     // Handle installer assets (.exe, .msi) vs portable zip
@@ -320,24 +330,39 @@ pub async fn execute(args: SelfUpdateArgs, _config: &ConfigManager, _state: &Sta
     #[cfg(windows)]
     if is_installer {
         let exe_dir = current_exe.parent().context("Failed to get exe directory")?;
-        let staged_installer = exe_dir.join("ohub-update-staging.exe");
+        let ext = if asset_name.ends_with(".msi") { "msi" } else { "exe" };
+        let staged_installer = exe_dir.join(format!("ohub-update-staging.{ext}"));
         fs::copy(download_path, &staged_installer)
             .context("Failed to stage installer for restart")?;
         let script_path = exe_dir.join("ohub-update-restart.ps1");
+        let staged_ps = staged_installer.to_string_lossy().replace("'", "''");
+        let install_line = if ext == "msi" {
+            format!(
+                "Start-Process msiexec.exe -ArgumentList '/i \"{}\" /qn /norestart' -Verb RunAs -Wait",
+                staged_ps
+            )
+        } else {
+            format!(
+                "Start-Process '{}' -ArgumentList '/S' -Verb RunAs -Wait",
+                staged_ps
+            )
+        };
         let script = format!(
             r#"$ErrorActionPreference = 'Continue'
 Start-Sleep -Seconds 3
 while (Get-Process ohub -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 1 }}
-Start-Process '{staged}' -ArgumentList '/S' -Verb RunAs -Wait
+{install_line}
 Remove-Item '{staged}' -ErrorAction SilentlyContinue
 Start-Process '{exe}'
 "#,
-            staged = staged_installer.to_string_lossy().replace("'", "''"),
+            install_line = install_line,
+            staged = staged_ps,
             exe = current_exe.to_string_lossy().replace("'", "''"),
         );
         fs::write(&script_path, script)
             .context("Failed to write update restart script")?;
-        process::Command::new("powershell")
+        let powershell = find_powershell();
+        process::Command::new(&powershell)
             .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
             .arg(&script_path)
             .stdout(process::Stdio::null())

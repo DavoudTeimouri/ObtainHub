@@ -56,22 +56,32 @@ pub async fn execute(args: UninstallArgs, config: &mut ConfigManager, state: &mu
     if let Some(uninstaller) = &entry.uninstaller {
         match crate::core::run_uninstaller(uninstaller, args.interactive) {
             Ok(true) => {
-                // After running the uninstaller, check if the app is still
-                // detected in the Windows uninstall registry. If it is, the
-                // user cancelled or the uninstaller didn't actually remove
-                // anything — don't mark it as uninstalled.
-                let still_installed = crate::core::winreg::scan_uninstall_entries()
-                    .iter()
-                    .any(|e| crate::core::winreg::find_entry_for_repo(
-                        std::slice::from_ref(e),
-                        &args.repo,
-                        Some(&entry.version),
-                    ).is_some());
-                if still_installed {
-                    return Err(anyhow::anyhow!(
-                        "Uninstall was cancelled or did not complete — {} is still installed",
-                        args.repo
-                    ));
+                // NSIS/Burn uninstallers copy themselves to %TEMP% and return
+                // immediately, so the registry entry can linger for a while.
+                // Poll until the app disappears instead of failing on the first
+                // look; interactive runs get longer because the user clicks
+                // through dialogs.
+                let timeout = if args.interactive { 180 } else { 60 };
+                let deadline = std::time::Instant::now()
+                    + std::time::Duration::from_secs(timeout);
+                loop {
+                    let still_installed = crate::core::winreg::scan_uninstall_entries()
+                        .iter()
+                        .any(|e| crate::core::winreg::find_entry_for_repo(
+                            std::slice::from_ref(e),
+                            &args.repo,
+                            Some(&entry.version),
+                        ).is_some());
+                    if !still_installed {
+                        break;
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        return Err(anyhow::anyhow!(
+                            "Uninstall was cancelled or did not complete — {} is still installed",
+                            args.repo
+                        ));
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(750)).await;
                 }
                 println!("Ran uninstaller: {}", uninstaller);
             }

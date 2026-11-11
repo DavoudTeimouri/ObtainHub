@@ -138,11 +138,17 @@ pub fn run_uninstaller(uninstall_string: &str, interactive: bool) -> Result<bool
         args.join(" ")
     };
 
-    let body = format!(
-        "Start-Process {} -ArgumentList '{}' -Verb RunAs -Wait",
-        win_quote(exe),
-        arg_str
-    );
+    let body = if arg_str.is_empty() {
+        // Interactive, no arguments: passing -ArgumentList '' makes PowerShell
+        // launch the exe with a literal empty argument on some versions.
+        format!("Start-Process {} -Verb RunAs -Wait", win_quote(exe))
+    } else {
+        format!(
+            "Start-Process {} -ArgumentList '{}' -Verb RunAs -Wait",
+            win_quote(exe),
+            arg_str
+        )
+    };
     run_elevated(&body)?;
     Ok(true)
 }

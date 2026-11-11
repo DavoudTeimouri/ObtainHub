@@ -1026,3 +1026,57 @@ body.locked main .page .btn-danger {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- table filter inputs ---------- */
+.filter-input {
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: var(--font-sans);
+  min-width: 180px;
+}
+.filter-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ---------- sticky table header ---------- */
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+.data-table thead th:last-child {
+  z-index: 4;
+}
+
+/* Never let long paths/URLs bleed into the neighbouring column. */
+.data-table td { overflow-wrap: anywhere; }
+#candidatesTable td:nth-child(3) code {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* ---------- links ---------- */
+a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: none;
+}
+
+/* Separator shadow for the pinned Action column while scrolling */
+.data-table th:last-child,
+.data-table td:last-child {
+  box-shadow: -6px 0 8px -8px rgba(0, 0, 0, 0.55);
+}

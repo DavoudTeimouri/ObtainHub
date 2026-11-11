@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.65] - 2026-11-10
+- FIX: Continuous refresh/flashing on Detect Installed and other pages — Downloads polling was showing the global loading overlay every 2s and kept running after leaving the page. Polls are silent now; poll stops on navigation.
+- FIX: Uninstall false "still installed" — registry is polled (60s silent / 180s interactive) because NSIS/Burn uninstallers return before they finish. Matching normalizes -/_/space.
+- FIX: Self-update failed — missing .sig asset is a warning (SHA256SUMS still verified); restart helper uses the full PowerShell path, handles MSI via msiexec, and asset picker prefers Setup.exe/MSI over checksum files.
+- FEAT: Filter boxes for Managed Apps, Detect Installed, and Downloads tables.
+- FEAT: Sticky table headers while scrolling.
+- FIX: Long paths/URLs no longer bleed into neighbouring columns.
+- STYLE: Links have no underline; hover changes color only.
+
 ## [v3.0.68-rc.64] - 2026-11-10
 - STYLE: Full WebUI redesign — neutral slate dark theme, single blue accent, no purple gradients/glows, smaller icons (16-18px, hard-capped SVGs), tighter radii and spacing, cleaner tables/buttons/forms/modals. All 82 HTML classes preserved.
 
