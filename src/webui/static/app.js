@@ -95,7 +95,6 @@ class ObtainHubUI {
       const el = document.getElementById(id);
       if (el) el.addEventListener('submit', (e) => { e.preventDefault(); handler(); });
     };
-    wire('checkForm', () => this.checkAppForm());
     wire('updateForm', () => this.updateAppForm());
     wire('uninstallForm', () => this.uninstallAppForm());
     wire('removeForm', () => this.removeAppForm());
@@ -234,6 +233,12 @@ class ObtainHubUI {
     // Apps page buttons
     const checkAllBtn = document.getElementById('checkAllBtn');
     if (checkAllBtn) checkAllBtn.addEventListener('click', () => this.checkAllApps());
+    const checkAllAppsBtn = document.getElementById('checkAllAppsBtn');
+    if (checkAllAppsBtn) checkAllAppsBtn.addEventListener('click', () => this.checkAllApps());
+    const refreshCheckBtn = document.getElementById('refreshCheckBtn');
+    if (refreshCheckBtn) refreshCheckBtn.addEventListener('click', () => { this.loadApps(); this.renderCheckResults(this.installedApps || []); });
+    const checkRepoBtn = document.getElementById('checkRepoBtn');
+    if (checkRepoBtn) checkRepoBtn.addEventListener('click', () => this.checkRepo());
     const refreshAppsBtn = document.getElementById('refreshAppsBtn');
     if (refreshAppsBtn) refreshAppsBtn.addEventListener('click', () => this.loadApps());
 
@@ -557,6 +562,7 @@ class ObtainHubUI {
     if (!tbody) return;
     try {
       const apps = await this.api('/apps');
+      this.installedApps = apps || [];
       if (!apps || apps.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No managed applications. Search GitHub above and install one.</td></tr>';
         return;
@@ -688,20 +694,77 @@ class ObtainHubUI {
 
   async checkAllApps() {
     if (!(await this.requireToken())) return;
-    const btn = document.getElementById('checkAllBtn');
+    const btn = document.getElementById('checkAllAppsBtn') || document.getElementById('checkAllBtn');
     if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
     try {
       const apps = await this.api('/apps');
+      const prerelease = prereleaseEl ? prereleaseEl.checked : false;
+      const reset = resetEl ? resetEl.checked : false;
       for (const a of (apps || [])) {
-        await this.api('/apps/check', { method: 'POST', body: { repo: a.repo } }).catch(() => {});
+        await this.api('/apps/check', { method: 'POST', body: { repo: a.repo, prerelease, reset: reset ? true : undefined } }).catch(() => {});
       }
       this.showToast('Update check complete for all apps', 'success');
-      this.loadApps();
+      const fresh = await this.api('/apps');
+      this.installedApps = fresh || [];
+      this.renderCheckResults(this.installedApps);
     } catch (err) {
       this.showToast('Check failed: ' + err.message, 'error');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Check All Updates'; }
     }
+  }
+
+  async checkRepo() {
+    if (!(await this.requireToken())) return;
+    const repo = document.getElementById('checkRepo').value.trim();
+    if (!repo) { this.showToast('Enter a repository (owner/repo)', 'error'); return; }
+    const btn = document.getElementById('checkRepoBtn');
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Checking...';
+    try {
+      const prereleaseEl = document.getElementById('checkPrerelease');
+      const resetEl = document.getElementById('checkReset');
+      const prerelease = prereleaseEl ? prereleaseEl.checked : false;
+      const reset = resetEl ? resetEl.checked : false;
+      await this.api('/apps/check', { method: 'POST', body: { repo, prerelease, reset: reset ? true : undefined } });
+      this.showToast('Checked: ' + repo, 'success');
+      const fresh = await this.api('/apps');
+      this.installedApps = fresh || [];
+      this.renderCheckResults(this.installedApps);
+    } catch (err) {
+      this.showToast('Check failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = orig;
+    }
+  }
+
+  renderCheckResults(apps) {
+    const tbody = document.getElementById('checkTableBody');
+    const count = document.getElementById('checkCount');
+    const wrap = document.getElementById('checkResultWrap');
+    if (!tbody) return;
+    const list = apps || [];
+    const withUpdates = list.filter(a => a.update_available);
+    count.textContent = list.length + ' apps &middot; ' + withUpdates.length + ' update' + (withUpdates.length === 1 ? '' : 's') + ' available';
+    wrap.classList.remove('hidden');
+    tbody.innerHTML = '';
+    if (withUpdates.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">All apps are up to date.</td></tr>';
+      return;
+    }
+    withUpdates.forEach(app => {
+      const statusClass = 'status-' + (app.status || 'unknown').toLowerCase();
+      const repo = app.repo;
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><code>' + this.escapeHtml(repo) + '</code></td>' +
+        '<td><code>' + this.escapeHtml(app.version) + '</code></td>' +
+        '<td><code style="color:var(--success);font-weight:600">' + this.escapeHtml(app.latest_version || '') + '</code></td>' +
+        '<td><span class="badge badge-update">Update available</span></td>' +
+        '<td><span class="badge badge-' + statusClass + '">' + this.escapeHtml(app.status) + '</span></td>' +
+        '<td><button class="action-btn btn-primary" onclick="app.updateApp(\'' + repo + '\')">Update</button></td>';
+      tbody.appendChild(tr);
+    });
   }
 
   async uninstallApp(repo) {
@@ -773,7 +836,6 @@ class ObtainHubUI {
     }
   }
 
-  async checkAppForm() { await this.runAppAction('checkForm', '/apps/check', 'POST', 'Check complete'); }
   async updateAppForm() {
     const repo = document.getElementById('updateRepo').value.trim();
     if (!repo) { this.showToast('Enter a repository (owner/repo)', 'error'); return; }

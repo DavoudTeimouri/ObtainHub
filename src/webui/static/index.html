@@ -10,7 +10,7 @@
   <meta http-equiv="Expires" content="0">
   <title>ObtainHub WebUI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.66">
+  <link rel="stylesheet" href="/static/style.css?v=3.0.68-rc.67">
 </head>
 <body>
   <div class="app">
@@ -97,7 +97,7 @@
           <span style="color:var(--text-muted); font-size:11px;">Sign in required for changes — use Login, or add a GitHub token in Configuration.</span>
         </div>
         <div class="footer-panel">
-          <div class="footer-version" id="versionBadge">v3.0.68-rc.66</div>
+          <div class="footer-version" id="versionBadge">v3.0.68-rc.67</div>
           <div class="footer-copyright">© 2026 ObtainHub</div>
         </div>
       </div>
@@ -267,33 +267,52 @@
         </div>
         </div>
 
-        <!-- Check for Updates -->
+        <!-- Check for Updates: compares installed versions vs latest GitHub release -->
         <div class="apps-panel" id="appsTab-check">
         <div class="card">
           <div class="card-header"><h3>Check for Updates</h3></div>
-          <form class="download-form" id="checkForm">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="checkRepo">Repository (owner/repo)</label>
+          <div class="card-body">
+            <p class="page-subtitle">Compares each managed app&rsquo;s installed version against its latest GitHub release. Apps with an update available get an Update button in the Apps list.</p>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-primary" id="checkAllAppsBtn">Check All Updates</button>
+              <button type="button" class="btn btn-secondary" id="refreshCheckBtn">Refresh Apps</button>
+            </div>
+
+            <div class="form-row" style="margin-top:var(--space-4);">
+              <div class="form-group" style="flex:1;">
+                <label for="checkRepo">Check a specific repository</label>
                 <input type="text" id="checkRepo" placeholder="owner/repo">
               </div>
-              <div class="form-group">
-                <label class="checkbox-label"><input type="checkbox" id="checkAll"> Check all managed apps</label>
+              <div class="form-group" style="margin-top:var(--space-4);">
+                <button type="button" class="btn btn-primary" id="checkRepoBtn">Check</button>
               </div>
             </div>
+
             <div class="form-row">
               <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="checkPrerelease"> Include pre-releases</label></div>
-              <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="checkCandidates"> Show update candidates</label></div>
               <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="checkReset"> Reset check cache</label></div>
             </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary" id="checkBtn">Check</button>
-              <button type="button" class="btn btn-secondary" id="clearCheckResult">Clear</button>
+
+            <div class="table-wrapper" id="checkResultWrap">
+              <div class="card-header">
+                <h3>Results</h3>
+                <span id="checkCount" class="badge badge-neutral">0 apps checked</span>
+              </div>
+              <table class="data-table" id="checkTable">
+                <thead>
+                  <tr>
+                    <th>Repository</th>
+                    <th>Current</th>
+                    <th>Latest</th>
+                    <th>Update?</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="checkTableBody"></tbody>
+              </table>
             </div>
-          </form>
-          <div class="table-wrapper hidden" id="checkResultWrap">
-            <div class="card-header"><h3>Result</h3></div>
-            <pre id="checkResult"></pre>
           </div>
         </div>
         </div>
@@ -842,6 +861,6 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="/static/app.js?v=3.0.68-rc.66"></script>
+  <script src="/static/app.js?v=3.0.68-rc.67"></script>
 </body>
 </html>

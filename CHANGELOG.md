@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.67] - 2026-11-10
+- STYLE: Margin pass — spacing scale (--space-1..5), consistent card/table/form/button margins, cards no longer touch tables/edges.
+- FEAT: Redesigned "Check for Updates" — prominent "Check All Updates" + single-repo check, results table (current vs latest, update available badge, Update button), prerelease/reset-cache options. Explains what it does: compares installed versions against latest GitHub releases so apps get an Update button in the Apps list.
+
 ## [v3.0.68-rc.66] - 2026-11-10
 - FIX: Margin pass — table-wrapper margin-bottom, unified 16px component spacing, filter input margin-right.
 - FEAT: Detect Installed Add now removes the app from the results immediately (button gone); it is also excluded on the next scan since it's tracked.
