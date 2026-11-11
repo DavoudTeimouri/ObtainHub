@@ -62,14 +62,15 @@ pub async fn execute(
                     download_only: false,
                     skip_deps: false,
                     timeout: None,
-                    arch: Arch::Auto,
-                    yes: false,
+                    arch: crate::cli::Arch::Auto,
+                    yes: true,
                     reset: false,
                     interactive: false,
                     dry_run: false,
                     file: None,
                     url: None,
                     dependencies: Vec::new(),
+                    install_path: None,
                 };
                 if let Err(e) = crate::commands::install::execute(install_args, config, state, &retry).await {
                     println!("  {repo} failed: {e}");

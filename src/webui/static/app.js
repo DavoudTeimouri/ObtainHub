@@ -1216,7 +1216,17 @@ class ObtainHubUI {
   // One-click add of a specific candidate repo straight from the results table.
   async quickAdd(repo) {
     try {
-      await this.api('/apps', { method: 'POST', body: { repo: repo } });
+      // Find the candidate entry this repo came from, to send its detected
+      // install_path and version to the install endpoint.
+      const entry = (this.candidatesData || []).find(c =>
+        (c.candidates || []).includes(repo)
+      );
+      const body = { repo: repo };
+      if (entry) {
+        if (entry.install_path) body.install_path = entry.install_path;
+        if (entry.version && entry.version !== 'unknown') body.version = entry.version;
+      }
+      await this.api('/apps', { method: 'POST', body });
       this.addedFromCandidates.add(repo);
       this.candidatesData = this.candidatesData.filter(c => c.name !== repo);
       this.renderCandidates();
@@ -1278,7 +1288,15 @@ class ObtainHubUI {
     const repo = this.pickOptions[index];
     if (!repo) return;
     try {
-      await this.api('/apps', { method: 'POST', body: { repo: repo } });
+      // Send detected install_path and version from the registry scan so the
+      // installed app is tracked at its real location with its real version.
+      const entry = (this.candidatesData || []).find(c => c.name === this.pickAppName);
+      const body = { repo: repo };
+      if (entry) {
+        if (entry.install_path) body.install_path = entry.install_path;
+        if (entry.version && entry.version !== 'unknown') body.version = entry.version;
+      }
+      await this.api('/apps', { method: 'POST', body });
       this.addedFromCandidates.add(this.pickAppName);
       this.candidatesData = this.candidatesData.filter(c => c.name !== this.pickAppName);
       this.renderCandidates();

@@ -640,7 +640,7 @@ async fn handle_search_results(
                 download_only: false,
                 skip_deps: false,
                 timeout: None,
-                arch: Arch::Auto,
+                arch: crate::cli::Arch::Auto,
                 yes: true,
                 reset: false,
                 interactive: false,
@@ -648,6 +648,7 @@ async fn handle_search_results(
                 file: None,
                 url: None,
                 dependencies: Vec::new(),
+                install_path: None,
             };
             suspend_tui(terminal)?;
             let result = crate::commands::install::execute(args, config, state, &app.retry_config).await;

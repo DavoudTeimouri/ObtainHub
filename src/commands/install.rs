@@ -76,7 +76,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     // First, check if there's a manifest source matching this repo
     let token_owned = config.github_token();
     let token = token_owned.as_deref();
-    let install_dir = config.get().install_dir.join(&args.repo);
+    let install_dir = args.install_path.clone().unwrap_or_else(|| config.get().install_dir.join(&args.repo));
     
     // Check if already installed
     if install_dir.exists() && !args.force {
@@ -309,6 +309,7 @@ async fn install_dependencies(
             // A dependency's own dependencies are not followed: that is what
             // keeps a cycle from recursing.
             dependencies: Vec::new(),
+            install_path: None,
         };
         // Boxed because installing a dependency calls back into execute -
         // an async fn that recurses needs a boxed future.

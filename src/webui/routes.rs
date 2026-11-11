@@ -518,7 +518,7 @@ pub struct RepoItem {
     pub stargazers_count: u32,
     pub language: Option<String>,
     pub updated_at: String,
-    pub published_at: String,
+    pub published_at: Option<String>,
     pub html_url: String,
 }
 
@@ -571,7 +571,7 @@ pub async fn search_repos(
                         stargazers_count: item.stargazers_count,
                         language: item.language,
                         updated_at: item.updated_at,
-                        published_at,
+                        published_at: Some(published_at),
                         html_url: item.html_url,
                     });
                 }
@@ -629,6 +629,12 @@ pub struct AppAction {
     pub candidates: bool,
     #[serde(default)]
     pub reset: bool,
+    /// Install path detected from Windows registry scan (Detect Installed → Add)
+    #[serde(default)]
+    pub install_path: Option<String>,
+    /// Version detected from Windows registry scan (Detect Installed → Add)
+    #[serde(default)]
+    pub version: Option<String>,
     /// Run uninstaller interactively (user sees the UI, can cancel)
     #[serde(default)]
     pub interactive: bool,
@@ -648,7 +654,7 @@ pub async fn install_app(
 ) -> impl IntoResponse {
     let args = crate::cli::InstallArgs {
         repo: body.repo,
-        version: None,
+        version: body.version,
         tag: None,
         prerelease: body.prerelease,
         force: body.force,
@@ -663,6 +669,7 @@ pub async fn install_app(
         file: None,
         url: None,
         dependencies: Vec::new(),
+        install_path: body.install_path.map(|p| std::path::PathBuf::from(p)),
     };
     let result = {
         let cm = app_state.config_manager.lock().await;

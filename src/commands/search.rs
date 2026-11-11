@@ -166,13 +166,14 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
                             skip_deps: false,
                             timeout: None,
                             arch: crate::cli::Arch::Auto,
-                            yes: false,
+                            yes: true,
                             reset: false,
                             interactive: false,
                             dry_run: false,
                             file: None,
                             url: None,
                             dependencies: Vec::new(),
+                            install_path: None,
                         };
                         let retry_config = crate::utils::retry::RetryConfig::from_config(config);
                         if let Err(e) = crate::commands::install::execute(install_args, config, state, &retry_config).await {
