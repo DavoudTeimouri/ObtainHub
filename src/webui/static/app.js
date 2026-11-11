@@ -11,6 +11,7 @@ class ObtainHubUI {
     this.authRequired = false;
     this.appsTab = 'list';
     this.installedRepos = new Set();
+    this.addedFromCandidates = new Set();
     this.init();
   }
 
@@ -1037,20 +1038,7 @@ class ObtainHubUI {
         tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No unmanaged installed apps found. <button type="button" class="btn btn-secondary" onclick="app.showAppsTab(\'add\')">Add manually</button></td></tr>';
         return;
       }
-      tbody.innerHTML = '';
-      this.candidatesData.forEach((c, i) => {
-        const candList = c.candidates && c.candidates.length
-          ? c.candidates.map(r => '<button type="button" class="repo-chip" title="Add ' + this.escapeHtml(r) + ' to management" onclick="app.quickAdd(\'' + r + '\')">' + this.escapeHtml(r) + '</button>').join(' ')
-          : '<span class="empty-state">search on Add</span>';
-        const tr = document.createElement('tr');
-        tr.innerHTML =
-          '<td><code>' + this.escapeHtml(c.name) + '</code></td>' +
-          '<td>' + this.escapeHtml(c.version || 'unknown') + '</td>' +
-          '<td><code style="font-size:0.75rem;">' + this.escapeHtml(c.install_path || '-') + '</code></td>' +
-          '<td>' + candList + '</td>' +
-          '<td><button class="action-btn btn-primary" onclick="app.pickCandidate(' + i + ')">Add</button></td>';
-        tbody.appendChild(tr);
-      });
+      this.renderCandidates();
     } catch (err) {
       tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Scan failed: ' + this.escapeHtml(err.message) + '</td></tr>';
     } finally {
@@ -1061,13 +1049,39 @@ class ObtainHubUI {
     }
   }
 
+  // Render the Detect Installed table from this.candidatesData. Apps already
+  // added to management are removed from the data, so they never reappear
+  // without a fresh scan (and the server excludes tracked apps anyway).
+  renderCandidates() {
+    const tbody = document.getElementById('candidatesTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    this.candidatesData.forEach((c, i) => {
+      if (this.addedFromCandidates.has(c.name)) return;
+      const candList = c.candidates && c.candidates.length
+        ? c.candidates.map(r => '<button type="button" class="repo-chip" title="Add ' + this.escapeHtml(r) + ' to management" onclick="app.quickAdd(\'' + r + '\')">' + this.escapeHtml(r) + '</button>').join(' ')
+        : '<span class="empty-state">search on Add</span>';
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><code>' + this.escapeHtml(c.name) + '</code></td>' +
+        '<td>' + this.escapeHtml(c.version || 'unknown') + '</td>' +
+        '<td><code style="font-size:0.75rem;">' + this.escapeHtml(c.install_path || '-') + '</code></td>' +
+        '<td>' + candList + '</td>' +
+        '<td><button class="action-btn btn-primary" onclick="app.pickCandidate(' + i + ')">Add</button></td>';
+      tbody.appendChild(tr);
+    });
+    this.applyTableFilters();
+  }
+
   // One-click add of a specific candidate repo straight from the results table.
   async quickAdd(repo) {
     try {
       await this.api('/apps', { method: 'POST', body: { repo: repo } });
+      this.addedFromCandidates.add(repo);
+      this.candidatesData = this.candidatesData.filter(c => c.name !== repo);
+      this.renderCandidates();
       this.showToast('Added to management: ' + repo, 'success');
       this.loadApps();
-      this.loadCandidates();
     } catch (err) {
       this.showToast('Failed to add ' + repo + ': ' + err.message, 'error');
     }
@@ -1125,10 +1139,12 @@ class ObtainHubUI {
     if (!repo) return;
     try {
       await this.api('/apps', { method: 'POST', body: { repo: repo } });
+      this.addedFromCandidates.add(this.pickAppName);
+      this.candidatesData = this.candidatesData.filter(c => c.name !== this.pickAppName);
+      this.renderCandidates();
       this.showToast('Added: ' + this.pickAppName + ' as ' + repo, 'success');
       document.getElementById('pickModal').classList.add('hidden');
       this.loadApps();
-      this.loadCandidates();
     } catch (err) {
       this.showToast('Failed to add: ' + err.message, 'error');
     }

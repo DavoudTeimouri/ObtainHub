@@ -307,7 +307,7 @@ code {
 
 .page.active { display: block; animation: fade-in 0.15s ease; }
 
-.page-header { margin-bottom: 18px; }
+.page-header { margin-bottom: 16px; }
 .page-header h2 { font-size: 18px; font-weight: 650; letter-spacing: 0.1px; }
 .page-subtitle { color: var(--text-muted); font-size: 12.5px; margin-top: 3px; }
 
@@ -316,7 +316,7 @@ code {
   display: flex;
   gap: 2px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   overflow-x: auto;
 }
 
@@ -355,7 +355,7 @@ body.locked main .page .btn-danger {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .stat-card {
@@ -497,7 +497,7 @@ body.locked main .page .btn-danger {
 .token-banner code { background: rgba(0, 0, 0, 0.25); }
 
 /* ---------- tables ---------- */
-.table-wrapper { overflow: auto; max-height: 65vh; }
+.table-wrapper { overflow: auto; max-height: 65vh; margin-bottom: 16px; }
 
 .data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 
@@ -1036,7 +1036,8 @@ body.locked main .page .btn-danger {
   color: var(--text);
   font-size: 12.5px;
   font-family: var(--font-sans);
-  min-width: 180px;
+  min-width: 170px;
+  margin-right: 10px;
 }
 .filter-input:focus {
   outline: none;

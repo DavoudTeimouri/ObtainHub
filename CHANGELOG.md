@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.66] - 2026-11-10
+- FIX: Margin pass — table-wrapper margin-bottom, unified 16px component spacing, filter input margin-right.
+- FEAT: Detect Installed Add now removes the app from the results immediately (button gone); it is also excluded on the next scan since it's tracked.
+
 ## [v3.0.68-rc.65] - 2026-11-10
 - FIX: Continuous refresh/flashing on Detect Installed and other pages — Downloads polling was showing the global loading overlay every 2s and kept running after leaving the page. Polls are silent now; poll stops on navigation.
 - FIX: Uninstall false "still installed" — registry is polled (60s silent / 180s interactive) because NSIS/Burn uninstallers return before they finish. Matching normalizes -/_/space.
