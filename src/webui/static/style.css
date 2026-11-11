@@ -1416,3 +1416,22 @@ body.locked main .page .btn-danger {
   cursor: pointer;
 }
 .repo-chip:hover { background: var(--accent, #3b82f6); color: #fff; }
+
+/* Keep the Action column visible in wide tables (Detect Installed) */
+.table-wrapper { overflow: auto; max-height: 65vh; }
+.data-table th:last-child,
+.data-table td:last-child {
+  white-space: nowrap;
+  width: 1%;
+  position: sticky;
+  right: 0;
+  background: var(--card, #fff);
+}
+.data-table tbody tr:hover td:last-child { background: var(--surface-2, #f5f5f5); }
+.action-btn { white-space: nowrap; }
+#candidatesTable td:nth-child(3) { max-width: 260px; }
+#candidatesTable td:nth-child(4) { white-space: normal; }
+
+/* Wider picker modal so repo names and the Add buttons are fully visible */
+#pickModal .modal-content { max-width: 560px; }
+#pickModal .pick-results .pick-option { font-size: 13px; padding: 8px 12px; }

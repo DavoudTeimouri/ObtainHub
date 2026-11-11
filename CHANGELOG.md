@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.63] - 2026-11-10
+- FIX: Action/Add column in wide tables (Detect Installed) is now sticky and never scrolls out of view; table wrapper scrolls both axes with 65vh max-height.
+- FIX: Repo picker modal widened to 560px so repo names and buttons are fully visible.
+
 ## [v3.0.68-rc.62] - 2026-11-10
 - FEAT: Detect Installed rows now have a per-row Add button AND each candidate repo is a clickable chip (one-click add via POST /apps).
 - FEAT: Repo picker modal has a visible Search button (plus Enter/debounced input).
