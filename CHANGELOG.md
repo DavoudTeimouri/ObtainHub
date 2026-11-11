@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.68-rc.64] - 2026-11-10
+- STYLE: Full WebUI redesign — neutral slate dark theme, single blue accent, no purple gradients/glows, smaller icons (16-18px, hard-capped SVGs), tighter radii and spacing, cleaner tables/buttons/forms/modals. All 82 HTML classes preserved.
+
 ## [v3.0.68-rc.63] - 2026-11-10
 - FIX: Action/Add column in wide tables (Detect Installed) is now sticky and never scrolls out of view; table wrapper scrolls both axes with 65vh max-height.
 - FIX: Repo picker modal widened to 560px so repo names and buttons are fully visible.
