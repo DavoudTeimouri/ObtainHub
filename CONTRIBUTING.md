@@ -77,11 +77,10 @@ Full procedure and the changelog template are in **PROJECT.md §0**. Short form:
 1. Write the `## [vX.Y.Z]` section in `CHANGELOG.md` (template in PROJECT.md §0).
 2. Bump all four version sites — see PROJECT.md §2.
 3. `cargo test` green; `makensis` emits zero warnings.
-4. Tag pre-release first: `git tag vX.Y.Z-rc1 && git push origin vX.Y.Z-rc1`.
-5. After you have installed it and confirmed it works, cut `vX.Y.Z`.
+4. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 The tag can also be cut from the Actions tab: run the **Build Rust (Windows
-x64)** workflow with the `tag` input set (for example `v3.0.64-rc1`). The
+x64)** workflow with the `tag` input set (for example `v3.0.68`). The
 workflow creates the tag and pushes it, and the tag push starts the run that
 builds the installers and publishes the release. The version bump has to be on
 `main` first - the workflow tags what it checked out.

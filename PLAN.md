@@ -1,4 +1,4 @@
-# ObtainHub Improvement Plan — status as of v3.0.68-rc.10
+# ObtainHub Improvement Plan — status as of v3.0.68
 
 ## Done (this cycle)
 

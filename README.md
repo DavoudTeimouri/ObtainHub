@@ -328,7 +328,7 @@ ObtainHub ships MSI + NSIS EXE installers only (no standalone `ohub.exe` asset).
 
 ## Release process
 
-Each release tag (`vX.Y.Z-rc1`) must have its own `## [vX.Y.Z]` section in `CHANGELOG.md`. Only `ObtainHub.msi`, `ObtainHub-Setup.exe`, and `SHA256SUMS` are published as assets. See `CONTRIBUTING.md` for build and release steps.
+Each release tag (`vX.Y.Z`) must have its own `## [vX.Y.Z]` section in `CHANGELOG.md`. Only `ObtainHub.msi`, `ObtainHub-Setup.exe`, and `SHA256SUMS` are published as assets. See `CONTRIBUTING.md` for build and release steps.
 
 ## License
 

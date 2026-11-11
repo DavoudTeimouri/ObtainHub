@@ -30,8 +30,9 @@ snapshot.
   `installer/ObtainHub.nsi` `!define VERSION`, `installer/setup.wxs`
   (`Version` + `Comments`), `CHANGELOG.md`. Exception for prerelease tags in
   PROJECT.md §0: MSI `Product Version` must be numeric.
-- **Tag pre-release first.** `vX.Y.Z-rc1` ships, gets tested, and only then is
-  `vX.Y.Z` cut. Never cut a final tag on untested code.
+Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`. (Every version ships as a
+candidate first: tag `vX.Y.Z-rc1`, install and confirm it works, then cut
+`vX.Y.Z`.)
 - **Do not force-move a tag that has been published.** Cut a new version.
 - **NSIS is pinned to 3.11.** 3.13 emitted an installer Windows rejects with
   "Installer corrupted: invalid opcode".
@@ -41,7 +42,7 @@ snapshot.
 Do not claim success from a self-report. Run it:
 
 ```bash
-cargo test                      # 22 tests expected green
+cargo test                      # 58 tests expected green
 cargo check                     # zero errors
 makensis installer/ObtainHub.nsi # must emit zero warnings
 ```
