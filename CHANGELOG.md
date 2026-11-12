@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.2] - 2026-11-12
+
+RC.2: Fix links not working — removed `pointer-events: none` from `.app.blur-bg` so clicks always work, even when login modal blur is active (401 auth flow was trapping users).
+
 ## [v3.0.72-rc.1] - 2026-11-12
 
 RC.1: WebUI redesign — deep navy theme with electric blue/cyan accents, stat cards, sortable tables.
