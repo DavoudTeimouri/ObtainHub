@@ -126,6 +126,19 @@ impl StateManager {
     pub fn list_installed(&self) -> Vec<&InstalledRepo> {
         self.state.installed.values().collect()
     }
+
+    /// Re-read state.json from disk, discarding the in-memory cache.
+    /// This keeps the WebUI in sync with changes made by the CLI (install,
+    /// uninstall, update) between HTTP requests.
+    pub fn reload(&mut self) -> Result<()> {
+        if self.state_path.exists() {
+            let content = std::fs::read_to_string(&self.state_path)?;
+            self.state = serde_json::from_str(&content)?;
+        } else {
+            self.state = State::default();
+        }
+        Ok(())
+    }
     
     pub fn path(&self) -> &PathBuf {
         &self.state_path

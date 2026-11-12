@@ -12,6 +12,7 @@ class ObtainHubUI {
     this.appsTab = 'list';
     this.installedRepos = new Set();
     this.addedFromCandidates = new Set();
+    this.sortState = { column: null, desc: false };
     this.init();
   }
 
@@ -88,6 +89,21 @@ class ObtainHubUI {
     // Apps page sub-tabs (List / Search & Install / Check / Update / Uninstall / Remove / Add / Sources)
     document.querySelectorAll('#appsTabs [data-apps-tab]').forEach(btn => {
       btn.addEventListener('click', () => this.showAppsTab(btn.getAttribute('data-apps-tab')));
+    });
+
+    // Table column sorting on Apps page
+    document.querySelectorAll('#appsTable th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.getAttribute('data-sort');
+        this.sortApps(col);
+        // Update arrow indicators
+        document.querySelectorAll('#appsTable th[data-sort]').forEach(h => {
+          h.classList.remove('sort-asc', 'sort-desc');
+        });
+        if (this.sortState.column === col) {
+          th.classList.add(this.sortState.desc ? 'sort-desc' : 'sort-asc');
+        }
+      });
     });
 
     // Command feature forms
@@ -498,6 +514,13 @@ class ObtainHubUI {
     return div.innerHTML;
   }
 
+  // Strip a leading 'v'/'V' so version badges don't show "vv3.0.69" when
+  // GitHub tag names already include the prefix.
+  cleanVersion(v) {
+    if (!v) return '';
+    return v.replace(/^[vV]/, '');
+  }
+
   formatBytes(bytes) {
     if (!bytes && bytes !== 0) return '0 B';
     const k = 1024;
@@ -582,22 +605,24 @@ class ObtainHubUI {
       const apps = await this.api('/apps');
       this.installedApps = apps || [];
       if (!apps || apps.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No managed applications. Search GitHub above and install one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No managed applications. Search GitHub above and install one.</td></tr>';
         return;
       }
       tbody.innerHTML = '';
-      apps.forEach(app => {
+      const sorted = this.applySort(this.installedApps);
+      sorted.forEach(app => {
         this.installedRepos.add(app.repo);
         const tr = document.createElement('tr');
         const statusClass = 'status-' + (app.status || 'unknown').toLowerCase();
         const repo = this.escapeHtml(app.repo);
         const updateBadge = app.update_available
-          ? '<span class="badge badge-update">Update available → v' + this.escapeHtml(app.latest_version || '') + '</span>'
+          ? '<span class="badge badge-update">Update available → ' + this.cleanVersion(app.latest_version || '') + '</span>'
           : '<span class="badge badge-neutral">-</span>';
         tr.innerHTML =
           '<td><code>' + repo + '</code></td>' +
           '<td>' + this.escapeHtml(app.name) + '</td>' +
           '<td><code>' + this.escapeHtml(app.version) + '</code></td>' +
+          '<td><code>' + this.escapeHtml(app.install_path || '-') + '</code></td>' +
           '<td><span class="badge badge-' + statusClass + '">' + this.escapeHtml(app.status) + '</span></td>' +
           '<td>' + updateBadge + '</td>' +
           '<td>' + this.formatRelativeTime(app.installed_at) + '</td>' +
@@ -612,8 +637,39 @@ class ObtainHubUI {
       });
       this.applyTableFilters();
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load apps: ' + this.escapeHtml(err.message) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Failed to load apps: ' + this.escapeHtml(err.message) + '</td></tr>';
     }
+  }
+
+  // ---- Table sorting ----
+  sortApps(column) {
+    if (this.sortState.column === column) {
+      this.sortState.desc = !this.sortState.desc;
+    } else {
+      this.sortState.column = column;
+      this.sortState.desc = false;
+    }
+    this.loadApps();
+  }
+
+  // Apply current sort state to installedApps before rendering.
+  // Called at the start of loadApps() after fetching from the API.
+  applySort(apps) {
+    if (!this.sortState.column || !apps || !apps.length) return apps;
+    const dir = this.sortState.desc ? -1 : 1;
+    return [...apps].sort((a, b) => {
+      let av = a[this.sortState.column];
+      let bv = b[this.sortState.column];
+      if (av == null) av = '';
+      if (bv == null) bv = '';
+      // Numeric comparison for stars/counts, string otherwise
+      const an = parseFloat(av);
+      const bn = parseFloat(bv);
+      if (!isNaN(an) && !isNaN(bn) && av.toString().trim() === '' + an && bv.toString().trim() === '' + bn) {
+        return (an - bn) * dir;
+      }
+      return String(av).localeCompare(String(bv)) * dir;
+    });
   }
 
   // GitHub API actions need a token — remind and guide instead of failing.
@@ -676,6 +732,11 @@ class ObtainHubUI {
   }
 
   async installApp(repo) {
+    const already = this.installedRepos && this.installedRepos.has(repo);
+    if (already) {
+      if (!confirm('"' + repo + '" is already managed by ObtainHub. Update it to the latest release instead?')) return;
+      return this.updateApp(repo);
+    }
     if (!confirm('Install "' + repo + '"? This will download and register it under ObtainHub management.')) return;
     try {
       const res = await this.api('/apps/install', { method: 'POST', body: { repo: repo } });

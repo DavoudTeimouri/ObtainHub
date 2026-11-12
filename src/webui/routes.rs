@@ -39,7 +39,8 @@ pub struct AppInfo {
 pub async fn list_apps(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
 ) -> impl IntoResponse {
-    let state = app_state.state_manager.lock().await;
+    let mut state = app_state.state_manager.lock().await;
+    state.reload().ok();
     let apps: Vec<AppInfo> = state.get().installed.values().map(|app| {
         AppInfo {
             repo: app.repo.clone(),

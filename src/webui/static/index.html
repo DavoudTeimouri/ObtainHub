@@ -205,18 +205,19 @@
             <table class="data-table" id="appsTable">
               <thead>
                 <tr>
-                  <th>Repository</th>
-                  <th>Name</th>
-                  <th>Version</th>
-                  <th>Status</th>
+                  <th data-sort="repo">Repository</th>
+                  <th data-sort="name">Name</th>
+                  <th data-sort="version">Version</th>
+                  <th data-sort="install_path">Install Path</th>
+                  <th data-sort="status">Status</th>
                   <th>Update</th>
-                  <th>Installed</th>
-                  <th>Updated</th>
+                  <th data-sort="installed_at">Installed</th>
+                  <th data-sort="updated_at">Updated</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="appsTableBody">
-                <tr class="loading-row"><td colspan="8">Loading...</td></tr>
+                <tr class="loading-row"><td colspan="9">Loading...</td></tr>
               </tbody>
             </table>
           </div>

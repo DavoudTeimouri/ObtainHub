@@ -16,6 +16,9 @@ pub struct UninstallEntry {
     /// `C:\Program Files\App\App.exe,0`. The only reliable install location
     /// for the many apps that leave `InstallLocation` empty.
     pub display_icon: String,
+    /// `InstallDate` registry value (DWORD, YYYYMMDD format) - when the app
+    /// was installed, used to show the real install date instead of "Just Now".
+    pub install_date: Option<String>,
 }
 
 /// Trim whitespace and quotes off a registry path value.
@@ -155,12 +158,29 @@ pub fn scan_uninstall_entries() -> Vec<UninstallEntry> {
                 if display_name.is_empty() {
                     continue;
                 }
+                // InstallDate is a REG_DWORD in YYYYMMDD format.
+                let install_date: Option<String> = subkey
+                    .get_value::<u32>("InstallDate")
+                    .ok()
+                    .and_then(|d| {
+                        if d == 0 {
+                            None
+                        } else {
+                            let s = d.to_string();
+                            if s.len() == 8 {
+                                Some(format!("{}-{}-{}", &s[0..4], &s[4..6], &s[6..8]))
+                            } else {
+                                None
+                            }
+                        }
+                    });
                 results.push(UninstallEntry {
                     display_name,
                     display_version: subkey.get_value("DisplayVersion").unwrap_or_default(),
                     install_location: subkey.get_value("InstallLocation").unwrap_or_default(),
                     uninstall_string: subkey.get_value("UninstallString").unwrap_or_default(),
                     display_icon: subkey.get_value("DisplayIcon").unwrap_or_default(),
+                    install_date,
                 });
             }
         }
@@ -316,6 +336,7 @@ mod tests {
             install_location: String::new(),
             uninstall_string: uninstall.to_string(),
             display_icon: String::new(),
+            install_date: None,
         }
     }
 
@@ -395,6 +416,7 @@ mod tests {
             install_location: String::new(),
             uninstall_string: "MsiExec.exe /I{1234}".to_string(),
             display_icon: "C:\\Program Files\\Icon App\\IconApp.exe,0".to_string(),
+            install_date: None,
         };
         // MSI uninstall strings carry no path, so the icon path is the answer.
         assert_eq!(
@@ -411,6 +433,7 @@ mod tests {
             install_location: String::new(),
             uninstall_string: "\"C:\\Program Files\\Bin App\\bin\\uninstall.exe\"".to_string(),
             display_icon: String::new(),
+            install_date: None,
         };
         assert_eq!(
             e.uninstaller_dir().unwrap(),
@@ -428,6 +451,7 @@ mod tests {
             install_location: String::new(),
             uninstall_string: "\"C:\\Program Files\\My App\\uninstall.exe\"".to_string(),
             display_icon: String::new(),
+            install_date: None,
         };
         assert_eq!(
             e.uninstaller_dir().unwrap(),
@@ -444,6 +468,7 @@ mod tests {
             install_location: String::new(),
             uninstall_string: "C:\\Program Files\\My App\\uninstall.exe /currentuser".to_string(),
             display_icon: String::new(),
+            install_date: None,
         };
         assert_eq!(
             e.uninstaller_dir().unwrap(),
