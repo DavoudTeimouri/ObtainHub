@@ -929,11 +929,64 @@ class ObtainHubUI {
     const addType = document.getElementById('addType').value;
     const addRepo = document.getElementById('addRepo').value.trim();
     if (!addRepo) { this.showToast('Please enter repository/URL/path', 'error'); return; }
+
+    // Folder add: first scan for executables, let user pick one
+    if (addType === 'folder') {
+      try {
+        const exes = await this.api('/apps/scan-folder', { method: 'POST', body: { path: addRepo } });
+        const wrap = document.getElementById('folderScanWrap');
+        const body = document.getElementById('folderScanBody');
+        if (!exes || exes.length === 0) {
+          this.showToast('No executables found in folder', 'error');
+          return;
+        }
+        if (exes.length === 1) {
+          // Single exe - add directly
+          await this.api('/apps', { method: 'POST', body: { repo: exes[0].name, add_type: 'folder', install_path: exes[0].path } });
+          document.getElementById('addRepo').value = '';
+          wrap.classList.add('hidden');
+          body.innerHTML = '';
+          this.showToast('Added to management: ' + exes[0].name, 'success');
+          this.loadApps();
+        } else {
+          // Multiple exes - show selection UI
+          body.innerHTML = '';
+          exes.forEach(exe => {
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+              '<td><code>' + this.escapeHtml(exe.name) + '</code></td>' +
+              '<td>' + this.escapeHtml(exe.path) + '</td>' +
+              '<td><button class="action-btn btn-primary" onclick="app.addSelectedExe(\'' + exe.name.replace(/'/g, "\\'") + "', \'' + exe.path.replace(/'/g, "\\'") + "')\">Add</button></td>";
+            body.appendChild(tr);
+          });
+          wrap.classList.remove('hidden');
+        }
+      } catch (err) {
+        this.showToast('Folder scan failed: ' + err.message, 'error');
+      }
+      return;
+    }
+
+    // GitHub/zip/shim add - existing behavior
     const body = { repo: addRepo, add_type: addType };
     try {
       await this.api('/apps', { method: 'POST', body });
       document.getElementById('addRepo').value = '';
       this.showToast('Added to management: ' + addRepo, 'success');
+      this.loadApps();
+    } catch (err) {
+      this.showToast('Failed to add: ' + err.message, 'error');
+    }
+  }
+
+  // Add a selected executable from folder scan
+  async addSelectedExe(name, path) {
+    try {
+      await this.api('/apps', { method: 'POST', body: { repo: name, add_type: 'folder', install_path: path } });
+      document.getElementById('addRepo').value = '';
+      document.getElementById('folderScanWrap').classList.add('hidden');
+      document.getElementById('folderScanBody').innerHTML = '';
+      this.showToast('Added to management: ' + name, 'success');
       this.loadApps();
     } catch (err) {
       this.showToast('Failed to add: ' + err.message, 'error');

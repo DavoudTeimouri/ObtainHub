@@ -4,6 +4,7 @@ use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 use walkdir::WalkDir;
 
@@ -250,10 +251,10 @@ pub async fn execute(args: AddArgs, config: &mut ConfigManager, state: &mut Stat
                 };
 
                 added_repos.push(crate::core::state::InstalledRepo {
-                    repo: format!("folder/{}", exe_name),
+                    repo: exe_name.clone(),
                     version: "unknown".to_string(),
                     install_path: path.to_path_buf(),
-                    installed_at: chrono::Utc::now(),
+                    installed_at: file_time(path),
                     updated_at: None,
                     checksum: None,
                     metadata,
@@ -347,4 +348,15 @@ pub async fn execute(args: AddArgs, config: &mut ConfigManager, state: &mut Stat
     }
     
     Ok(())
+}
+
+/// Get the file's creation time (or modification time as fallback) as a DateTime<Utc>.
+pub(crate) fn file_time(path: &std::path::Path) -> chrono::DateTime<chrono::Utc> {
+    match std::fs::metadata(path) {
+        Ok(m) => {
+            let time = m.created().or_else(|_| m.modified()).unwrap_or(SystemTime::now());
+            chrono::DateTime::<chrono::Utc>::from(time)
+        }
+        Err(_) => chrono::Utc::now(),
+    }
 }

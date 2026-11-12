@@ -1,6 +1,8 @@
 use axum::{Json, response::IntoResponse, extract::State, http::StatusCode};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 /// Base64 (RFC 4648) of UTF-16LE — used for PowerShell `-EncodedCommand` so
 /// passwords never appear in a process command line.
@@ -49,7 +51,7 @@ pub async fn list_apps(
             install_path: app.install_path.display().to_string(),
             installed_at: app.installed_at.to_rfc3339(),
             updated_at: app.updated_at.map(|dt| dt.to_rfc3339()),
-            status: "installed".to_string(),
+            status: "Installed".to_string(),
             update_available: app.update_available,
             latest_version: app.latest_version.clone(),
         }
@@ -263,15 +265,65 @@ pub struct AppAdd {
     #[serde(default = "default_add_type")]
     #[allow(dead_code)]
     pub add_type: String,
+    #[serde(default)]
+    pub install_path: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 fn default_add_type() -> String { "github".to_string() }
 
+/// Body for scanning a folder for executables.
+#[derive(Deserialize)]
+pub struct ScanFolderBody {
+    pub path: String,
+}
+
+/// Scan a folder for executable files. Returns a list of {name, path}.
+pub async fn scan_folder(
+    Json(body): Json<ScanFolderBody>,
+) -> impl IntoResponse {
+    let folder_path = PathBuf::from(&body.path);
+    if !folder_path.exists() || !folder_path.is_dir() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Not a valid directory"})),
+        )
+            .into_response();
+    }
+
+    let mut executables: Vec<serde_json::Value> = Vec::new();
+    for entry in WalkDir::new(&folder_path).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let is_exe = path.extension().map(|e| e == "exe").unwrap_or(false);
+        if !is_exe {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        executables.push(serde_json::json!({
+            "name": name,
+            "path": path.display().to_string(),
+        }));
+    }
+    Json(executables).into_response()
+}
+
+/// Add an app/repo to management. Requires auth when --auth is set.
 pub async fn post_app(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(payload): Json<AppAdd>,
 ) -> impl IntoResponse {
     let repo = payload.repo;
+    let add_type = payload.add_type.clone();
+    let install_path = payload.install_path.clone();
+    let version = payload.version.clone();
     let mut state_manager = app_state.state_manager.lock().await;
 
     // Check if already managed
@@ -279,6 +331,44 @@ pub async fn post_app(
         return (StatusCode::CONFLICT, Json(serde_json::json!({
             "error": format!("{repo} is already managed")
         }))).into_response();
+    }
+
+    // For folder adds, repo is the exe name and install_path is the exe path.
+    // Use file time instead of "just now", skip registry detection (no registry entry for portable apps).
+    if add_type == "folder" {
+        let install_dir = install_path
+            .map(|p| std::path::PathBuf::from(p))
+            .unwrap_or_default();
+        let installed_at = if install_dir.exists() {
+            crate::commands::add::file_time(&install_dir)
+        } else {
+            chrono::Utc::now()
+        };
+        let installed = crate::core::state::InstalledRepo {
+            repo: repo.clone(),
+            version: version.unwrap_or_else(|| "unknown".to_string()),
+            install_path: install_dir,
+            installed_at,
+            updated_at: None,
+            checksum: None,
+            metadata: serde_json::Value::Null,
+            previous_version: None,
+            previous_install_path: None,
+            dependencies: Vec::new(),
+            is_dependency: false,
+            uninstaller: None,
+            ..Default::default()
+        };
+        state_manager.add_installed(installed);
+
+        if let Err(e) = state_manager.save() {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": format!("Failed to save state: {e}")
+            }))).into_response();
+        }
+
+        return (StatusCode::OK, Json(serde_json::json!({"status": "added", "repo": repo})))
+            .into_response();
     }
 
     // Add as installed with placeholder data - user will need to install via CLI

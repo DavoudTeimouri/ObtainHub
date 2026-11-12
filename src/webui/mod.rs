@@ -142,6 +142,7 @@ pub async fn run_webui(
         .route("/config", axum::routing::put(routes::put_config))
         .route("/config/github-token", axum::routing::delete(routes::delete_github_token))
         .route("/apps", axum::routing::post(routes::post_app))
+        .route("/apps/scan-folder", axum::routing::post(routes::scan_folder))
         .route("/apps/candidates", axum::routing::post(routes::candidates))
         .route("/apps/*repo", axum::routing::delete(routes::delete_app))
         // App actions (same engines as the CLI): repo passed in the JSON body
