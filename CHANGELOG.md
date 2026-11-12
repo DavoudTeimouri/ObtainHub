@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.69-rc.7] - 2026-11-12
+
+RC.7: CHANGELOG section for rc.7 tag.
+
 ## [v3.0.69-rc.6] - 2026-11-12
 
 RC.6: CHANGELOG section for rc.6 tag.
