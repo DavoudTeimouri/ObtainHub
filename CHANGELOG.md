@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.0.69-rc.10] - 2026-11-12
+## [v3.0.70] - 2026-11-12
+
+Stable release with all 8 WebUI/CLI fixes:
+- WebUI reloads state.json on /apps so CLI installs/uninstalls appear immediately
+- Apps table: sortable columns (click headers), Install Path column shown
+- Version badges strip leading 'v' (no more "vv3.0.69")
+- Search & Install shows "Installed" badge, offers Update if already managed
+- Detect Installed shows real install date from Windows registry (InstallDate)
+- Detect Installed → Add passes detected install_path + version to install
+- WebUI/CLI sync: uninstall via CLI reflected in WebUI on next page load
+
+## [v3.0.69] - 2026-11-12
 
 RC.10: Cargo.lock bump to 3.0.69-rc.4 for fresh CI cache key.
 

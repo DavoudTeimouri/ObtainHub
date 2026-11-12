@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "obtainhub"
-version = "3.0.69-rc.1"
+version = "3.0.70"
 dependencies = [
  "anyhow",
  "assert_cmd",
