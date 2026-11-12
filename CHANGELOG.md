@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.69] - 2026-11-12
+
+Republish of v3.0.68 with WebUI fixes:
+- Fix `prereleaseEl is not defined` on "Check All Updates" (Managed App).
+- Add About page with version/build info (GET /version endpoint).
+- `ohub --version` now prints `ObtainHub CLI {version}`.
+- Detect Installed → Add: send detected install path + version to install.
+- Vendor exclusion checkboxes on Detect Installed.
+- Search: `published_at` is `Option<String>` (GitHub search API omits it).
+
 ## [v3.0.68] - 2026-11-11
 
 Stable release consolidating the v3.0.68 release-candidate cycle (rc.1–rc.67).
