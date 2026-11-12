@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.69-rc.10] - 2026-11-12
+
+RC.10: Cargo.lock bump to 3.0.69-rc.4 for fresh CI cache key.
+
+## [v3.0.69-rc.9] - 2026-11-12
+
+RC.9: CHANGELOG section for rc.8 tag.
+
 ## [v3.0.69-rc.8] - 2026-11-12
 
 RC.8: CHANGELOG section for rc.8 tag.
@@ -17,6 +25,18 @@ RC.6: CHANGELOG section for rc.6 tag.
 ## [v3.0.69-rc.5] - 2026-11-12
 
 RC.5: WiX MSI Version uses numeric format (WiX v3 requires 3.0.69.4, not 3.0.69-rc.5).
+
+## [v3.0.69-rc.4] - 2026-11-12
+
+RC.4: winreg get_value needs two generic args <u32, _>.
+
+## [v3.0.69-rc.3] - 2026-11-12
+
+RC.3: Cargo.lock bump to 3.0.69-rc.2 for fresh CI cache key.
+
+## [v3.0.69-rc.2] - 2026-11-12
+
+RC.2: convert NaiveDateTime to DateTime<Utc> with .and_utc().
 
 ## [v3.0.69-rc.1] - 2026-11-12
 
