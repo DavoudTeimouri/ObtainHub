@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.71-rc.1] - 2026-11-12
+
+RC.1: WebUI/CLI fixes:
+- Folder add: exe name detection (not folder path), multi-exe selection UI, online repo scan
+- Install date: uses file creation/modification time instead of "just now"
+- Sort: clickable column headers on Apps table
+- Status: shows "Installed" (capitalized)
+
 ## [v3.0.70] - 2026-11-12
 
 Stable release with all 8 WebUI/CLI fixes:
