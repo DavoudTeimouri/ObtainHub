@@ -648,10 +648,9 @@ async fn handle_search_results(
                 file: None,
                 url: None,
                 dependencies: Vec::new(),
-                install_path: None,
             };
             suspend_tui(terminal)?;
-            let result = crate::commands::install::execute(args, config, state, &app.retry_config).await;
+            let result = crate::commands::install::execute(args, config, state, &app.retry_config, None).await;
             resume_tui(terminal)?;
             match result {
                 Ok(()) => {

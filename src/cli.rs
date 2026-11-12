@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand, Args};
-use std::path::PathBuf;
 use clap_complete::Shell;
 
 #[derive(Parser, Debug)]
@@ -398,10 +397,6 @@ pub struct InstallArgs {
     /// Install from direct URL
     #[arg(long)]
     pub url: Option<String>,
-
-    /// Custom install path (WebUI: detected from Windows registry scan)
-    #[arg(skip)]
-    pub install_path: Option<PathBuf>,
 
     /// Declare dependencies (owner/repo format, comma-separated or repeat flag)
     #[arg(long, value_delimiter = ',')]

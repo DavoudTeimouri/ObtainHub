@@ -70,9 +70,8 @@ pub async fn execute(
                     file: None,
                     url: None,
                     dependencies: Vec::new(),
-                    install_path: None,
                 };
-                if let Err(e) = crate::commands::install::execute(install_args, config, state, &retry).await {
+                if let Err(e) = crate::commands::install::execute(install_args, config, state, &retry, None).await {
                     println!("  {repo} failed: {e}");
                 }
             }

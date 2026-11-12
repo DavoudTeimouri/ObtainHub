@@ -669,13 +669,13 @@ pub async fn install_app(
         file: None,
         url: None,
         dependencies: Vec::new(),
-        install_path: body.install_path.map(|p| std::path::PathBuf::from(p)),
     };
     let result = {
         let cm = app_state.config_manager.lock().await;
         let rc = crate::utils::retry::RetryConfig::from_config(&cm);
         let mut sm = app_state.state_manager.lock().await;
-        crate::commands::install::execute(args, &cm, &mut sm, &rc).await
+        let custom_path = body.install_path.as_deref().map(std::path::PathBuf::from);
+        crate::commands::install::execute(args, &cm, &mut sm, &rc, custom_path.as_deref()).await
     };
     action_result(result)
 }

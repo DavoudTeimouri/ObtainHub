@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
     // Handle command
     match cli.command {
         Commands::Search(args) => commands::search::execute(args, &config_manager, &mut state_manager, format).await,
-        Commands::Install(args) => commands::install::execute(args, &config_manager, &mut state_manager, &retry_config).await,
+        Commands::Install(args) => commands::install::execute(args, &config_manager, &mut state_manager, &retry_config, None).await,
         Commands::Check(args) => commands::check::execute(args, &config_manager, &mut state_manager).await,
         Commands::List(args) => commands::list::execute(args, &config_manager, &mut state_manager).await,
         Commands::Update(args) => commands::update::execute(args, &config_manager, &mut state_manager, &retry_config).await,

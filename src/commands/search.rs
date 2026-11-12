@@ -173,10 +173,9 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
                             file: None,
                             url: None,
                             dependencies: Vec::new(),
-                            install_path: None,
-                        };
+                            };
                         let retry_config = crate::utils::retry::RetryConfig::from_config(config);
-                        if let Err(e) = crate::commands::install::execute(install_args, config, state, &retry_config).await {
+                        if let Err(e) = crate::commands::install::execute(install_args, config, state, &retry_config, None).await {
                             eprintln!("Failed to install '{}': {}", repo, e);
                         }
                     }
