@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.1] - 2026-11-12
+
+RC.1: WebUI redesign — deep navy theme with electric blue/cyan accents, stat cards, sortable tables.
+
 ## [v3.0.71-rc.1] - 2026-11-12
 
 RC.1: WebUI/CLI fixes:
