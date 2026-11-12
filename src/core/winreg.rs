@@ -160,7 +160,7 @@ pub fn scan_uninstall_entries() -> Vec<UninstallEntry> {
                 }
                 // InstallDate is a REG_DWORD in YYYYMMDD format.
                 let install_date: Option<String> = subkey
-                    .get_value::<u32>("InstallDate")
+                    .get_value::<u32, _>("InstallDate")
                     .ok()
                     .and_then(|d| {
                         if d == 0 {
