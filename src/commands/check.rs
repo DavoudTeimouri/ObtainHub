@@ -880,7 +880,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
             install_path,
             installed_at: entry.install_date.as_deref()
                 .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
+                .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
                 .unwrap_or_else(chrono::Utc::now),
             updated_at: None,
             checksum: None,
