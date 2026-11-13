@@ -213,6 +213,22 @@ pub async fn execute(args: AddArgs, config: &mut ConfigManager, state: &mut Stat
                     .to_string();
                 let shim_name = exe_name.clone();
 
+                // Skip if shim already exists — never silently overwrite.
+                let shim_exists = {
+                    #[cfg(windows)]
+                    {
+                        shim_dir.join(format!("{}.bat", shim_name)).exists()
+                    }
+                    #[cfg(unix)]
+                    {
+                        shim_dir.join(&shim_name).exists()
+                    }
+                };
+                if shim_exists {
+                    println!("Skipping shim (already exists): {}", shim_name);
+                    continue;
+                }
+
                 // Create shim
                 #[cfg(windows)]
                 {
@@ -303,6 +319,21 @@ pub async fn execute(args: AddArgs, config: &mut ConfigManager, state: &mut Stat
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+
+            // Skip if shim already exists — never silently overwrite.
+            let shim_exists = {
+                #[cfg(windows)]
+                {
+                    shim_dir.join(format!("{}.bat", exe_name)).exists()
+                }
+                #[cfg(unix)]
+                {
+                    shim_dir.join(&exe_name).exists()
+                }
+            };
+            if shim_exists {
+                anyhow::bail!("Shim already exists: {}. Remove it first or choose a different name.", exe_name);
+            }
 
             #[cfg(windows)]
             {

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.12] - 2026-11-12
+
+RC.12: Shim collision detection — folder-add skips existing shims; single-exe add errors if shim already exists instead of silently overwriting.
+
 ## [v3.0.72-rc.11] - 2026-11-12
 
 RC.11: Fix login password injection — pass Windows credentials via env vars instead of inline PowerShell string interpolation.
