@@ -281,10 +281,45 @@ pub struct ScanFolderBody {
 
 /// Scan a folder for executable files. Returns a list of {name, path}.
 pub async fn scan_folder(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(body): Json<ScanFolderBody>,
 ) -> impl IntoResponse {
     let folder_path = PathBuf::from(&body.path);
-    if !folder_path.exists() || !folder_path.is_dir() {
+
+    // Allowed scan roots: configured dirs + user home. Prevents scanning
+    // the whole filesystem (e.g. C:\, network shares, symlink targets).
+    let config = app_state.config_manager.lock().await;
+    let cfg = config.get();
+    let allowed_roots: Vec<PathBuf> = vec![
+        cfg.install_dir.clone(),
+        cfg.download_dir.clone(),
+        cfg.shim_dir.clone(),
+        dirs::home_dir().unwrap_or_default(),
+    ];
+    drop(config);
+
+    // Canonicalize to resolve symlinks and .. components before checking.
+    let canonical = match folder_path.canonicalize() {
+        Ok(c) => c,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Cannot resolve path"})),
+            )
+                .into_response();
+        }
+    };
+
+    let is_allowed = allowed_roots.iter().any(|root| canonical.starts_with(root));
+    if !is_allowed {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Path not in allowed scan roots"})),
+        )
+            .into_response();
+    }
+
+    if !canonical.exists() || !canonical.is_dir() {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "Not a valid directory"})),
@@ -293,7 +328,7 @@ pub async fn scan_folder(
     }
 
     let mut executables: Vec<serde_json::Value> = Vec::new();
-    for entry in WalkDir::new(&folder_path).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(&canonical).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
         if !path.is_file() {
             continue;

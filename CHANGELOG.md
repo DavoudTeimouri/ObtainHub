@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.8] - 2026-11-12
+
+RC.8: Fix scan_folder path traversal — path allowlist (configured dirs + user home), canonicalize + symlink resolution before WalkDir.
+
 ## [v3.0.72-rc.7] - 2026-11-12
 
 RC.7: Fix link_repo data loss on save failure — atomic rollback restores old state entry if persist fails.
