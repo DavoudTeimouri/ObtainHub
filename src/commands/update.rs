@@ -562,13 +562,12 @@ fn cleanup_download_folder(download_dir: &std::path::Path) -> Result<()> {
         if !path.is_file() {
             continue;
         }
-        let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-        // Base name = strip everything after first version-like token (digits/dots)
-        let base = file_name
-            .split(|c: char| c.is_ascii_digit() || c == '.' || c == '-')
-            .next()
-            .unwrap_or(&file_name)
-            .trim_end_matches(['_', ' '])
+        // Group by full stem (file name without extension). Different apps
+        // like tool.exe and tool2.exe must not share a group.
+        let base = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
             .to_string();
         groups.entry(base).or_default().push(path);
     }

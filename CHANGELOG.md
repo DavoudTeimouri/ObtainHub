@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.13] - 2026-11-12
+
+RC.13: Fix cleanup_download_folder grouping — use full file stem instead of stripping digits/dots, so tool.exe and tool2.exe no longer share a group and delete each other.
+
 ## [v3.0.72-rc.12] - 2026-11-12
 
 RC.12: Shim collision detection — folder-add skips existing shims; single-exe add errors if shim already exists instead of silently overwriting.
