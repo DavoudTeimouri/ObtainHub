@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.5] - 2026-11-12
+
+RC.5: Asset selection on update too — WebUI shows the release-asset picker before updating (same as install). CLI `ohub update --asset <name>` picks a specific asset. Installer auto-selection kept as default when no asset specified.
+
 ## [v3.0.72-rc.4] - 2026-11-12
 
 RC.4: Multiple asset selection for install + "Open…" browse button for config paths.

@@ -897,6 +897,7 @@ pub async fn update_app(
     let args = crate::cli::UpdateArgs {
         repo: Some(body.repo),
         prerelease: body.prerelease,
+        asset: body.asset,
         dry_run: false,
         force: body.force,
         skip_deps: false,

@@ -256,7 +256,23 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
 
                 // Perform update (reinstall with new version)
                 // Interactive asset selection: only .exe (setup) and .msi, correct architecture
-                let selected_asset = select_installer_asset(&release, &args.arch, args.quiet)?;
+                let selected_asset = if let Some(asset_name) = &args.asset {
+                    // User-specified asset (from WebUI picker): look it up by name
+                    release
+                        .assets
+                        .iter()
+                        .find(|a| a.name == *asset_name)
+                        .cloned()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Asset '{}' not found in release {}",
+                                asset_name,
+                                release.tag_name
+                            )
+                        })?
+                } else {
+                    select_installer_asset(&release, &args.arch, args.quiet)?
+                };
                 match install_release(repo_name, &latest_version, &release, token, config, state, Some(selected_asset), args.quiet, Some(current_version.to_string()), &args.arch).await {
                     Ok(_) => {
                         // Clear update-available flag and bump version in state.

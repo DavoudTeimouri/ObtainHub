@@ -100,6 +100,7 @@ pub async fn execute(
                     notes: false,
                     quiet: true,
                     log: None,
+                    asset: None,
                 };
                 if let Err(e) = crate::commands::update::execute(update_args, config, state, &retry).await {
                     println!("  {repo} failed: {e}");

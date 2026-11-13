@@ -514,6 +514,10 @@ pub struct UpdateArgs {
     #[arg(long)]
     pub prerelease: bool,
 
+    /// Specific asset name to install from the release (when multiple exist)
+    #[arg(long)]
+    pub asset: Option<String>,
+
     /// Dry run - show what would be updated
     #[arg(long)]
     pub dry_run: bool,

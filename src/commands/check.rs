@@ -723,6 +723,7 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
                 notes: false,
                 quiet: false,
                 log: None,
+                asset: None,
             };
             if let Err(e) =
                 crate::commands::update::execute(update_args, config, state, &retry_config).await

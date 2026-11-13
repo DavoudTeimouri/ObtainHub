@@ -801,8 +801,21 @@ class ObtainHubUI {
     if (!(await this.requireToken())) return;
     if (!confirm('Update "' + repo + '" to the latest release?')) return;
     try {
-      const res = await this.api('/apps/update', { method: 'POST', body: { repo: repo } });
-      this.showToast('Update complete: ' + repo, 'success');
+      // Fetch available release assets so the user can pick the right one
+      const assetsRes = await this.api('/apps/assets?repo=' + encodeURIComponent(repo));
+      const assets = assetsRes && assetsRes.assets ? assetsRes.assets : [];
+      let selectedAsset = null;
+      if (assets.length > 1) {
+        selectedAsset = await this.pickAsset(repo, assets);
+        if (!selectedAsset) return; // user cancelled
+      } else if (assets.length === 1) {
+        selectedAsset = assets[0];
+      }
+      const res = await this.api('/apps/update', {
+        method: 'POST',
+        body: { repo: repo, asset: selectedAsset ? selectedAsset.name : null },
+      });
+      this.showToast('Update complete: ' + repo + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
       this.loadApps();
     } catch (err) {
       this.showToast('Update failed: ' + err.message, 'error');

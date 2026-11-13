@@ -321,6 +321,7 @@ async fn run_pending(
                     notes: false,
                     quiet: true,
                     log: None,
+                    asset: None,
                 };
                 if let Err(e) =
                     crate::commands::update::execute(update_args, config, state, &retry).await
