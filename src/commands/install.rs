@@ -190,10 +190,10 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     let asset_path = install_dir.join(&asset.name);
     registry.download_asset(&asset, &asset_path, token, config).await?;
     
-    // Verify checksum if enabled
+    // Verify checksum if enabled — fail closed when no digest is available.
     if config.get().verify_checksums {
-        if source.registry_type == "github" {
-            if let Some(expected) = crate::commands::install::fetch_published_checksum(
+        let expected: Option<String> = if source.registry_type == "github" {
+            crate::commands::install::fetch_published_checksum(
                 &crate::commands::install::GitHubRelease {
                     tag_name: release.tag_name.clone(),
                     name: release.name.clone(),
@@ -210,16 +210,16 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
                 },
                 &asset.name,
                 token,
-            ).await? {
-                verify_file_checksum(&asset_path, &asset.name, &expected)?;
-            } else {
-                warn!("No published checksum for {} — skipping verification", asset.name);
-            }
-        } else if let Some(expected) = &release.checksum {
-            // crates.io publishes the sha256 of the .crate file.
-            verify_file_checksum(&asset_path, &asset.name, expected)?;
+            ).await?
         } else {
-            warn!("No published checksum for {} — skipping verification", asset.name);
+            release.checksum.clone()
+        };
+        match expected {
+            Some(digest) => verify_file_checksum(&asset_path, &asset.name, &digest)?,
+            None => anyhow::bail!(
+                "Checksum verification enabled but no checksum available for {}",
+                asset.name
+            ),
         }
     }
     

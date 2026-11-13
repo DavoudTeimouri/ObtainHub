@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.10] - 2026-11-12
+
+RC.10: Checksum verification fail-closed — when `verify_checksums` is on and no digest is available (GitHub without .sha256 sidecar, custom registries), installation fails instead of silently skipping.
+
 ## [v3.0.72-rc.9] - 2026-11-12
 
 RC.9: Unify asset selection — single `select_asset` in install.rs with `installer_only` flag; update.rs and rollback.rs now use install.rs types directly, removing duplicate `GitHubRelease`/`GitHubAsset` structs and `select_installer_asset`.
