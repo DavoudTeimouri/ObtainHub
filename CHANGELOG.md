@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.11] - 2026-11-12
+
+RC.11: Fix login password injection — pass Windows credentials via env vars instead of inline PowerShell string interpolation.
+
 ## [v3.0.72-rc.10] - 2026-11-12
 
 RC.10: Checksum verification fail-closed — when `verify_checksums` is on and no digest is available (GitHub without .sha256 sidecar, custom registries), installation fails instead of silently skipping.

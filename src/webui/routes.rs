@@ -1122,11 +1122,12 @@ pub async fn login(
                 "error": "Provide username+password or use_current_user"
             }))).into_response();
         }
-        let script = format!(
-            "$ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Machine); if ($ctx.ValidateCredentials('{u}', '{p}')) {{ exit 0 }} else {{ exit 1 }}",
-            u = username.replace('\'', "''"),
-            p = password.replace('\'', "''")
-        );
+        // Pass credentials via environment variables, not inline interpolation,
+        // to avoid shell metacharacter injection and keep the password out of
+        // the script string (it is base64-encoded as -EncodedCommand).
+        let script = "$u = $env:OHUB_LOGIN_USER; $p = $env:OHUB_LOGIN_PASS; $ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Machine); if ($ctx.ValidateCredentials($u, $p)) { $env:USERNAME; exit 0 } else { exit 1 }";
+        std::env::set_var("OHUB_LOGIN_USER", &username);
+        std::env::set_var("OHUB_LOGIN_PASS", &password);
         match run_ps(&script) {
             PsResult::Ok(_) => Some(username),
             PsResult::Rejected => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Invalid Windows username or password"}))).into_response(),
