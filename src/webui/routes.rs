@@ -889,15 +889,16 @@ pub async fn link_repo(
 ) -> impl IntoResponse {
     let mut state_manager = app_state.state_manager.lock().await;
     // The app must already be managed under its current name.
-    let existing = state_manager.get_installed(&body.repo);
-    if existing.is_none() {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": format!("'{}' is not managed", body.repo)})),
-        )
-            .into_response();
-    }
-    let mut entry = existing.unwrap().clone();
+    let existing_entry = match state_manager.get_installed(&body.repo) {
+        Some(e) => e.clone(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": format!("'{}' is not managed", body.repo)})),
+            )
+                .into_response();
+        }
+    };
     // Validate github_repo format (owner/repo)
     if !body.github_repo.contains('/') || body.github_repo.starts_with('/') || body.github_repo.ends_with('/') {
         return (
@@ -908,9 +909,12 @@ pub async fn link_repo(
     }
     // Remove old entry (keyed by current repo name), re-add under GitHub repo name.
     state_manager.remove_installed(&body.repo);
+    let mut entry = existing_entry.clone();
     entry.repo = body.github_repo.clone();
     state_manager.add_installed(entry);
     if let Err(e) = state_manager.save() {
+        // Rollback: restore old entry so a failed save doesn't lose the app.
+        let _ = state_manager.add_installed(existing_entry.clone());
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": format!("Failed to save state: {e}")})),
