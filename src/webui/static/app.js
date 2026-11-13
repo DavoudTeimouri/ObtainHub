@@ -956,7 +956,13 @@ class ObtainHubUI {
             tr.innerHTML =
               '<td><code>' + this.escapeHtml(exe.name) + '</code></td>' +
               '<td>' + this.escapeHtml(exe.path) + '</td>' +
-              '<td><button class="action-btn btn-primary" onclick="app.addSelectedExe(\'' + exe.name.replace(/'/g, "\\'") + "', \'' + exe.path.replace(/'/g, "\\'") + "')\">Add</button></td>";
+              '<td></td>';
+            const btnTd = tr.children[2];
+            const btn = document.createElement('button');
+            btn.className = 'action-btn btn-primary';
+            btn.textContent = 'Add';
+            btn.onclick = () => this.addSelectedExe(exe.name, exe.path);
+            btnTd.appendChild(btn);
             body.appendChild(tr);
           });
           wrap.classList.remove('hidden');

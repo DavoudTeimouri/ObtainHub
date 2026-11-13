@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.3] - 2026-11-12
+
+RC.3: Fix all buttons not working — syntax error in app.js line 959 (broken inline `onclick` string escaping in folder-add EXE selection UI) prevented the entire script from loading, so no click listeners were registered. Replaced inline `onclick` with proper `addEventListener` via `document.createElement`.
+
 ## [v3.0.72-rc.2] - 2026-11-12
 
 RC.2: Fix links not working — removed `pointer-events: none` from `.app.blur-bg` so clicks always work, even when login modal blur is active (401 auth flow was trapping users).
