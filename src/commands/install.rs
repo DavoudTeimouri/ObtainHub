@@ -332,14 +332,61 @@ async fn install_dependencies(
     Ok(())
 }
 
-/// Select the best asset for the current platform
-pub fn select_asset(release: &GitHubRelease, arch: &Arch, preferred: Option<&str>) -> Result<GitHubAsset> {
+/// Select the best asset for the current platform.
+/// When `installer_only` is true, only .exe/.msi installers are considered
+/// (.msi preferred over .exe). Otherwise any archive (zip/tar.gz/exe/etc.)
+/// matches, falling back to the zipball.
+pub fn select_asset(
+    release: &GitHubRelease,
+    arch: &Arch,
+    preferred: Option<&str>,
+    installer_only: bool,
+) -> Result<GitHubAsset> {
     // If caller specified a preferred asset name, use it directly.
     if let Some(name) = preferred {
         if let Some(asset) = release.assets.iter().find(|a| a.name == name) {
             return Ok(asset.clone());
         }
     }
+
+    if installer_only {
+        // Installer-only: .exe/.msi, .msi preferred over .exe.
+        let mut installers: Vec<&GitHubAsset> = release
+            .assets
+            .iter()
+            .filter(|a| {
+                let name = a.name.to_lowercase();
+                (name.ends_with(".exe") || name.ends_with(".msi"))
+                    && crate::core::registries::matches_arch(&name, arch)
+            })
+            .collect();
+        if installers.is_empty() {
+            installers = release
+                .assets
+                .iter()
+                .filter(|a| {
+                    let name = a.name.to_lowercase();
+                    name.ends_with(".exe") || name.ends_with(".msi")
+                })
+                .collect();
+        }
+        if installers.is_empty() {
+            anyhow::bail!(
+                "No installer assets (.exe/.msi) found in release {}",
+                release.tag_name
+            );
+        }
+        installers.sort_by(|a, b| {
+            let a_msi = a.name.to_lowercase().ends_with(".msi");
+            let b_msi = b.name.to_lowercase().ends_with(".msi");
+            match b_msi.cmp(&a_msi) {
+                std::cmp::Ordering::Equal => a.name.cmp(&b.name),
+                other => other,
+            }
+        });
+        return Ok(installers[0].clone());
+    }
+
     // Priority: platform-specific asset > generic archive > zipball
     let target_os = std::env::consts::OS;
 
@@ -347,8 +394,14 @@ pub fn select_asset(release: &GitHubRelease, arch: &Arch, preferred: Option<&str
     for asset in &release.assets {
         let name = asset.name.to_lowercase();
         let os_match = (target_os == "windows" && (name.ends_with(".zip") || name.ends_with(".exe")))
-            || (target_os == "linux" && (name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".AppImage")))
-            || (target_os == "macos" && (name.ends_with(".tar.gz") || name.ends_with(".dmg") || name.ends_with(".zip")));
+            || (target_os == "linux"
+                && (name.ends_with(".tar.gz")
+                    || name.ends_with(".tar.xz")
+                    || name.ends_with(".AppImage")))
+            || (target_os == "macos"
+                && (name.ends_with(".tar.gz")
+                    || name.ends_with(".dmg")
+                    || name.ends_with(".zip")));
         if os_match && crate::core::registries::matches_arch(&name, arch) {
             return Ok(asset.clone());
         }
@@ -357,7 +410,11 @@ pub fn select_asset(release: &GitHubRelease, arch: &Arch, preferred: Option<&str
     // Fallback: any archive asset
     for asset in &release.assets {
         let name = asset.name.to_lowercase();
-        if name.ends_with(".zip") || name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".tgz") {
+        if name.ends_with(".zip")
+            || name.ends_with(".tar.gz")
+            || name.ends_with(".tar.xz")
+            || name.ends_with(".tgz")
+        {
             return Ok(asset.clone());
         }
     }

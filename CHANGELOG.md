@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.9] - 2026-11-12
+
+RC.9: Unify asset selection — single `select_asset` in install.rs with `installer_only` flag; update.rs and rollback.rs now use install.rs types directly, removing duplicate `GitHubRelease`/`GitHubAsset` structs and `select_installer_asset`.
+
 ## [v3.0.72-rc.8] - 2026-11-12
 
 RC.8: Fix scan_folder path traversal — path allowlist (configured dirs + user home), canonicalize + symlink resolution before WalkDir.

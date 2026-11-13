@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use tracing::info;
 use dialoguer::{Select, theme::ColorfulTheme};
 
-use crate::commands::install::{fetch_published_checksum, GitHubRelease as InstallGitHubRelease, GitHubAsset as InstallGitHubAsset, select_asset as install_select_asset};
+use crate::commands::install::{fetch_published_checksum, GitHubAsset, GitHubRelease, select_asset as install_select_asset};
 
 /// Prints progress to stdout (unless quiet) and appends everything to an
 /// optional log file, so scheduled runs leave a record behind.
@@ -53,29 +53,6 @@ impl Reporter {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub(crate) struct GitHubRelease {
-    #[serde(default = "default_tag_name")]
-    tag_name: String,
-    name: Option<String>,
-    prerelease: bool,
-    draft: bool,
-    assets: Vec<GitHubAsset>,
-    zipball_url: String,
-    tarball_url: String,
-}
-
-fn default_tag_name() -> String {
-    "unknown".to_string()
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub(crate) struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-    size: u64,
-    content_type: Option<String>,
-}
 
 async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Option<GitHubRelease>> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
@@ -271,7 +248,48 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                             )
                         })?
                 } else {
-                    select_installer_asset(&release, &args.arch, args.quiet)?
+                    // Interactive asset selection: only .exe (setup) and .msi, correct architecture.
+                    // Get the best installer as default, then offer a list if not quiet.
+                    let default = install_select_asset(&release, &args.arch, None, true)?;
+                    let installer_assets: Vec<&GitHubAsset> = release
+                        .assets
+                        .iter()
+                        .filter(|a| {
+                            let name = a.name.to_lowercase();
+                            name.ends_with(".exe") || name.ends_with(".msi")
+                        })
+                        .collect();
+                    if args.quiet || installer_assets.is_empty() {
+                        default
+                    } else {
+                        // Sort: .msi first, then .exe, then alphabetical
+                        let mut sorted: Vec<&GitHubAsset> = installer_assets;
+                        sorted.sort_by(|a, b| {
+                            let a_msi = a.name.to_lowercase().ends_with(".msi");
+                            let b_msi = b.name.to_lowercase().ends_with(".msi");
+                            match b_msi.cmp(&a_msi) {
+                                std::cmp::Ordering::Equal => a.name.cmp(&b.name),
+                                other => other,
+                            }
+                        });
+                        let theme = ColorfulTheme::default();
+                        let items: Vec<String> = sorted
+                            .iter()
+                            .map(|a| format!("{} ({} bytes)", a.name, a.size))
+                            .collect();
+                        let choice = Select::with_theme(&theme)
+                            .with_prompt(format!(
+                                "Select installer asset for {} (arch: {:?})",
+                                release.tag_name, args.arch
+                            ))
+                            .items(&items)
+                            .default(0)
+                            .interact_opt()?;
+                        match choice {
+                            Some(idx) => sorted[idx].clone(),
+                            None => default,
+                        }
+                    }
                 };
                 match install_release(repo_name, &latest_version, &release, token, config, state, Some(selected_asset), args.quiet, Some(current_version.to_string()), &args.arch).await {
                     Ok(_) => {
@@ -341,84 +359,6 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
     Ok(())
 }
 
-/// Interactive asset selection for update: only .exe (setup) and .msi files,
-/// matched to the requested architecture. MSI preferred over EXE. Other file
-/// types (.zip, .tar.gz, etc.) are hidden. Falls back to all installers if no
-/// arch-specific match is found (asset naming varies across repos).
-pub(crate) fn select_installer_asset(
-    release: &GitHubRelease,
-    arch: &Arch,
-    quiet: bool,
-) -> Result<GitHubAsset> {
-    // Filter: only .exe and .msi files, matching the requested architecture
-    let arch_matching: Vec<&GitHubAsset> = release
-        .assets
-        .iter()
-        .filter(|a| {
-            let name = a.name.to_lowercase();
-            let is_installer = name.ends_with(".exe") || name.ends_with(".msi");
-            is_installer && crate::core::registries::matches_arch(&name, arch)
-        })
-        .collect();
-
-    // Fallback: all .exe/.msi installers if no arch-specific match found
-    let installer_assets: Vec<&GitHubAsset> = if arch_matching.is_empty() {
-        release
-            .assets
-            .iter()
-            .filter(|a| {
-                let name = a.name.to_lowercase();
-                name.ends_with(".exe") || name.ends_with(".msi")
-            })
-            .collect()
-    } else {
-        arch_matching
-    };
-
-    if installer_assets.is_empty() {
-        anyhow::bail!(
-            "No installer assets (.exe/.msi) found in release {}",
-            release.tag_name
-        );
-    }
-
-    // Sort: .msi first (preferred), then .exe, then alphabetical
-    let mut sorted: Vec<&GitHubAsset> = installer_assets;
-    sorted.sort_by(|a, b| {
-        let a_msi = a.name.to_lowercase().ends_with(".msi");
-        let b_msi = b.name.to_lowercase().ends_with(".msi");
-        match b_msi.cmp(&a_msi) {
-            std::cmp::Ordering::Equal => a.name.cmp(&b.name),
-            other => other,
-        }
-    });
-
-    // Quiet (scheduled) runs must not block on a prompt - take the preferred asset.
-    if quiet {
-        return Ok(sorted[0].clone());
-    }
-
-    let theme = ColorfulTheme::default();
-    let items: Vec<String> = sorted
-        .iter()
-        .map(|a| format!("{} ({} bytes)", a.name, a.size))
-        .collect();
-
-    let choice = Select::with_theme(&theme)
-        .with_prompt(format!(
-            "Select installer asset for {} (arch: {:?})",
-            release.tag_name, arch
-        ))
-        .items(&items)
-        .default(0)
-        .interact_opt()?;
-
-    match choice {
-        Some(idx) => Ok(sorted[idx].clone()),
-        None => anyhow::bail!("No asset selected for update"),
-    }
-}
-
 // ponytail: 10 parameters is over the 7-argument comfort line. Bundling them
 // into an options struct is the upgrade path once a third caller appears.
 #[allow(clippy::too_many_arguments)]
@@ -437,30 +377,7 @@ pub(crate) async fn install_release(
     // Use interactively selected asset, or fall back to auto-select
     let asset = match selected_asset {
         Some(a) => a,
-        None => {
-            // Auto-select: convert to install types and use install_select_asset
-            let install_rel = &InstallGitHubRelease {
-                tag_name: release.tag_name.clone(),
-                name: release.name.clone(),
-                prerelease: release.prerelease,
-                draft: release.draft,
-                assets: release.assets.iter().map(|a| InstallGitHubAsset {
-                    name: a.name.clone(),
-                    browser_download_url: a.browser_download_url.clone(),
-                    size: a.size,
-                    content_type: a.content_type.clone(),
-                }).collect(),
-                zipball_url: release.zipball_url.clone(),
-                tarball_url: release.tarball_url.clone(),
-            };
-            let selected = install_select_asset(install_rel, arch, None)?;
-            GitHubAsset {
-                name: selected.name,
-                browser_download_url: selected.browser_download_url,
-                size: selected.size,
-                content_type: selected.content_type,
-            }
-        }
+        None => install_select_asset(release, arch, None, false)?,
     };
 
     let download_url = &asset.browser_download_url;
@@ -473,21 +390,7 @@ pub(crate) async fn install_release(
     // Get expected size from GitHub API for skip-check
     let mut total_size: u64 = 0;
     let expected_hash = {
-        let install_rel_for_checksum = &InstallGitHubRelease {
-            tag_name: release.tag_name.clone(),
-            name: release.name.clone(),
-            prerelease: release.prerelease,
-            draft: release.draft,
-            assets: release.assets.iter().map(|a| InstallGitHubAsset {
-                name: a.name.clone(),
-                browser_download_url: a.browser_download_url.clone(),
-                size: a.size,
-                content_type: a.content_type.clone(),
-            }).collect(),
-            zipball_url: release.zipball_url.clone(),
-            tarball_url: release.tarball_url.clone(),
-        };
-        fetch_published_checksum(install_rel_for_checksum, &asset.name, token).await?
+        fetch_published_checksum(release, &asset.name, token).await?
     };
 
     // Skip download if file already exists with matching size AND checksum
