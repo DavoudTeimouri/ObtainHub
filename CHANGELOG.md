@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.14] - 2026-11-12
+
+RC.14: Minor UX fixes — removed `user-select:none` from `.app.blur-bg`; hide "Open…" browse button on non-Windows.
+
 ## [v3.0.72-rc.13] - 2026-11-12
 
 RC.13: Fix cleanup_download_folder grouping — use full file stem instead of stripping digits/dots, so tool.exe and tool2.exe no longer share a group and delete each other.

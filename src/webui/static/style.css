@@ -808,7 +808,6 @@ body.locked main .page .btn-danger {
 /* Blur the app behind the login popup (modal lives outside .app) */
 .app.blur-bg {
   filter: blur(3px);
-  user-select: none;
   transition: filter 0.12s ease;
 }
 

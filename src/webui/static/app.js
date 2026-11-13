@@ -1161,8 +1161,8 @@ class ObtainHubUI {
             input.value = f.value;
             input.id = 'cfg_' + f.key;
             if (f.step) input.step = f.step;
-            // Browse button for directory fields
-            if (f.key === 'install_dir' || f.key === 'download_dir' || f.key === 'shim_dir') {
+            // Browse button for directory fields (Windows only)
+            if ((f.key === 'install_dir' || f.key === 'download_dir' || f.key === 'shim_dir') && navigator.platform.toString().includes('Win')) {
               const browse = document.createElement('button');
               browse.type = 'button';
               browse.className = 'btn btn-secondary btn-sm';
