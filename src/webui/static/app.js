@@ -801,10 +801,28 @@ class ObtainHubUI {
     if (!(await this.requireToken())) return;
     if (!confirm('Update "' + repo + '" to the latest release?')) return;
     try {
-      // Fetch available release assets so the user can pick the right one
+      // Only GitHub repos (owner/repo) have release assets to pick from.
+      // Folder-added apps have repo = exe name, not a GitHub repo.
+      if (!repo.includes('/')) {
+        // Offer to link a GitHub repo so updates can find releases.
+        const githubRepo = prompt('"' + repo + '" was added as a local folder. Link it to a GitHub repo (owner/repo) to enable updates:', '');
+        if (!githubRepo || !githubRepo.includes('/')) {
+          this.showToast('Update skipped — no GitHub repo linked.', 'info');
+          return;
+        }
+        // Link it, then proceed with update under the GitHub repo name.
+        try {
+          await this.api('/apps/link-repo', { method: 'POST', body: { repo: repo, github_repo: githubRepo } });
+          this.showToast('Linked: ' + repo + ' → ' + githubRepo, 'success');
+        } catch (linkErr) {
+          this.showToast('Link failed: ' + linkErr.message, 'error');
+          return;
+        }
+        repo = githubRepo; // continue update under GitHub repo name
+      }
+      let selectedAsset = null;
       const assetsRes = await this.api('/apps/assets?repo=' + encodeURIComponent(repo));
       const assets = assetsRes && assetsRes.assets ? assetsRes.assets : [];
-      let selectedAsset = null;
       if (assets.length > 1) {
         selectedAsset = await this.pickAsset(repo, assets);
         if (!selectedAsset) return; // user cancelled

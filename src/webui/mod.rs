@@ -143,6 +143,7 @@ pub async fn run_webui(
         .route("/config", axum::routing::put(routes::put_config))
         .route("/config/browse-folder", axum::routing::post(routes::browse_folder))
         .route("/config/github-token", axum::routing::delete(routes::delete_github_token))
+        .route("/apps/link-repo", axum::routing::post(routes::link_repo))
         .route("/apps", axum::routing::post(routes::post_app))
         .route("/apps/scan-folder", axum::routing::post(routes::scan_folder))
         .route("/apps/candidates", axum::routing::post(routes::candidates))

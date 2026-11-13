@@ -821,6 +821,7 @@ pub async fn install_app(
 
 /// List available release assets for a repo, so the user can pick one to install.
 /// Query: ?repo=owner/repo
+/// Returns empty asset list for non-GitHub repo names (e.g. folder-added apps).
 pub async fn list_assets(
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
@@ -834,6 +835,10 @@ pub async fn list_assets(
                 .into_response()
         }
     };
+    // Non-GitHub repo names (no '/') have no release assets — return empty.
+    if !repo.contains('/') {
+        return (StatusCode::OK, Json(serde_json::json!({"repo": repo, "assets": []}))).into_response();
+    }
     if !cfg!(windows) {
         return (
             StatusCode::NOT_IMPLEMENTED,
@@ -867,6 +872,56 @@ pub async fn list_assets(
         )
             .into_response(),
     }
+}
+
+/// Link a GitHub repository to an existing managed app (e.g. a folder-added app).
+/// Body: { repo: "current name/exe", github_repo: "owner/repo" }
+/// Updates the app's repo field in state so check/update can find GitHub releases.
+#[derive(Deserialize)]
+pub struct LinkRepo {
+    pub repo: String,
+    pub github_repo: String,
+}
+
+pub async fn link_repo(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(body): Json<LinkRepo>,
+) -> impl IntoResponse {
+    let mut state_manager = app_state.state_manager.lock().await;
+    // The app must already be managed under its current name.
+    let existing = state_manager.get_installed(&body.repo);
+    if existing.is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": format!("'{}' is not managed", body.repo)})),
+        )
+            .into_response();
+    }
+    let mut entry = existing.unwrap().clone();
+    // Validate github_repo format (owner/repo)
+    if !body.github_repo.contains('/') || body.github_repo.starts_with('/') || body.github_repo.ends_with('/') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "github_repo must be in owner/repo format"})),
+        )
+            .into_response();
+    }
+    // Remove old entry (keyed by current repo name), re-add under GitHub repo name.
+    state_manager.remove_installed(&body.repo);
+    entry.repo = body.github_repo.clone();
+    state_manager.add_installed(entry);
+    if let Err(e) = state_manager.save() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Failed to save state: {e}")})),
+        )
+            .into_response();
+    }
+    (StatusCode::OK, Json(serde_json::json!({
+        "status": "linked",
+        "repo": body.repo,
+        "github_repo": body.github_repo,
+    }))).into_response()
 }
 
 /// Uninstall a repository (same engine as `ohub uninstall`). Protected.

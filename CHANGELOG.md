@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.6] - 2026-11-12
+
+RC.6: Fix update crash on folder-added apps + GitHub repo linking.
+- WebUI update no longer fetches assets for non-GitHub repos (folder apps).
+- Update prompts to link a GitHub repo (owner/repo) for folder-added apps.
+- New POST /apps/link-repo endpoint links a folder app to a GitHub repo for updates.
+- list_assets returns empty asset list for non-GitHub repo names.
+
 ## [v3.0.72-rc.5] - 2026-11-12
 
 RC.5: Asset selection on update too — WebUI shows the release-asset picker before updating (same as install). CLI `ohub update --asset <name>` picks a specific asset. Installer auto-selection kept as default when no asset specified.
