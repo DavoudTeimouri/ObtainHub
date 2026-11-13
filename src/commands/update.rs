@@ -437,7 +437,7 @@ pub(crate) async fn install_release(
                 zipball_url: release.zipball_url.clone(),
                 tarball_url: release.tarball_url.clone(),
             };
-            let selected = install_select_asset(install_rel, arch)?;
+            let selected = install_select_asset(install_rel, arch, None)?;
             GitHubAsset {
                 name: selected.name,
                 browser_download_url: selected.browser_download_url,

@@ -172,6 +172,7 @@ pub async fn execute(args: SearchArgs, config: &ConfigManager, state: &mut State
                             dry_run: false,
                             file: None,
                             url: None,
+                            asset: None,
                             dependencies: Vec::new(),
                             };
                         let retry_config = crate::utils::retry::RetryConfig::from_config(config);

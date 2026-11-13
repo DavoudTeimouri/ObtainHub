@@ -708,8 +708,8 @@ async fn fetch_latest_release_published_at(
 /// Used for Install Dir / Download Dir / Shim Dir "Open and select" buttons.
 /// Windows only.
 pub async fn browse_folder(
-    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
-    Json(body): Json<serde_json::Value>,
+    State(_app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(_body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     if !cfg!(windows) {
         return (

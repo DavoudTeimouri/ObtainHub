@@ -69,6 +69,7 @@ pub async fn execute(
                     dry_run: false,
                     file: None,
                     url: None,
+                    asset: None,
                     dependencies: Vec::new(),
                 };
                 if let Err(e) = crate::commands::install::execute(install_args, config, state, &retry, None).await {

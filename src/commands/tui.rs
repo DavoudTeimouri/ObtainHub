@@ -647,6 +647,7 @@ async fn handle_search_results(
                 dry_run: false,
                 file: None,
                 url: None,
+                asset: None,
                 dependencies: Vec::new(),
             };
             suspend_tui(terminal)?;
