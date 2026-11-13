@@ -231,6 +231,24 @@ code {
 
 .footer-copyright { font-size: 10.5px; color: var(--text-faint); white-space: nowrap; }
 
+/* Asset pick modal: choose which release asset to install */
+.asset-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-size: 12.5px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.asset-pick-item:hover { border-color: var(--accent); background: var(--surface-2); }
+.asset-pick-item input[type="radio"] { width: 16px; height: 16px; accent-color: var(--accent); margin-top: 1px; flex-shrink: 0; }
+.asset-pick-item span:first-child { flex: 1; font-family: var(--font-mono); font-size: 12px; }
+.asset-size { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); flex-shrink: 0; }
+
 .sidebar.collapsed { width: var(--sidebar-w-collapsed); }
 
 .sidebar.collapsed .logo,

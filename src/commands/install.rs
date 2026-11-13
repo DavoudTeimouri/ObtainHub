@@ -180,7 +180,7 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     }
 
     // Find appropriate asset
-    let asset = registry.select_asset(&release, &args.arch)?;
+    let asset = registry.select_asset(&release, &args.arch, args.asset.as_deref())?;
     debug!("Selected asset: {} ({} bytes)", asset.name, asset.size);
     
     // Create install directory
@@ -308,6 +308,7 @@ async fn install_dependencies(
             dry_run: false,
             file: None,
             url: None,
+            asset: None,
             // A dependency's own dependencies are not followed: that is what
             // keeps a cycle from recursing.
             dependencies: Vec::new(),
@@ -332,7 +333,13 @@ async fn install_dependencies(
 }
 
 /// Select the best asset for the current platform
-pub fn select_asset(release: &GitHubRelease, arch: &Arch) -> Result<GitHubAsset> {
+pub fn select_asset(release: &GitHubRelease, arch: &Arch, preferred: Option<&str>) -> Result<GitHubAsset> {
+    // If caller specified a preferred asset name, use it directly.
+    if let Some(name) = preferred {
+        if let Some(asset) = release.assets.iter().find(|a| a.name == name) {
+            return Ok(asset.clone());
+        }
+    }
     // Priority: platform-specific asset > generic archive > zipball
     let target_os = std::env::consts::OS;
 

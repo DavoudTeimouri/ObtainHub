@@ -10,7 +10,7 @@
   <meta http-equiv="Expires" content="0">
   <title>ObtainHub WebUI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=3.0.72-rc.3">
+  <link rel="stylesheet" href="/static/style.css?v=3.0.72-rc.4">
 </head>
 <body>
   <div class="app">
@@ -105,7 +105,7 @@
           <span style="color:var(--text-muted); font-size:11px;">Sign in required for changes — use Login, or add a GitHub token in Configuration.</span>
         </div>
         <div class="footer-panel">
-          <div class="footer-version" id="versionBadge">v3.0.72-rc.3</div>
+          <div class="footer-version" id="versionBadge">v3.0.72-rc.4</div>
           <div class="footer-copyright">© 2026 ObtainHub</div>
         </div>
       </div>
@@ -916,9 +916,29 @@
         </form>
       </div>
     </div>
-  </div>
+    </div>
 
-  <div class="toast-container" id="toastContainer"></div>
+    <!-- Asset pick modal: choose which release asset to install -->
+    <div class="modal hidden" id="assetPickModal">
+    	<div class="modal-backdrop"></div>
+    	<div class="modal-content" style="max-width: 560px;">
+    		<div class="modal-header">
+    			<span class="modal-title" id="assetPickTitle">Select asset</span>
+    			<button class="modal-close" id="assetPickCancel" aria-label="Close">&times;</button>
+    		</div>
+    		<div class="modal-body">
+    			<div id="assetPickList"></div>
+    			<p class="page-subtitle" style="margin-top:10px;color:var(--text-muted);font-size:12px">
+    				Pick the correct file for your machine. If unsure, choose the .zip or .exe matching your Windows version.
+    			</p>
+    		</div>
+    		<div class="modal-footer">
+    			<button type="button" class="btn btn-primary" id="assetPickOk">Install selected</button>
+    		</div>
+    	</div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
 
   <script src="/static/app.js?v=3.0.68"></script>
 </body>

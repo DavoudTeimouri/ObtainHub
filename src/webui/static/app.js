@@ -739,12 +739,62 @@ class ObtainHubUI {
     }
     if (!confirm('Install "' + repo + '"? This will download and register it under ObtainHub management.')) return;
     try {
-      const res = await this.api('/apps/install', { method: 'POST', body: { repo: repo } });
-      this.showToast('Installed: ' + repo, 'success');
+      // Fetch available release assets so the user can pick the right one
+      const assetsRes = await this.api('/apps/assets?repo=' + encodeURIComponent(repo));
+      const assets = assetsRes && assetsRes.assets ? assetsRes.assets : [];
+      let selectedAsset = null;
+      if (assets.length > 1) {
+        selectedAsset = await this.pickAsset(repo, assets);
+        if (!selectedAsset) return; // user cancelled
+      } else if (assets.length === 1) {
+        selectedAsset = assets[0];
+      }
+      const res = await this.api('/apps/install', {
+        method: 'POST',
+        body: { repo: repo, asset: selectedAsset ? selectedAsset.name : null },
+      });
+      this.showToast('Installed: ' + repo + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
       this.loadApps();
     } catch (err) {
       this.showToast('Install failed: ' + err.message, 'error');
     }
+  }
+
+  // Show a modal listing release assets; user picks the one to install.
+  async pickAsset(repo, assets) {
+    const modal = document.getElementById('assetPickModal');
+    const title = document.getElementById('assetPickTitle');
+    const list = document.getElementById('assetPickList');
+    const btnOk = document.getElementById('assetPickOk');
+    const btnCancel = document.getElementById('assetPickCancel');
+    if (!modal || !title || !list || !btnOk || !btnCancel) return null;
+    title.textContent = 'Select asset to install for ' + repo;
+    list.innerHTML = '';
+    this.pickAssetChoice = null;
+    assets.forEach(a => {
+      const label = document.createElement('label');
+      label.className = 'asset-pick-item';
+      label.innerHTML =
+        '<input type="radio" name="assetPick" value="' + this.escapeHtml(a.name) + '" data-size="' + a.size + '" data-type="' + this.escapeHtml(a.content_type || '') + '">' +
+        '<span>' + this.escapeHtml(a.name) + '</span>' +
+        '<span class="asset-size">(' + this.formatBytes(a.size) + ')</span>';
+      const radio = label.querySelector('input');
+      radio.onchange = () => { this.pickAssetChoice = a; };
+      if (assets.length === 1) { radio.checked = true; this.pickAssetChoice = a; }
+      list.appendChild(label);
+    });
+    return new Promise((resolve) => {
+      const ok = () => { modal.classList.add('hidden'); resolve(this.pickAssetChoice); };
+      const cancel = () => { modal.classList.add('hidden'); resolve(null); };
+      modal.classList.remove('hidden');
+      btnOk.onclick = ok;
+      btnCancel.onclick = cancel;
+      // One-time handlers
+      const onceOk = (e) => { e.stopImmediatePropagation(); modal.classList.add('hidden'); resolve(this.pickAssetChoice); btnOk.removeEventListener('click', onceOk); btnCancel.removeEventListener('click', onceCancel); };
+      const onceCancel = (e) => { e.stopImmediatePropagation(); modal.classList.add('hidden'); resolve(null); btnOk.removeEventListener('click', onceOk); btnCancel.removeEventListener('click', onceCancel); };
+      btnOk.addEventListener('click', onceOk);
+      btnCancel.addEventListener('click', onceCancel);
+    });
   }
 
   async updateApp(repo) {
@@ -999,6 +1049,19 @@ class ObtainHubUI {
     }
   }
 
+  // Open a native folder picker dialog via the server and set the input value.
+  async browseFolder(input) {
+    try {
+      const res = await this.api('/config/browse-folder', { method: 'POST', body: {} });
+      if (res && res.path) {
+        input.value = res.path;
+        this.showToast('Folder selected: ' + res.path, 'success');
+      }
+    } catch (err) {
+      this.showToast('Folder pick failed: ' + err.message, 'error');
+    }
+  }
+
   // ---- Config ----
   async loadConfig() {
     const loading = document.getElementById('configLoading');
@@ -1067,8 +1130,23 @@ class ObtainHubUI {
             input.value = f.value;
             input.id = 'cfg_' + f.key;
             if (f.step) input.step = f.step;
+            // Browse button for directory fields
+            if (f.key === 'install_dir' || f.key === 'download_dir' || f.key === 'shim_dir') {
+              const browse = document.createElement('button');
+              browse.type = 'button';
+              browse.className = 'btn btn-secondary btn-sm';
+              browse.textContent = 'Open…';
+              browse.title = 'Pick a folder';
+              browse.onclick = () => this.browseFolder(input);
+              dd.style.display = 'flex';
+              dd.style.gap = '6px';
+              dd.style.alignItems = 'center';
+              dd.appendChild(input);
+              dd.appendChild(browse);
+            } else {
+              dd.appendChild(input);
+            }
           }
-          dd.appendChild(input);
           dl.appendChild(dt);
           dl.appendChild(dd);
         });

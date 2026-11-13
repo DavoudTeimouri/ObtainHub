@@ -704,6 +704,50 @@ async fn fetch_latest_release_published_at(
     }
 }
 
+/// Open a native folder picker dialog and return the selected path.
+/// Used for Install Dir / Download Dir / Shim Dir "Open and select" buttons.
+/// Windows only.
+pub async fn browse_folder(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !cfg!(windows) {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(serde_json::json!({"error": "folder picker available on Windows only"})),
+        )
+            .into_response();
+    }
+    let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+$fb = New-Object System.Windows.Forms.FolderBrowserDialog
+$fb.Description = "Select a folder"
+$fb.ShowNewFolderButton = $true
+$result = $fb.ShowDialog()
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) { $fb.SelectedPath } else { exit 1 }
+"#;
+    match run_ps(script) {
+        PsResult::Ok(path) => {
+            if path.is_empty() {
+                (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "No folder selected"})))
+                    .into_response()
+            } else {
+                (StatusCode::OK, Json(serde_json::json!({"path": path}))).into_response()
+            }
+        }
+        PsResult::Rejected => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Folder picker was cancelled or failed"})),
+        )
+            .into_response(),
+        PsResult::NotFound => (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(serde_json::json!({"error": "PowerShell not available"})),
+        )
+            .into_response(),
+    }
+}
+
 // ---------- App actions (same engines as the CLI commands) ----------
 
 #[derive(Deserialize)]
@@ -729,6 +773,9 @@ pub struct AppAction {
     /// Run uninstaller interactively (user sees the UI, can cancel)
     #[serde(default)]
     pub interactive: bool,
+    /// Specific asset name to install (when release has multiple assets)
+    #[serde(default)]
+    pub asset: Option<String>,
 }
 
 fn action_result(result: anyhow::Result<()>) -> axum::response::Response {
@@ -759,6 +806,7 @@ pub async fn install_app(
         dry_run: false,
         file: None,
         url: None,
+        asset: body.asset,
         dependencies: Vec::new(),
     };
     let result = {
@@ -769,6 +817,56 @@ pub async fn install_app(
         crate::commands::install::execute(args, &cm, &mut sm, &rc, custom_path.as_deref()).await
     };
     action_result(result)
+}
+
+/// List available release assets for a repo, so the user can pick one to install.
+/// Query: ?repo=owner/repo
+pub async fn list_assets(
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let repo = match params.get("repo") {
+        Some(r) if !r.is_empty() => r.clone(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "repo query parameter required"})),
+            )
+                .into_response()
+        }
+    };
+    if !cfg!(windows) {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(serde_json::json!({"error": "asset listing available on Windows only"})),
+        )
+            .into_response();
+    }
+    let token = None;
+    let registry = crate::core::registries::Registry::GitHub(
+        crate::core::registries::GitHubRegistry::new(),
+    );
+    match crate::core::registries::Registry::fetch_latest_release(&registry, &repo, token).await {
+        Ok(release) => {
+            let assets: Vec<serde_json::Value> = release
+                .assets
+                .iter()
+                .map(|a| {
+                    serde_json::json!({
+                        "name": a.name,
+                        "url": a.browser_download_url,
+                        "size": a.size,
+                        "content_type": a.content_type,
+                    })
+                })
+                .collect();
+            (StatusCode::OK, Json(serde_json::json!({"repo": repo, "assets": assets}))).into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({"error": format!("Failed to fetch release for {repo}: {e}")})),
+        )
+            .into_response(),
+    }
 }
 
 /// Uninstall a repository (same engine as `ohub uninstall`). Protected.

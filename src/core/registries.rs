@@ -144,11 +144,11 @@ impl Registry {
         }
     }
     
-    pub fn select_asset(&self, release: &RegistryRelease, arch: &Arch) -> Result<RegistryAsset> {
+    pub fn select_asset(&self, release: &RegistryRelease, arch: &Arch, preferred: Option<&str>) -> Result<RegistryAsset> {
         match self {
-            Registry::GitHub(r) => r.select_asset(release, arch),
-            Registry::CratesIo(r) => r.select_asset(release, arch),
-            Registry::Generic(r) => r.select_asset(release, arch),
+            Registry::GitHub(r) => r.select_asset(release, arch, preferred),
+            Registry::CratesIo(r) => r.select_asset(release, arch, preferred),
+            Registry::Generic(r) => r.select_asset(release, arch, preferred),
         }
     }
     
@@ -234,7 +234,13 @@ impl GitHubRegistry {
             .ok_or_else(|| anyhow::anyhow!("No releases found for {}", package_name))
     }
     
-    pub fn select_asset(&self, release: &RegistryRelease, arch: &Arch) -> Result<RegistryAsset> {
+    pub fn select_asset(&self, release: &RegistryRelease, arch: &Arch, preferred: Option<&str>) -> Result<RegistryAsset> {
+        // If caller specified a preferred asset name, use it directly.
+        if let Some(name) = preferred {
+            if let Some(asset) = release.assets.iter().find(|a| a.name == name) {
+                return Ok(asset.clone());
+            }
+        }
         let target_os = std::env::consts::OS;
 
         for asset in &release.assets {
@@ -246,14 +252,7 @@ impl GitHubRegistry {
                 return Ok(asset.clone());
             }
         }
-        
-        for asset in &release.assets {
-            let name = asset.name.to_lowercase();
-            if name.ends_with(".zip") || name.ends_with(".tar.gz") || name.ends_with(".tar.xz") || name.ends_with(".tgz") {
-                return Ok(asset.clone());
-            }
-        }
-        
+
         let zipball_asset = RegistryAsset {
             name: format!("{}.zip", release.tag_name),
             browser_download_url: release.zipball_url.clone(),
@@ -417,7 +416,12 @@ impl CratesIoRegistry {
         })
     }
     
-    pub fn select_asset(&self, release: &RegistryRelease, _arch: &Arch) -> Result<RegistryAsset> {
+    pub fn select_asset(&self, release: &RegistryRelease, _arch: &Arch, preferred: Option<&str>) -> Result<RegistryAsset> {
+        if let Some(name) = preferred {
+            if let Some(asset) = release.assets.iter().find(|a| a.name == name) {
+                return Ok(asset.clone());
+            }
+        }
         release.assets.first().cloned()
             .ok_or_else(|| anyhow::anyhow!("No assets available"))
     }
@@ -488,7 +492,12 @@ impl GenericHttpRegistry {
         Ok(resp)
     }
     
-    pub fn select_asset(&self, release: &RegistryRelease, _arch: &Arch) -> Result<RegistryAsset> {
+    pub fn select_asset(&self, release: &RegistryRelease, _arch: &Arch, preferred: Option<&str>) -> Result<RegistryAsset> {
+        if let Some(name) = preferred {
+            if let Some(asset) = release.assets.iter().find(|a| a.name == name) {
+                return Ok(asset.clone());
+            }
+        }
         release.assets.first().cloned()
             .ok_or_else(|| anyhow::anyhow!("No assets available"))
     }

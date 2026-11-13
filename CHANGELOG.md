@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.4] - 2026-11-12
+
+RC.4: Multiple asset selection for install + "Open…" browse button for config paths.
+- WebUI install now fetches /apps/assets and shows a selection modal when a release has multiple assets.
+- CLI `ohub install --asset <name>` picks a specific release asset.
+- Config page: "Open…" button next to Install Dir / Download Dir / Shim Dir opens a native folder picker (PowerShell FolderBrowserDialog).
+
 ## [v3.0.72-rc.3] - 2026-11-12
 
 RC.3: Fix all buttons not working — syntax error in app.js line 959 (broken inline `onclick` string escaping in folder-add EXE selection UI) prevented the entire script from loading, so no click listeners were registered. Replaced inline `onclick` with proper `addEventListener` via `document.createElement`.

@@ -401,6 +401,10 @@ pub struct InstallArgs {
     /// Declare dependencies (owner/repo format, comma-separated or repeat flag)
     #[arg(long, value_delimiter = ',')]
     pub dependencies: Vec<String>,
+
+    /// Specific asset name to install from the release (when multiple exist)
+    #[arg(long)]
+    pub asset: Option<String>,
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
