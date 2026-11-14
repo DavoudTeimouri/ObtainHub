@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.18] - 2026-11-12
+
+RC.18: Add scrollbars — `.modal-content` max-height 85vh + overflow-y auto (modals scroll independently), `.modal-body` flex scroll, `.activity-list` max-height 55vh + overflow-y auto (downloads list scrolls).
+
 ## [v3.0.72-rc.17] - 2026-11-12
 
 RC.17: Fix folder-added app version detection — read exe's embedded Windows FileVersionInfo via PowerShell instead of calling GitHub API with invalid exe-name repo. Folder apps now show real version; update flow still prompts to link GitHub repo for assets.

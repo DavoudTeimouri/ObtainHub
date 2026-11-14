@@ -703,7 +703,7 @@ body.locked main .page .btn-danger {
 }
 
 /* ---------- activity ---------- */
-.activity-list { padding: 6px 16px 12px; display: flex; flex-direction: column; }
+.activity-list { padding: 6px 16px 12px; display: flex; flex-direction: column; max-height: 55vh; overflow-y: auto; }
 
 .activity-list > div:not(.empty-state),
 .activity-item {
@@ -815,12 +815,16 @@ body.locked main .page .btn-danger {
   position: relative;
   width: 100%;
   max-width: 420px;
-  margin: 16px;
+  margin: 16px auto;
+  max-height: 85vh;
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   animation: pop-in 0.15s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-logo { display: flex; align-items: center; gap: 8px; padding: 14px 16px 8px; }
@@ -851,7 +855,7 @@ body.locked main .page .btn-danger {
 
 .modal-close:hover { color: var(--text); background: var(--surface-2); }
 
-.modal-body { padding: 16px; }
+.modal-body { padding: 16px; flex: 1; overflow-y: auto; }
 
 /* Candidate repo picker */
 .pick-results {
