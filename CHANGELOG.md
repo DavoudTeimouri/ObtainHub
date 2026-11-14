@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.21] - 2026-11-12
+
+RC.21: Fix update/download stuck — added 30s timeout to all HTTP calls in `download.rs` (`text`, `fetch_chunk`, `probe_size`) that were using bare `minreq::get()` without `github_get()`, so a slow/unresponsive GitHub API or download server returns an error instead of hanging forever.
+
 ## [v3.0.72-rc.20] - 2026-11-12
 
 RC.20: Fix update stuck on all app types — add default 30s timeout for GitHub API calls in `update::execute` and `check::execute` so a slow/unresponsive API returns an error instead of hanging forever.

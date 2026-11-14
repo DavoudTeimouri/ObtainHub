@@ -97,7 +97,8 @@ pub async fn to_file(d: &Download<'_>, config: &ConfigManager) -> Result<()> {
 pub async fn text(url: &str, token: Option<&str>) -> Result<String> {
     let mut req = minreq::get(url)
         .with_header("User-Agent", crate::core::USER_AGENT)
-        .with_header("Accept", "application/vnd.github.v3+json");
+        .with_header("Accept", "application/vnd.github.v3+json")
+        .with_timeout(30_000);
     if let Some(token) = token {
         req = req.with_header("Authorization", format!("Bearer {token}"));
     }
@@ -213,6 +214,7 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
         .with_header("User-Agent", crate::core::USER_AGENT)
         .with_header("Range", format!("bytes={start}-{end}"))
         .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
+        .with_timeout(30_000)
         .send()
         .with_context(|| format!("Failed to request {label} ({url})"))?;
 
@@ -251,6 +253,7 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
         .with_header("User-Agent", crate::core::USER_AGENT)
         .with_header("Range", "bytes=0-0")
         .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
+        .with_timeout(30_000)
         .send()
         .with_context(|| format!("Failed to request {url}"))?;
 
