@@ -209,6 +209,14 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
             }
         }
 
+        // Folder-added apps have repo = exe name (no '/'), not a GitHub repo.
+        // They must be linked via /apps/link-repo before updates can find releases.
+        if !repo_name.contains('/') {
+            reporter.say(&format!(
+                "  Not a GitHub repository — link it in WebUI to check for updates"
+            ));
+            continue;
+        }
         match fetch_latest_release(repo_name, token, retry_config).await {
             Ok(Some(release)) => {
                 let latest_version = release.tag_name.clone();

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.19] - 2026-11-12
+
+RC.19: Fix update stuck on folder-added apps — skip `fetch_latest_release` for repos without `/` (exe name), show "Not a GitHub repository — link it in WebUI" instead of silently doing nothing.
+
 ## [v3.0.72-rc.18] - 2026-11-12
 
 RC.18: Add scrollbars — `.modal-content` max-height 85vh + overflow-y auto (modals scroll independently), `.modal-body` flex scroll, `.activity-list` max-height 55vh + overflow-y auto (downloads list scrolls).
