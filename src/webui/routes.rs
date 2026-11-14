@@ -281,24 +281,11 @@ pub struct ScanFolderBody {
 
 /// Scan a folder for executable files. Returns a list of {name, path}.
 pub async fn scan_folder(
-    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(body): Json<ScanFolderBody>,
 ) -> impl IntoResponse {
     let folder_path = PathBuf::from(&body.path);
 
-    // Allowed scan roots: configured dirs + user home. Prevents scanning
-    // the whole filesystem (e.g. C:\, network shares, symlink targets).
-    let config = app_state.config_manager.lock().await;
-    let cfg = config.get();
-    let allowed_roots: Vec<PathBuf> = vec![
-        cfg.install_dir.clone(),
-        cfg.download_dir.clone(),
-        cfg.shim_dir.clone(),
-        dirs::home_dir().unwrap_or_default(),
-    ];
-    drop(config);
-
-    // Canonicalize to resolve symlinks and .. components before checking.
+    // Canonicalize to resolve symlinks and .. components.
     let canonical = match folder_path.canonicalize() {
         Ok(c) => c,
         Err(_) => {
@@ -310,11 +297,11 @@ pub async fn scan_folder(
         }
     };
 
-    let is_allowed = allowed_roots.iter().any(|root| canonical.starts_with(root));
-    if !is_allowed {
+    // Safety: refuse to scan drive roots (parent is empty).
+    if canonical.parent().is_none() {
         return (
             StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": "Path not in allowed scan roots"})),
+            Json(serde_json::json!({"error": "Path not allowed for scanning"})),
         )
             .into_response();
     }
