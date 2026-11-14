@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.15] - 2026-11-12
+
+RC.15: Fix remaining code-review nits — WebUI arch selection via `arch` field on `AppAction` + `parse_arch()` helper; removed all 11 `onclick` string interpolations in app.js (replaced with `data-*` attributes + event delegation); verified all error responses use `{"error": "..."}` with explicit status codes.
+
 ## [v3.0.72-rc.14] - 2026-11-12
 
 RC.14: Minor UX fixes — removed `user-select:none` from `.app.blur-bg`; hide "Open…" browse button on non-Windows.

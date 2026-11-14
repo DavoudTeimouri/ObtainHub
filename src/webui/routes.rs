@@ -811,6 +811,20 @@ pub struct AppAction {
     /// Specific asset name to install (when release has multiple assets)
     #[serde(default)]
     pub asset: Option<String>,
+    /// Target architecture: x64, arm64, x86 (default: Auto)
+    #[serde(default)]
+    pub arch: Option<String>,
+}
+
+/// Parse optional arch string from WebUI payload. Defaults to Auto.
+fn parse_arch(arch: Option<&str>) -> crate::cli::Arch {
+    let lowered = arch.map(|s| s.to_lowercase());
+    match lowered.as_deref() {
+        Some("x64") => crate::cli::Arch::X64,
+        Some("arm64") => crate::cli::Arch::Arm64,
+        Some("x86") => crate::cli::Arch::X86,
+        _ => crate::cli::Arch::Auto,
+    }
 }
 
 fn action_result(result: anyhow::Result<()>) -> axum::response::Response {
@@ -834,7 +848,7 @@ pub async fn install_app(
         download_only: false,
         skip_deps: false,
         timeout: None,
-        arch: crate::cli::Arch::Auto,
+        arch: parse_arch(body.arch.as_deref()),
         yes: true,
         reset: false,
         interactive: false,
@@ -996,7 +1010,7 @@ pub async fn update_app(
         force: body.force,
         skip_deps: false,
         timeout: None,
-        arch: crate::cli::Arch::Auto,
+        arch: parse_arch(body.arch.as_deref()),
         yes: true,
         reset: false,
         interactive: false,
@@ -1028,7 +1042,7 @@ pub async fn check_app(
         all: body.candidates,
         candidates: body.candidates,
         reset: body.reset,
-        arch: crate::cli::Arch::Auto,
+        arch: parse_arch(body.arch.as_deref()),
         timeout: None,
         notes: false,
         force: false,

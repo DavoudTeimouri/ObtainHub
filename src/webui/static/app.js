@@ -20,6 +20,45 @@ class ObtainHubUI {
     this.setupNavigation();
     window.addEventListener('hashchange', () => this.route());
     this.loadAuthMode().then(() => this.route());
+
+    // Apps table action delegation (Check/Update/Uninstall/Remove/Install via data-repo)
+    const appsBody = document.getElementById('appsTableBody');
+    const searchBody = document.getElementById('searchResultsBody');
+    const checkBody = document.getElementById('checkTableBody');
+    const candidatesBody = document.getElementById('candidatesTableBody');
+    const sourcesBody = document.getElementById('sourcesTableBody');
+    const handleRepoBtn = (e) => {
+      const btn = e.target.closest('[data-repo]');
+      if (!btn) return;
+      const repo = btn.getAttribute('data-repo');
+      if (btn.classList.contains('action-check')) this.checkApp(repo);
+      else if (btn.classList.contains('action-update')) this.updateApp(repo);
+      else if (btn.classList.contains('action-check-update')) this.updateApp(repo);
+      else if (btn.classList.contains('action-uninstall')) this.uninstallApp(repo);
+      else if (btn.classList.contains('action-remove')) this.removeApp(repo);
+      else if (btn.classList.contains('action-install')) this.installApp(repo);
+    };
+    if (appsBody) appsBody.addEventListener('click', handleRepoBtn);
+    if (searchBody) searchBody.addEventListener('click', handleRepoBtn);
+    if (checkBody) checkBody.addEventListener('click', handleRepoBtn);
+    // Candidates table: quick-add chips + pick buttons + add-manually
+    if (candidatesBody) {
+      candidatesBody.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-repo], [data-index], .btn-add-manually');
+        if (!btn) return;
+        if (btn.classList.contains('action-quick-add')) this.quickAdd(btn.getAttribute('data-repo'));
+        else if (btn.classList.contains('action-pick-candidate')) this.pickCandidate(parseInt(btn.getAttribute('data-index'), 10));
+        else if (btn.classList.contains('btn-add-manually')) this.showAppsTab('add');
+      });
+    }
+    // Sources table: remove source
+    if (sourcesBody) {
+      sourcesBody.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-name]');
+        if (!btn) return;
+        if (btn.classList.contains('action-remove-source')) this.removeSource(btn.getAttribute('data-name'));
+      });
+    }
   }
 
   // Fetch /config (public) to learn whether the server runs with --auth.
@@ -491,8 +530,9 @@ class ObtainHubUI {
     toast.innerHTML = `
       <div class="toast-icon">${this.getToastIcon(type)}</div>
       <div class="toast-message">${this.escapeHtml(message)}</div>
-      <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
+      <button class="toast-close">&times;</button>
     `;
+    toast.querySelector('.toast-close').onclick = () => toast.remove();
     container.appendChild(toast);
     setTimeout(() => toast.remove(), 5000);
   }
@@ -512,6 +552,10 @@ class ObtainHubUI {
     const div = document.createElement('div');
     div.textContent = String(text);
     return div.innerHTML;
+  }
+
+  escapeHtmlAttr(text) {
+    return this.escapeHtml(text);
   }
 
   // Strip a leading 'v'/'V' so version badges don't show "vv3.0.69" when
@@ -628,10 +672,10 @@ class ObtainHubUI {
           '<td>' + this.formatRelativeTime(app.installed_at) + '</td>' +
           '<td>' + this.formatRelativeTime(app.updated_at) + '</td>' +
           '<td class="actions-cell">' +
-            '<button class="action-btn" onclick="app.checkApp(\'' + repo + '\')">Check</button> ' +
-            '<button class="action-btn" onclick="app.updateApp(\'' + repo + '\')">Update</button> ' +
-            '<button class="action-btn" onclick="app.uninstallApp(\'' + repo + '\')">Uninstall</button> ' +
-            '<button class="action-btn btn-danger" onclick="app.removeApp(\'' + repo + '\')">Remove</button>' +
+            '<button class="action-btn action-check" data-repo="' + this.escapeHtmlAttr(repo) + '">Check</button> ' +
+            '<button class="action-btn action-update" data-repo="' + this.escapeHtmlAttr(repo) + '">Update</button> ' +
+            '<button class="action-btn action-uninstall" data-repo="' + this.escapeHtmlAttr(repo) + '">Uninstall</button> ' +
+            '<button class="action-btn btn-danger action-remove" data-repo="' + this.escapeHtmlAttr(repo) + '">Remove</button>' +
           '</td>';
         tbody.appendChild(tr);
       });
@@ -719,7 +763,7 @@ class ObtainHubUI {
             '<td>' + this.escapeHtml(r.language || '-') + '</td>' +
             '<td>' + this.formatRelativeTime(r.published_at || r.updated_at) + '</td>' +
             '<td><span class="badge ' + (installed ? 'badge-success' : 'badge-neutral') + '">' + (installed ? 'Installed' : '-') + '</span></td>' +
-            '<td><button class="action-btn action-btn-primary" onclick="app.installApp(\'' + repo + '\')">' + (installed ? 'Manage' : 'Install') + '</button></td>';
+            '<td><button class="action-btn action-btn-primary action-install" data-repo="' + this.escapeHtmlAttr(repo) + '">' + (installed ? 'Manage' : 'Install') + '</button></td>';
           tbody.appendChild(tr);
         });
       }
@@ -924,7 +968,7 @@ class ObtainHubUI {
         '<td><code style="color:var(--success);font-weight:600">' + this.escapeHtml(app.latest_version || '') + '</code></td>' +
         '<td><span class="badge badge-update">Update available</span></td>' +
         '<td><span class="badge badge-' + statusClass + '">' + this.escapeHtml(app.status) + '</span></td>' +
-        '<td><button class="action-btn btn-primary" onclick="app.updateApp(\'' + repo + '\')">Update</button></td>';
+        '<td><button class="action-btn btn-primary action-check-update" data-repo="' + this.escapeHtmlAttr(repo) + '">Update</button></td>';
       tbody.appendChild(tr);
     });
   }
@@ -1341,7 +1385,7 @@ class ObtainHubUI {
           '<td><code>' + name + '</code></td>' +
           '<td><code style="font-size:0.78rem;">' + this.escapeHtml(src.url) + '</code></td>' +
           '<td><span class="badge ' + (src.enabled ? 'badge-success' : 'badge-neutral') + '">' + (src.enabled ? 'Enabled' : 'Disabled') + '</span></td>' +
-          '<td><button class="action-btn btn-danger" onclick="app.removeSource(\'' + name + '\')">Remove</button></td>';
+          '<td><button class="action-btn btn-danger action-remove-source" data-name="' + this.escapeHtmlAttr(name) + '">Remove</button></td>';
         tbody.appendChild(tr);
       });
     } catch (err) {
@@ -1361,7 +1405,7 @@ class ObtainHubUI {
       const candidates = await this.api('/apps/candidates', { method: 'POST' });
       this.candidatesData = candidates || [];
       if (!this.candidatesData.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No unmanaged installed apps found. <button type="button" class="btn btn-secondary" onclick="app.showAppsTab(\'add\')">Add manually</button></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No unmanaged installed apps found. <button type="button" class="btn btn-secondary btn-add-manually">Add manually</button></td></tr>';
         return;
       }
       this.renderCandidates();
@@ -1391,7 +1435,7 @@ class ObtainHubUI {
       const vendor = this.extractVendor(c.name);
       if (this.excludedVendors.has(vendor)) return;
       const candList = c.candidates && c.candidates.length
-        ? c.candidates.map(r => '<button type="button" class="repo-chip" title="Add ' + this.escapeHtml(r) + ' to management" onclick="app.quickAdd(\'' + r + '\')">' + this.escapeHtml(r) + '</button>').join(' ')
+        ? c.candidates.map(r => '<button type="button" class="repo-chip action-quick-add" data-repo="' + this.escapeHtmlAttr(r) + '" title="Add ' + this.escapeHtml(r) + ' to management">' + this.escapeHtml(r) + '</button>').join(' ')
         : '<span class="empty-state">search on Add</span>';
       const tr = document.createElement('tr');
       tr.innerHTML =
@@ -1399,7 +1443,7 @@ class ObtainHubUI {
         '<td>' + this.escapeHtml(c.version || 'unknown') + '</td>' +
         '<td><code style="font-size:0.75rem;">' + this.escapeHtml(c.install_path || '-') + '</code></td>' +
         '<td>' + candList + '</td>' +
-        '<td><button class="action-btn btn-primary" onclick="app.pickCandidate(' + i + ')">Add</button></td>';
+        '<td><button class="action-btn btn-primary action-pick-candidate" data-index="' + i + '">Add</button></td>';
       tbody.appendChild(tr);
     });
     this.applyTableFilters();
