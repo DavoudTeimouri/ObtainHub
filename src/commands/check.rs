@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::path::PathBuf;
+use std::process::Command;
 use std::time::Duration;
 use tracing::info;
 use comfy_table::{Table, Cell};
@@ -143,6 +145,29 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
             }
         }
         if repo.repo.to_lowercase().contains("obtainhub") {
+            continue;
+        }
+        // Folder-added apps have repo = exe name (no '/'), not a GitHub repo.
+        // Read the exe's embedded Windows version instead of calling GitHub API.
+        if !repo.repo.contains('/') {
+            if let Some(version) = read_exe_version(&repo.install_path) {
+                if let Some(entry) = state.get_mut().installed.get_mut(&repo.repo) {
+                    if entry.version != version {
+                        entry.version = version.clone();
+                        let _ = state.save();
+                    }
+                }
+                if !args.quiet {
+                    current.push(repo.repo.clone());
+                }
+                continue;
+            }
+            if !args.quiet {
+                errors.push((
+                    repo.repo.clone(),
+                    "Not a GitHub repository — link it in WebUI to check for updates".to_string(),
+                ));
+            }
             continue;
         }
         match fetch_latest_release(&repo.repo, token, &retry_config).await {
@@ -807,6 +832,40 @@ async fn print_release_notes(
         let block = crate::core::registries::release_notes_block(repo, token, retry_config).await;
         print!("{block}");
     }
+}
+
+/// Read the embedded Windows file version from an executable via PowerShell.
+/// Returns something like "10.0.19041.1" or None if unreadable / not Windows.
+#[cfg(windows)]
+fn read_exe_version(exe_path: &std::path::Path) -> Option<String> {
+    let powershell = crate::commands::self_update::find_powershell();
+    let script = format!(
+        "[System.Diagnostics.FileVersionInfo]::GetVersionInfo('{}').FileVersion",
+        exe_path.display().to_string().replace("'", "''")
+    );
+    let output = Command::new(&powershell)
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !version.is_empty() {
+            return Some(version);
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+fn read_exe_version(_exe_path: &std::path::Path) -> Option<String> {
+    None
 }
 
 async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Option<GitHubRelease>> {

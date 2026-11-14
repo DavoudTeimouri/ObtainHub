@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.17] - 2026-11-12
+
+RC.17: Fix folder-added app version detection — read exe's embedded Windows FileVersionInfo via PowerShell instead of calling GitHub API with invalid exe-name repo. Folder apps now show real version; update flow still prompts to link GitHub repo for assets.
+
 ## [v3.0.72-rc.16] - 2026-11-12
 
 RC.16: Fix scan_folder too restrictive — removed path allowlist that blocked legitimate folders (Downloads, Desktop, etc.). Kept canonicalization (symlink safety) + drive-root refusal.
