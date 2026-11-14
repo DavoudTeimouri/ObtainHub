@@ -77,6 +77,9 @@ pub async fn execute(args: CheckArgs, config: &ConfigManager, state: &mut StateM
 
     if let Some(timeout) = args.timeout {
         crate::core::registries::set_request_timeout(timeout);
+    } else {
+        // Default 30s timeout so a slow/unresponsive GitHub API cannot hang the check indefinitely.
+        crate::core::registries::set_request_timeout(30);
     }
 
     let theme = ColorfulTheme::default();

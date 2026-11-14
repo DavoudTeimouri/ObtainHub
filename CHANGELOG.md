@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.20] - 2026-11-12
+
+RC.20: Fix update stuck on all app types — add default 30s timeout for GitHub API calls in `update::execute` and `check::execute` so a slow/unresponsive API returns an error instead of hanging forever.
+
 ## [v3.0.72-rc.19] - 2026-11-12
 
 RC.19: Fix update stuck on folder-added apps — skip `fetch_latest_release` for repos without `/` (exe name), show "Not a GitHub repository — link it in WebUI" instead of silently doing nothing.

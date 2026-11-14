@@ -143,6 +143,9 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
 
     if let Some(timeout) = args.timeout {
         crate::core::registries::set_request_timeout(timeout);
+    } else {
+        // Default 30s timeout so a slow/unresponsive GitHub API cannot hang the update indefinitely.
+        crate::core::registries::set_request_timeout(30);
     }
     reporter.say(&format!("Install directory: {}", install_dir.display()));
     reporter.say(&format!("Download directory: {}", download_dir.display()));
