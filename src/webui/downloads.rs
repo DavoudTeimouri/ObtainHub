@@ -111,7 +111,7 @@ pub async fn start_download(
 
 /// Parameters for one download run, bundled to keep `download_inner` under
 /// clippy's argument limit.
-struct DownloadRun<'a> {
+pub(crate) struct DownloadRun<'a> {
     url: &'a str,
     token: Option<&'a str>,
     dest: &'a std::path::Path,
@@ -123,7 +123,7 @@ struct DownloadRun<'a> {
 }
 
 /// Run a chunked ranged download, updating the registry as it progresses.
-fn run_download(
+pub(crate) fn run_download(
     registry: DownloadRegistry,
     id: String,
     url: String,

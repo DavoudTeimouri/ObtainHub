@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.25] - 2026-11-15
+
+RC.25: Background download progress for WebUI updates — `POST /apps/update` starts the download in the background and returns a job ID immediately; frontend polls `GET /apps/update-progress?job_id=...` for download progress (percent, speed, ETA) and shows toasts during download/install instead of blocking on "Updating repositories".
+
 ## [v3.0.72-rc.24] - 2026-11-15
 
 RC.24: Folder-app update safety — downloads to ObtainHub's download folder (not the app folder), prompts user to close the running app, backs up the folder as a zip before installing, extracts/copies new files into the folder, verifies the app exe exists after update, and restores from backup on failure. Also applies to non-folder apps (downloads to download folder first, then runs installer).

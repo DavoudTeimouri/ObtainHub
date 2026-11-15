@@ -592,7 +592,7 @@ pub(crate) async fn install_release(
 /// Downloads to download_dir, asks user to close the app, backs up the folder
 /// as a zip file, installs into the folder, verifies success, and restores
 /// from backup on failure.
-async fn install_folder_app(
+pub(crate) async fn install_folder_app(
     repo: &str,
     version: &str,
     download_path: &Path,

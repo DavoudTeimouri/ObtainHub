@@ -153,6 +153,7 @@ pub async fn run_webui(
         .route("/apps/install", axum::routing::post(routes::install_app))
         .route("/apps/uninstall", axum::routing::post(routes::uninstall_app))
         .route("/apps/update", axum::routing::post(routes::update_app))
+        .route("/apps/update-progress", axum::routing::get(routes::update_progress))
         .route("/apps/check", axum::routing::post(routes::check_app))
         .route("/search", get(routes::search_repos))
         .route("/config/sources", axum::routing::post(routes::post_source))

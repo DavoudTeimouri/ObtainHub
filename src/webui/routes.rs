@@ -2,7 +2,11 @@ use axum::{Json, response::IntoResponse, extract::State, http::StatusCode};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 use walkdir::WalkDir;
+use uuid::Uuid;
 
 /// Base64 (RFC 4648) of UTF-16LE — used for PowerShell `-EncodedCommand` so
 /// passwords never appear in a process command line.
@@ -985,33 +989,294 @@ pub async fn uninstall_app(
 }
 
 /// Update a repository (same engine as `ohub update <repo>`). Protected.
+/// Starts the download in the background and returns a job ID immediately.
+/// The frontend polls `GET /apps/update-progress?job_id=...` for progress.
 pub async fn update_app(
     State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
     Json(body): Json<AppAction>,
 ) -> impl IntoResponse {
-    let args = crate::cli::UpdateArgs {
-        repo: Some(body.repo),
-        prerelease: body.prerelease,
-        asset: body.asset,
-        dry_run: false,
-        force: body.force,
-        skip_deps: false,
-        timeout: None,
-        arch: parse_arch(body.arch.as_deref()),
-        yes: true,
-        reset: false,
-        interactive: false,
-        notes: false,
-        quiet: true,
-        log: None,
-    };
-    let result = {
+    let repo = body.repo;
+    let asset_name = body.asset.clone();
+    let arch = parse_arch(body.arch.as_deref());
+    let prerelease = body.prerelease;
+
+    let (token, download_dir, install_dir) = {
         let cm = app_state.config_manager.lock().await;
-        let rc = crate::utils::retry::RetryConfig::from_config(&cm);
-        let mut sm = app_state.state_manager.lock().await;
-        crate::commands::update::execute(args, &cm, &mut sm, &rc).await
+        let c = cm.get();
+        (cm.github_token(), c.download_dir.clone(), c.install_dir.clone())
     };
-    action_result(result)
+
+    // Require the repo to already be a GitHub repo (owner/repo).
+    // Folder-added apps are linked via /apps/link-repo before updating.
+    if !repo.contains('/') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("{repo} is a folder-added app — link it to a GitHub repo first via /apps/link-repo")
+            })),
+        )
+            .into_response();
+    }
+
+    // Fetch release info to determine the asset and download URL
+    let cm_guard = app_state.config_manager.lock().await;
+    let _rc = crate::utils::retry::RetryConfig::from_config(&*cm_guard);
+    let token_clone = cm_guard.github_token();
+    drop(cm_guard);
+
+    let registry = crate::core::registries::Registry::GitHub(
+        crate::core::registries::GitHubRegistry::new(),
+    );
+    let registry_release = match crate::core::registries::Registry::fetch_latest_release(&registry, &repo, token_clone.as_deref()).await {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": format!("Failed to fetch release for {repo}: {e}")})),
+            ).into_response();
+        }
+    };
+
+    // Convert RegistryRelease -> install::GitHubRelease
+    let release = crate::commands::install::GitHubRelease {
+        tag_name: registry_release.tag_name.clone(),
+        name: registry_release.name.clone(),
+        prerelease: registry_release.prerelease,
+        draft: registry_release.draft,
+        assets: registry_release.assets.into_iter().map(|a| crate::commands::install::GitHubAsset {
+            name: a.name,
+            browser_download_url: a.browser_download_url,
+            size: a.size,
+            content_type: a.content_type,
+        }).collect(),
+        zipball_url: registry_release.zipball_url,
+        tarball_url: registry_release.tarball_url,
+    };
+
+    // Select asset
+    let asset = if let Some(name) = &asset_name {
+        release
+            .assets
+            .iter()
+            .find(|a| a.name == *name)
+            .cloned()
+    } else {
+        match crate::commands::install::select_asset(&release, &arch, None, true) {
+            Ok(a) => Some(a),
+            Err(_) => None,
+        }
+    };
+
+    let asset = match asset {
+        Some(a) => a,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "No installable asset found in release"})),
+            )
+                .into_response();
+        }
+    };
+
+    let download_url = asset.browser_download_url.clone();
+    let download_path = download_dir.join(&asset.name);
+    let release_tag_name = release.tag_name.clone();
+    std::fs::create_dir_all(&download_dir).ok();
+
+    let job_id = Uuid::new_v4().to_string();
+    let downloads = app_state.downloads.clone();
+
+    let token_for_spawn = token.clone();
+    let job_id_clone = job_id.clone();
+    let repo_clone = repo.clone();
+    let asset_clone = asset.clone();
+    let release_tag_name_clone = release_tag_name.clone();
+
+    // Create the download job in the registry so the frontend can poll progress
+    {
+        let mut map = downloads.lock().unwrap();
+        map.insert(job_id.clone(), crate::webui::downloads::DownloadJob {
+            id: job_id.clone(),
+            url: download_url.clone(),
+            label: asset.name.clone(),
+            dest: download_path.display().to_string(),
+            total: 0,
+            downloaded: 0,
+            status: "starting".to_string(),
+            speed: None,
+            eta: None,
+            error: None,
+            cancel: Arc::new(AtomicBool::new(false)),
+        });
+    }
+
+    let downloads_clone = downloads.clone();
+    let state_manager = app_state.state_manager.clone();
+    let config_manager = app_state.config_manager.clone();
+    let install_dir_clone = install_dir.clone();
+
+    tokio::spawn(async move {
+        // --- Download phase ---
+        {
+            let mut map = downloads_clone.lock().unwrap();
+            if let Some(job) = map.get_mut(&job_id_clone) {
+                job.status = "downloading".to_string();
+            }
+        }
+
+        // Run the chunked download (updates the registry with progress)
+        let _ = crate::webui::downloads::run_download(
+            downloads_clone.clone(),
+            job_id_clone.clone(),
+            download_url.clone(),
+            download_path.clone(),
+            token_for_spawn.clone(),
+            Arc::new(AtomicBool::new(false)),
+            None,
+        );
+
+        // Verify download
+        if !download_path.exists() {
+            update_job_status(&downloads_clone, &job_id_clone, "error", Some("Download failed: file not written".to_string()));
+            return;
+        }
+
+        // --- Install phase ---
+        {
+            let mut map = downloads_clone.lock().unwrap();
+            if let Some(job) = map.get_mut(&job_id_clone) {
+                job.status = "installing".to_string();
+            }
+        }
+
+        let mut sm = state_manager.lock().await;
+        let is_folder_app = sm.get_installed(&repo_clone)
+            .map(|e| PathBuf::from(&e.install_path).is_file())
+            .unwrap_or(false);
+        drop(sm);
+
+        let result = if is_folder_app {
+            let mut sm = state_manager.lock().await;
+            crate::commands::update::install_folder_app(
+                &repo_clone,
+                &crate::core::normalize_version(&release_tag_name_clone),
+                &download_path,
+                &install_dir_clone.join(&repo_clone),
+                &mut sm,
+                None,
+                true, // quiet
+            ).await
+        } else {
+            let mut sm = state_manager.lock().await;
+            let cm_guard = config_manager.lock().await;
+            let _rc = crate::utils::retry::RetryConfig::from_config(&*cm_guard);
+            drop(cm_guard);
+            crate::commands::update::install_release(
+                &repo_clone,
+                &crate::core::normalize_version(&release_tag_name_clone),
+                &release,
+                token_for_spawn.as_deref(),
+                &*config_manager.lock().await,
+                &mut sm,
+                Some(asset_clone),
+                true, // quiet
+                None, // previous_version
+                &arch,
+            ).await
+        };
+
+        match result {
+            Ok(()) => {
+                update_job_status(&downloads_clone, &job_id_clone, "completed", None);
+            }
+            Err(e) => {
+                update_job_status(&downloads_clone, &job_id_clone, "error", Some(format!("{e:#}")));
+            }
+        }
+    });
+
+    (StatusCode::ACCEPTED, Json(serde_json::json!({
+        "job_id": job_id,
+        "status": "started",
+        "repo": repo,
+        "asset": asset.name,
+    }))).into_response()
+}
+
+/// Helper to update a download job's status.
+fn update_job_status(
+    registry: &crate::webui::downloads::DownloadRegistry,
+    job_id: &str,
+    status: &str,
+    error: Option<String>,
+) {
+    if let Ok(mut map) = registry.lock() {
+        if let Some(job) = map.get_mut(job_id) {
+            job.status = status.to_string();
+            job.error = error;
+        }
+    }
+}
+
+/// Progress for an in-progress update job.
+#[derive(Serialize)]
+pub struct UpdateProgress {
+    pub job_id: String,
+    pub status: String,
+    pub downloaded: u64,
+    pub total: u64,
+    pub speed: Option<u64>,
+    pub eta: Option<u64>,
+    pub error: Option<String>,
+    pub label: String,
+}
+
+/// Query: ?job_id=...
+pub async fn update_progress(
+    State(app_state): State<std::sync::Arc<crate::webui::AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let job_id = match params.get("job_id") {
+        Some(id) => id.clone(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "job_id query parameter required"})),
+            ).into_response();
+        }
+    };
+
+    let map = app_state.downloads.lock().unwrap();
+    match map.get(&job_id) {
+        Some(job) => {
+            let progress = UpdateProgress {
+                job_id: job.id.clone(),
+                status: job.status.clone(),
+                downloaded: job.downloaded,
+                total: job.total,
+                speed: job.speed,
+                eta: job.eta,
+                error: job.error.clone(),
+                label: job.label.clone(),
+            };
+            (StatusCode::OK, Json(progress)).into_response()
+        }
+        None => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "job_id": job_id,
+                    "status": "completed",
+                    "downloaded": 0u64,
+                    "total": 0u64,
+                    "speed": Option::<u64>::None,
+                    "eta": Option::<u64>::None,
+                    "error": Option::<String>::None,
+                    "label": ""
+                })),
+            ).into_response()
+        }
+    }
 }
 
 /// Check one repository for updates (same engine as `ohub check <repo>`).

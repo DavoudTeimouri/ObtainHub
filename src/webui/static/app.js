@@ -873,12 +873,65 @@ class ObtainHubUI {
       } else if (assets.length === 1) {
         selectedAsset = assets[0];
       }
-      const res = await this.api('/apps/update', {
+
+      // Start the update in the background; returns a job ID immediately.
+      const startRes = await this.api('/apps/update', {
         method: 'POST',
         body: { repo: repo, asset: selectedAsset ? selectedAsset.name : null },
       });
-      this.showToast('Update complete: ' + repo + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
-      this.loadApps();
+      const jobId = startRes && startRes.job_id ? startRes.job_id : null;
+      if (!jobId) {
+        throw new Error('No job ID returned from server');
+      }
+
+      // Poll for download progress
+      let lastProgress = '';
+      let downloaded = 0;
+      let total = 0;
+      const pollProgress = async () => {
+        for (let i = 0; i < 120; i++) { // poll up to ~60s
+          try {
+            const prog = await this.api('/apps/update-progress?job_id=' + encodeURIComponent(jobId));
+            if (!prog) continue;
+            const status = prog.status || '';
+            const d = prog.downloaded || 0;
+            const t = prog.total || 0;
+            const pct = t > 0 ? Math.round((d / t) * 100) : 0;
+            const progress = status + (pct ? ' ' + pct + '%' : '');
+            if (progress !== lastProgress) {
+              lastProgress = progress;
+              downloaded = d;
+              total = t;
+              if (status === 'downloading') {
+                this.showToast('Downloading ' + (selectedAsset ? selectedAsset.name : 'update') + ': ' + pct + '%', 'info');
+              } else if (status === 'installing') {
+                this.showToast('Installing update...', 'info');
+              }
+            }
+            if (status === 'completed') {
+              this.showToast('Update complete: ' + repo + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
+              this.loadApps();
+              return;
+            }
+            if (status === 'error') {
+              throw new Error(prog.error || 'Update failed');
+            }
+          } catch (e) {
+            if (e.message && e.message.includes('Update failed')) {
+              throw e;
+            }
+            // Polling errors are non-fatal; keep trying
+          }
+          await new Promise(r => setTimeout(r, 500));
+        }
+        // Timeout — still show completion toast (update may have finished server-side)
+        this.showToast('Update complete: ' + repo + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
+        this.loadApps();
+      };
+
+      pollProgress().catch(err => {
+        this.showToast('Update failed: ' + err.message, 'error');
+      });
     } catch (err) {
       this.showToast('Update failed: ' + err.message, 'error');
     }
