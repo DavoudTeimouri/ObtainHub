@@ -3,6 +3,7 @@ use crate::cli::{Arch, UpdateArgs};
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::time::SystemTime;
 use tracing::info;
 use dialoguer::{Select, theme::ColorfulTheme};
@@ -393,10 +394,22 @@ pub(crate) async fn install_release(
 
     let download_url = &asset.browser_download_url;
 
-    // Install using install command's logic
-    let install_dir = config.get().install_dir.join(repo);
-    std::fs::create_dir_all(&install_dir)?;
+    // Determine install directory: folder-added apps update in place
+    let install_dir = if let Some(existing) = state.get_installed(repo) {
+        let existing_path = PathBuf::from(&existing.install_path);
+        if existing_path.is_file() {
+            // Folder-added app: install into the directory containing the existing exe
+            existing_path.parent().unwrap_or(&existing_path).to_path_buf()
+        } else if existing_path.is_dir() {
+            existing_path
+        } else {
+            config.get().install_dir.join(repo)
+        }
+    } else {
+        config.get().install_dir.join(repo)
+    };
     let asset_path = install_dir.join(&asset.name);
+    std::fs::create_dir_all(&install_dir)?;
 
     // Get expected size from GitHub API for skip-check
     let mut total_size: u64 = 0;

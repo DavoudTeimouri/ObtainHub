@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.22] - 2026-11-12
+
+RC.22: Fix folder-added app updates — install into the directory containing the existing exe (in place) instead of `install_dir/repo/`, so updates apply to the current folder.
+
 ## [v3.0.72-rc.21] - 2026-11-12
 
 RC.21: Fix update/download stuck — added 30s timeout to all HTTP calls in `download.rs` (`text`, `fetch_chunk`, `probe_size`) that were using bare `minreq::get()` without `github_get()`, so a slow/unresponsive GitHub API or download server returns an error instead of hanging forever.
