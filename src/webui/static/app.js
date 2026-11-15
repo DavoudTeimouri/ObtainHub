@@ -886,10 +886,11 @@ class ObtainHubUI {
 
       // Poll for download progress
       let lastProgress = '';
+      let lastPct = -1;
       let downloaded = 0;
       let total = 0;
       const pollProgress = async () => {
-        for (let i = 0; i < 120; i++) { // poll up to ~60s
+        for (let i = 0; i < 40; i++) { // poll up to ~2 minutes at 3s intervals
           try {
             const prog = await this.api('/apps/update-progress?job_id=' + encodeURIComponent(jobId));
             if (!prog) continue;
@@ -898,8 +899,11 @@ class ObtainHubUI {
             const t = prog.total || 0;
             const pct = t > 0 ? Math.round((d / t) * 100) : 0;
             const progress = status + (pct ? ' ' + pct + '%' : '');
-            if (progress !== lastProgress) {
+            // Only toast on status change or every 5% progress — avoids noisy refreshes.
+            const pctChanged = lastPct < 0 || Math.abs(pct - lastPct) >= 5;
+            if (progress !== lastProgress || pctChanged) {
               lastProgress = progress;
+              lastPct = pct;
               downloaded = d;
               total = t;
               if (status === 'downloading') {
@@ -922,7 +926,7 @@ class ObtainHubUI {
             }
             // Polling errors are non-fatal; keep trying
           }
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 3000));
         }
         // Timeout — still show completion toast (update may have finished server-side)
         this.showToast('Update complete: ' + repo + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.26] - 2026-11-15
+
+RC.26: Reduce WebUI update polling noise — poll interval raised from 500ms to 3000ms; toasts only show on status change or every 5% progress instead of every poll. Background download progress unchanged.
+
 ## [v3.0.72-rc.25] - 2026-11-15
 
 RC.25: Background download progress for WebUI updates — `POST /apps/update` starts the download in the background and returns a job ID immediately; frontend polls `GET /apps/update-progress?job_id=...` for download progress (percent, speed, ETA) and shows toasts during download/install instead of blocking on "Updating repositories".
