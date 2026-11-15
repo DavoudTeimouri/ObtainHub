@@ -3,10 +3,15 @@ use crate::cli::{Arch, UpdateArgs};
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::time::SystemTime;
+use std::fs;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
-use dialoguer::{Select, theme::ColorfulTheme};
+use dialoguer::{Select, theme::ColorfulTheme, Confirm};
+use zip::ZipWriter;
+use zip::write::FileOptions;
+use zip::read::ZipArchive;
 
 use crate::commands::install::{fetch_published_checksum, GitHubAsset, GitHubRelease, select_asset as install_select_asset};
 
@@ -393,6 +398,8 @@ pub(crate) async fn install_release(
     };
 
     let download_url = &asset.browser_download_url;
+    let config_data = config.get();
+    let download_dir = &config_data.download_dir;
 
     // Determine install directory: folder-added apps update in place
     let install_dir = if let Some(existing) = state.get_installed(repo) {
@@ -403,13 +410,17 @@ pub(crate) async fn install_release(
         } else if existing_path.is_dir() {
             existing_path
         } else {
-            config.get().install_dir.join(repo)
+            config_data.install_dir.join(repo)
         }
     } else {
-        config.get().install_dir.join(repo)
+        config_data.install_dir.join(repo)
     };
-    let asset_path = install_dir.join(&asset.name);
+
+    std::fs::create_dir_all(download_dir)?;
     std::fs::create_dir_all(&install_dir)?;
+
+    // Download to ObtainHub's download folder (not the app folder)
+    let download_path = download_dir.join(&asset.name);
 
     // Get expected size from GitHub API for skip-check
     let mut total_size: u64 = 0;
@@ -419,11 +430,11 @@ pub(crate) async fn install_release(
 
     // Skip download if file already exists with matching size AND checksum
     let mut goto_skip_download = false;
-    if asset_path.exists() {
-        let existing_size = std::fs::metadata(&asset_path)?.len();
+    if download_path.exists() {
+        let existing_size = std::fs::metadata(&download_path)?.len();
         if existing_size > 0 {
             total_size = existing_size;
-            let existing_bytes = std::fs::read(&asset_path)?;
+            let existing_bytes = std::fs::read(&download_path)?;
             let existing_hash = crate::core::assets::calculate_sha256_bytes(&existing_bytes);
             if let Some(expected) = &expected_hash {
                 if expected.eq_ignore_ascii_case(&existing_hash) {
@@ -437,16 +448,15 @@ pub(crate) async fn install_release(
     }
 
     if !goto_skip_download {
-        // Remove old file with same name before writing new one
-        if asset_path.exists() {
-            std::fs::remove_file(&asset_path)?;
+        if download_path.exists() {
+            std::fs::remove_file(&download_path)?;
         }
 
         // Download with progress bar
         crate::core::download::to_file(
             &crate::core::download::Download {
                 url: download_url,
-                dest: &asset_path,
+                dest: &download_path,
                 token,
                 label: &asset.name,
                 size: Some(asset.size),
@@ -456,49 +466,59 @@ pub(crate) async fn install_release(
         )
         .await?;
 
-        total_size = std::fs::metadata(&asset_path)?.len();
+        total_size = std::fs::metadata(&download_path)?.len();
 
         if let Some(expected) = expected_hash {
-            let bytes = std::fs::read(&asset_path)?;
+            let bytes = std::fs::read(&download_path)?;
             let actual = crate::core::assets::calculate_sha256_bytes(&bytes);
             if !expected.eq_ignore_ascii_case(&actual) {
-                // A file that does not match the published digest is worse than
-                // no file: it would be installed on the next run.
-                let _ = std::fs::remove_file(&asset_path);
+                let _ = std::fs::remove_file(&download_path);
                 return Err(anyhow::anyhow!("Checksum mismatch for {}", asset.name));
             }
         }
     }
 
     // Verify file was actually written (catches locked-file / permission failures)
-    if !asset_path.exists() {
+    if !download_path.exists() {
         return Err(anyhow::anyhow!(
-            "Installation failed: {} was not written to {}",
+            "Download failed: {} was not written to {}",
             asset.name,
-            asset_path.display()
+            download_path.display()
         ));
     }
-    let written_size = std::fs::metadata(&asset_path)?.len();
+    let written_size = std::fs::metadata(&download_path)?.len();
     if written_size == 0 {
         return Err(anyhow::anyhow!(
-            "Installation failed: {} is empty (0 bytes) at {}",
+            "Download failed: {} is empty (0 bytes) at {}",
             asset.name,
-            asset_path.display()
+            download_path.display()
         ));
     }
     if written_size != total_size {
         return Err(anyhow::anyhow!(
-            "Installation failed: {} wrote {} bytes, expected {}",
+            "Download failed: {} wrote {} bytes, expected {}",
             asset.name,
             written_size,
             total_size
         ));
     }
 
-    // If it's an installer (.exe/.msi), run it so the app actually gets installed
+    // Check if this is a folder-added app (existing install_path is a file/exe)
+    let is_folder_app = state
+        .get_installed(repo)
+        .map(|e| PathBuf::from(&e.install_path).is_file())
+        .unwrap_or(false);
+
+    if is_folder_app {
+        return install_folder_app(
+            repo, version, &download_path, &install_dir, state, previous_version, quiet,
+        ).await;
+    }
+
+    // Non-folder app: run installer (.exe/.msi) from download folder
     let is_installer = asset.name.ends_with(".exe") || asset.name.ends_with(".msi");
     let mut detected_uninstaller: Option<String> = None;
-    let mut detected_install_dir: Option<std::path::PathBuf> = None;
+    let mut detected_install_dir: Option<PathBuf> = None;
     if is_installer {
         if !quiet {
             println!("  Running installer: {}", asset.name);
@@ -508,9 +528,9 @@ pub(crate) async fn install_release(
         // and how to remove it later.
         let before = crate::core::scan_uninstall_entries();
 
-        run_installer(&asset_path)?;
+        run_installer(&download_path)?;
         // Verify installer ran: check app exe was updated
-        if !asset_path.exists() {
+        if !download_path.exists() {
             return Err(anyhow::anyhow!(
                 "Installer ran but {} is missing afterwards",
                 asset.name
@@ -564,6 +584,236 @@ pub(crate) async fn install_release(
     };
     state.add_installed(new_repo.clone());
     state.save()?;
+
+    Ok(())
+}
+
+/// Install a folder-added app in place with backup and rollback.
+/// Downloads to download_dir, asks user to close the app, backs up the folder
+/// as a zip file, installs into the folder, verifies success, and restores
+/// from backup on failure.
+async fn install_folder_app(
+    repo: &str,
+    version: &str,
+    download_path: &Path,
+    install_dir: &Path,
+    state: &mut StateManager,
+    previous_version: Option<String>,
+    quiet: bool,
+) -> Result<()> {
+    // Prompt user to close the running application
+    if !quiet {
+        println!("\n  === Folder app update: {} ===", repo);
+        println!("  Please close the running application before updating.");
+        let confirmed = Confirm::new()
+            .with_prompt("Close the app and continue with update?")
+            .default(false)
+            .interact()?;
+        if !confirmed {
+            return Err(anyhow::anyhow!("Update cancelled by user"));
+        }
+    }
+
+    // Backup the folder as a zip file before making any changes
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let backup_name = format!("{}-backup-{}.zip", repo, timestamp);
+    let backup_path = install_dir
+        .parent()
+        .unwrap_or(install_dir)
+        .join(&backup_name);
+
+    backup_folder_as_zip(install_dir, &backup_path)?;
+
+    let install_result = install_folder_app_inner(download_path, install_dir);
+
+    match install_result {
+        Ok(_) => {
+            // Verify installation succeeded
+            verify_folder_app(install_dir, repo)?;
+
+            // Clean up backup on success
+            let _ = std::fs::remove_file(&backup_path);
+
+            // Find the main exe for install_path
+            let install_path = find_main_exe(install_dir)
+                .unwrap_or_else(|| install_dir.join(repo));
+
+            // Update state
+            let new_repo = crate::core::state::InstalledRepo {
+                repo: repo.to_string(),
+                version: crate::core::normalize_version(version),
+                install_path,
+                installed_at: chrono::Utc::now(),
+                updated_at: Some(chrono::Utc::now()),
+                checksum: None,
+                metadata: serde_json::Value::Null,
+                previous_version,
+                previous_install_path: None,
+                dependencies: Vec::new(),
+                is_dependency: false,
+                uninstaller: None,
+                ..Default::default()
+            };
+            state.add_installed(new_repo.clone());
+            state.save()?;
+
+            Ok(())
+        }
+        Err(e) => {
+            // Install failed: restore from backup
+            let _ = restore_folder_from_zip(&backup_path, install_dir);
+            Err(e)
+        }
+    }
+}
+
+/// Install downloaded files into the folder: extract zip or copy exe/portable.
+fn install_folder_app_inner(download_path: &Path, install_dir: &Path) -> Result<()> {
+    if download_path.extension().map(|e| e == "zip").unwrap_or(false) {
+        extract_zip_to_folder(download_path, install_dir)
+    } else {
+        // Copy the downloaded file (exe/portable) into the folder, overwriting
+        let dest = install_dir.join(download_path.file_name().unwrap());
+        fs::copy(download_path, &dest)?;
+        Ok(())
+    }
+}
+
+/// Verify the folder app is still installed correctly after update.
+fn verify_folder_app(install_dir: &Path, repo: &str) -> Result<()> {
+    if !install_dir.exists() {
+        return Err(anyhow::anyhow!(
+            "Install directory missing: {}",
+            install_dir.display()
+        ));
+    }
+
+    let mut has_exe = false;
+    for entry in fs::read_dir(install_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && path.extension().map(|e| e == "exe").unwrap_or(false) {
+            has_exe = true;
+            break;
+        }
+    }
+
+    if !has_exe {
+        return Err(anyhow::anyhow!(
+            "No executable found in {} after update",
+            install_dir.display()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Find the main executable in a folder (returns the first .exe found).
+fn find_main_exe(install_dir: &Path) -> Option<PathBuf> {
+    for entry in fs::read_dir(install_dir).ok()? {
+        let entry = entry.ok()?;
+        let path = entry.path();
+        if path.is_file() && path.extension().map(|e| e == "exe").unwrap_or(false) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Zip up an entire folder for backup.
+fn backup_folder_as_zip(source_dir: &Path, zip_path: &Path) -> Result<()> {
+    let file = fs::File::create(zip_path)?;
+    let mut zip = ZipWriter::new(file);
+    let options = FileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+
+    let base = source_dir.canonicalize().unwrap_or_else(|_| source_dir.to_path_buf());
+    let mut stack: Vec<PathBuf> = vec![source_dir.to_path_buf()];
+
+    while let Some(path) = stack.pop() {
+        if path.is_dir() {
+            for entry in fs::read_dir(&path)? {
+                let entry = entry?;
+                let entry_path = entry.path();
+                if entry_path.is_dir() {
+                    stack.push(entry_path);
+                } else {
+                    let relative = entry_path
+                        .strip_prefix(&base)
+                        .unwrap_or(&entry_path)
+                        .to_path_buf();
+                    if let Some(parent) = relative.parent() {
+                        let _ = zip.add_directory(parent.to_string_lossy(), options.clone());
+                    }
+                    let mut f = fs::File::open(&entry_path)?;
+                    zip.start_file(relative.to_string_lossy(), options.clone())?;
+                    io::copy(&mut f, &mut zip)?;
+                }
+            }
+        }
+    }
+
+    zip.finish()?;
+    Ok(())
+}
+
+/// Restore a folder from a zip backup (clears dest first).
+fn restore_folder_from_zip(zip_path: &Path, dest_dir: &Path) -> Result<()> {
+    if dest_dir.exists() {
+        for entry in fs::read_dir(dest_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let _ = fs::remove_dir_all(&path);
+            } else {
+                let _ = fs::remove_file(&path);
+            }
+        }
+    }
+
+    let file = fs::File::open(zip_path)?;
+    let mut archive = ZipArchive::new(file)?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let out_path = dest_dir.join(file.mangled_name());
+
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        if file.name().ends_with('/') {
+            fs::create_dir_all(&out_path)?;
+        } else {
+            let mut out_file = fs::File::create(&out_path)?;
+            io::copy(&mut file, &mut out_file)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Extract a zip archive into a folder.
+fn extract_zip_to_folder(zip_path: &Path, dest_dir: &Path) -> Result<()> {
+    let file = fs::File::open(zip_path)?;
+    let mut archive = ZipArchive::new(file)?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let out_path = dest_dir.join(file.mangled_name());
+
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        if file.name().ends_with('/') {
+            fs::create_dir_all(&out_path)?;
+        } else {
+            let mut out_file = fs::File::create(&out_path)?;
+            io::copy(&mut file, &mut out_file)?;
+        }
+    }
 
     Ok(())
 }

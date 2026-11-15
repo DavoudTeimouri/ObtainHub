@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.24] - 2026-11-15
+
+RC.24: Folder-app update safety — downloads to ObtainHub's download folder (not the app folder), prompts user to close the running app, backs up the folder as a zip before installing, extracts/copies new files into the folder, verifies the app exe exists after update, and restores from backup on failure. Also applies to non-folder apps (downloads to download folder first, then runs installer).
+
 ## [v3.0.72-rc.23] - 2026-11-15
 
 RC.23: Add cleanup options — `ohub cleanup downloads` removes `.part` files and old versioned archives (keeps newest per app); `ohub cleanup repos` removes empty folders under app install directories; `ohub cleanup cache` removes manifest cache entries older than 30 days; `ohub cleanup all` runs everything. CLI: new `CleanupAction::Repos` variant; WebUI routes already exist.
