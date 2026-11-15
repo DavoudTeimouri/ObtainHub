@@ -937,6 +937,15 @@ pub enum CleanupAction {
         #[arg(long)]
         force: bool,
     },
+    /// Clean up empty folders under app install directories
+    Repos {
+        /// Dry run
+        #[arg(long)]
+        dry_run: bool,
+        /// Force cleanup
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Args, Debug)]
