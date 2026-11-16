@@ -224,7 +224,11 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             anyhow::bail!("unexpected HTTP {} for range request", resp.status_code);
         }
         let chunk = resp.as_bytes();
-        if chunk.is_empty() { break; }
+        if chunk.is_empty() {
+            // Server returned 206/200 with empty body — transient failure,
+            // retry the same range instead of marking the download complete.
+            continue;
+        }
         file.write_all(chunk)
             .with_context(|| format!("Failed to write chunk to {}", part_path.display()))?;
         start += chunk.len() as u64;

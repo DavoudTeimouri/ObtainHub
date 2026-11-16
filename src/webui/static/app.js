@@ -935,11 +935,11 @@ class ObtainHubUI {
                 allDone = false; // still at least one in progress
               }
             } catch (e) {
-              if (e.message && e.message.includes('Update failed')) {
-                this.updatingApps.delete(r);
-                this.showToast(e.message, 'error');
-                this.loadApps();
-              }
+              // Surface ANY download/update error to the user — not just
+              // ones whose message happens to include 'Update failed'.
+              this.updatingApps.delete(r);
+              this.showToast(e.message || 'Update failed for ' + r, 'error');
+              this.loadApps();
               // Polling errors are non-fatal; keep trying
             }
           }

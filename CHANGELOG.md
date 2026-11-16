@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.32] - 2026-11-16
+
+RC.32: Download cancellation fix — CLI `streamed()` now advances by bytes actually received (`chunk.len()`) instead of requested range end, so short/empty chunks no longer skip file data and prematurely end downloads. Empty chunks are retried instead of treated as success. WebUI `download_inner()` retries on empty chunks instead of breaking and marking complete early. Error messages now include the actual HTTP status code (e.g. 429 rate limit, 416 range not satisfiable) instead of misleading "does not support range requests". WebUI frontend now shows ALL download errors as toasts, not just messages containing 'Update failed'.
+
 ## [v3.0.72-rc.31] - 2026-11-16
 
 RC.31: Stable WebUI sort — default sort by repo name (ascending) so the app list no longer jumps around on every refresh; list only reorders when the user clicks a column header. Initial sort arrow shown on the repo column.

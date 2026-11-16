@@ -167,16 +167,38 @@ async fn streamed(
                     Ok(chunk) => {
                         consecutive_failures = 0;
                         backoff_ms = INITIAL_BACKOFF_MS;
+                        if chunk.is_empty() {
+                            // Server returned 206 with empty body — treat as
+                            // a transient failure and retry the same range.
+                            consecutive_failures += 1;
+                            if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
+                                eprintln!(
+                                    "Download stalled at {}/{} bytes ({} consecutive failures). \
+                                     Retrying in {}s... (press Ctrl+C to stop)",
+                                    start,
+                                    total,
+                                    consecutive_failures,
+                                    backoff_ms / 1000
+                                );
+                            }
+                            let delay = Duration::from_millis(backoff_ms);
+                            tokio::time::sleep(delay).await;
+                            backoff_ms = (backoff_ms as f64 * 1.5) as u64;
+                            backoff_ms = backoff_ms.min(MAX_BACKOFF_MS);
+                            continue;
+                        }
                         file.write_all(&chunk)
                             .with_context(|| format!("Failed to write chunk to {}", part_path.display()))?;
                         pb.inc(chunk.len() as u64);
+                        // Advance by bytes actually received, not requested.
+                        // A short or empty range response must not skip file data.
+                        start += chunk.len() as u64;
                         // Honor the configured bandwidth limit (bytes/sec).
                         if let Some(limit) = bandwidth_limit {
                             if limit > 0 {
                                 tokio::time::sleep(Duration::from_secs_f64(chunk.len() as f64 / limit as f64)).await;
                             }
                         }
-                        start = end + 1;
                     }
                     Err(_e) => {
                         consecutive_failures += 1;
@@ -239,7 +261,8 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
 
     if resp.status_code != 206 {
         anyhow::bail!(
-            "The server at {url} does not support range requests, so the download cannot be resumed"
+            "Server returned HTTP {} for range request {url} — expected 206 Partial Content",
+            resp.status_code
         );
     }
 
@@ -278,7 +301,8 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
 
     if resp.status_code != 206 {
         anyhow::bail!(
-            "The server at {url} does not support range requests, so the download cannot be resumed"
+            "Server returned HTTP {} for size probe {url} — expected 206 Partial Content",
+            resp.status_code
         );
     }
 
