@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.29] - 2026-11-16
+
+RC.29: Overall download timeout — WebUI downloads now fail after 10 minutes instead of retrying forever on a stalled connection (reports error instead of hanging silently). CLI download progress via indicatif progress bar works for all install/update/download operations (quiet=false by default). All Download/DownloadRun constructions updated with the new overall_timeout_secs field.
+
 ## [v3.0.72-rc.28] - 2026-11-16
 
 RC.28: WebUI update progress on app rows — `POST /apps/update` starts a background job and returns a job ID; frontend polls `GET /apps/update-progress` every 3s and shows per-app update status (downloading/installing X%) on the app table row with action buttons disabled during update. Toasts only on completion or error, not every percent. Download errors are reported as error toasts instead of silent failures.

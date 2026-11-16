@@ -103,7 +103,7 @@ pub async fn start_download(
     let url = req.url;
     let token = req.token;
     tokio::task::spawn_blocking(move || {
-        run_download(registry, id, url, dest, token, cancel, bandwidth_limit);
+        run_download(registry, id, url, dest, token, cancel, bandwidth_limit, None);
     });
 
     (StatusCode::OK, Json(StartDownloadResponse { id: job_id, status: "started".to_string() })).into_response()
@@ -120,6 +120,8 @@ pub(crate) struct DownloadRun<'a> {
     id: &'a str,
     cancel: &'a AtomicBool,
     bandwidth_limit: Option<u64>,
+    /// Overall download timeout in seconds. `None` means no overall timeout.
+    overall_timeout_secs: Option<u64>,
 }
 
 /// Run a chunked ranged download, updating the registry as it progresses.
@@ -131,6 +133,7 @@ pub(crate) fn run_download(
     token: Option<String>,
     cancel: Arc<AtomicBool>,
     bandwidth_limit: Option<u64>,
+    overall_timeout_secs: Option<u64>,
 ) {
     let part_path = dest.with_extension("part");
     let run = DownloadRun {
@@ -142,6 +145,7 @@ pub(crate) fn run_download(
         id: &id,
         cancel: &cancel,
         bandwidth_limit,
+        overall_timeout_secs,
     };
     let result = download_inner(&run);
 
@@ -177,7 +181,7 @@ pub(crate) fn run_download(
 }
 
 fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
-    let DownloadRun { url, token, dest, part_path, registry, id, cancel, bandwidth_limit } = *run;
+    let DownloadRun { url, token, dest, part_path, registry, id, cancel, bandwidth_limit, overall_timeout_secs } = *run;
     let total = probe_size(url, token).unwrap_or(0);
     update_job(registry, id, |j| { j.total = total; j.status = "downloading".to_string(); });
 
@@ -187,7 +191,25 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
     let window_start = Instant::now();
     let mut window_bytes: u64 = 0;
 
+    // Overall download timeout: abort after this many seconds to prevent
+    // a stalled download from hanging forever without reporting an error.
+    let started_at = Instant::now();
+    let overall_timeout = overall_timeout_secs.map(Duration::from_secs);
+
     loop {
+        // Check overall timeout before each chunk.
+        if let Some(timeout) = overall_timeout {
+            if started_at.elapsed() >= timeout {
+                update_job(registry, id, |j| {
+                    j.status = "error".to_string();
+                    j.error = Some(format!("Download timed out after {} seconds", overall_timeout_secs.unwrap()));
+                });
+                return Err(anyhow::anyhow!(
+                    "Download timed out after {} seconds",
+                    overall_timeout_secs.unwrap()
+                ));
+            }
+        }
         if cancel.load(Ordering::Relaxed) {
             anyhow::bail!("cancelled");
         }
@@ -510,6 +532,7 @@ mod tests {
             id: &id,
             cancel: &cancel,
             bandwidth_limit: None,
+            overall_timeout_secs: None,
         };
 
         download_inner(&run).unwrap();
@@ -537,6 +560,7 @@ mod tests {
             id: &id,
             cancel: &cancel,
             bandwidth_limit: None,
+            overall_timeout_secs: None,
         };
 
         let err = download_inner(&run).unwrap_err();

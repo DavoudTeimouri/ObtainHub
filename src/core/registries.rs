@@ -277,6 +277,7 @@ impl GitHubRegistry {
                 label: &asset.name,
                 size: Some(asset.size),
                 quiet: false,
+                overall_timeout_secs: None,
             },
             config,
         )
@@ -443,6 +444,7 @@ impl CratesIoRegistry {
                 label: &asset.name,
                 size: Some(asset.size),
                 quiet: false,
+                overall_timeout_secs: None,
             },
             config,
         )
@@ -517,6 +519,7 @@ impl GenericHttpRegistry {
                 label: &asset.name,
                 size: Some(asset.size),
                 quiet: false,
+                overall_timeout_secs: None,
             },
             config,
         )

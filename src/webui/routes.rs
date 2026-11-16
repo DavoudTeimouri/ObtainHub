@@ -1134,6 +1134,7 @@ pub async fn update_app(
             token_for_spawn.clone(),
             Arc::new(AtomicBool::new(false)),
             None,
+            Some(600), // 10-minute overall timeout
         );
 
         // --- Install phase ---

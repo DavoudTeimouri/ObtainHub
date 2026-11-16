@@ -461,6 +461,7 @@ pub(crate) async fn install_release(
                 label: &asset.name,
                 size: Some(asset.size),
                 quiet,
+                overall_timeout_secs: None,
             },
             config,
         )

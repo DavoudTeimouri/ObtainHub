@@ -29,6 +29,10 @@ pub struct Download<'a> {
     pub size: Option<u64>,
     /// No progress bar. The caller prints its own summary.
     pub quiet: bool,
+    /// Overall download timeout in seconds. `None` means no overall timeout
+    /// (download retries indefinitely on chunk failure). Used to prevent
+    /// stalled downloads from hanging forever without reporting an error.
+    pub overall_timeout_secs: Option<u64>,
 }
 
 /// How many bytes to fetch per Range request. Large enough to be efficient,
@@ -129,6 +133,11 @@ async fn streamed(
     let mut consecutive_failures: u32 = 0;
     let mut backoff_ms = INITIAL_BACKOFF_MS;
 
+    // Overall download timeout: if set, abort after this many seconds to
+    // prevent a stalled download from hanging forever without reporting an error.
+    let started_at = std::time::Instant::now();
+    let overall_timeout = d.overall_timeout_secs.map(std::time::Duration::from_secs);
+
     // Open the part file for appending (create if missing).
     let mut file = OpenOptions::new()
         .create(true)
@@ -137,6 +146,16 @@ async fn streamed(
         .with_context(|| format!("Failed to open {} for writing", part_path.display()))?;
 
     while start < total {
+        // Check overall timeout before each chunk.
+        if let Some(timeout) = overall_timeout {
+            if started_at.elapsed() >= timeout {
+                pb.finish_and_clear();
+                return Err(anyhow::anyhow!(
+                    "Download timed out after {} seconds",
+                    d.overall_timeout_secs.unwrap()
+                ));
+            }
+        }
         let end = (start + CHUNK_SIZE - 1).min(total - 1);
 
         // Listen for Ctrl+C between chunks so the user can stop a stuck

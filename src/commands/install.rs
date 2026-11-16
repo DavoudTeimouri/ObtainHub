@@ -682,6 +682,7 @@ async fn install_from_url(args: &InstallArgs, url: &str, config: &ConfigManager,
             label: filename,
             size: None,
             quiet: false,
+            overall_timeout_secs: None,
         },
         config,
     )
