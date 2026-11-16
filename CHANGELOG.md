@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.34] - 2026-11-16
+
+RC.34: New CLI command `ohub link-repo <exe-name> <owner/repo>` — links a folder-added app (managed under its exe name) to a GitHub repo so CLI `ohub update <owner/repo>` can find releases. Validates owner/repo format, checks app is managed, updates state.json with rollback on save failure (same as WebUI /apps/link-repo).
+
 ## [v3.0.72-rc.33] - 2026-11-16
 
 RC.33: Review fixes for rc.32 — WebUI empty-chunk retry now uses exponential backoff + stall status (was a tight busy loop); frontend poll catch narrowed so transient `/apps/update-progress` network blips no longer masquerade as update failures — only genuine `status === 'error'` server responses toast an error and stop progress; Cargo.lock committed with version bump so release builds produce a clean lockfile.
