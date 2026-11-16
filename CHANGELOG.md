@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.36] - 2026-11-16
+
+RC.36: Review fixes for rc.34/rc.35 folder-app updates — `install_folder_app_inner` extracts .tar.gz (was .zip only); .tar.xz removed from folder-app filter (no xz2); zip extraction flattens single root dir; WebUI `/apps/update` derives install_dir from entry's install_path (folder apps update in place, not config.install_dir/repo); `link-repo` (CLI + WebUI) collision check on target repo key, stronger owner/repo validation, rollback removes new key from memory on save failure; `install_path` fallback uses install_dir for exe-less zip/portable apps; CLI update hint says `ohub link-repo`.
+
 ## [v3.0.72-rc.35] - 2026-11-16
 
 RC.35: Zip/portable archive support for folder-app updates — `install_release` detects folder apps before asset selection and passes `installer_only=false` so zip/tar.gz/tar.xz assets are eligible; interactive picker shows exe/msi/zip/tar.gz/tar.xz for folder apps; `verify_folder_app` requires any file in the folder, not just .exe (zip/portable distributions may not have a top-level exe).
