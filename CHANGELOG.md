@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.35] - 2026-11-16
+
+RC.35: Zip/portable archive support for folder-app updates — `install_release` detects folder apps before asset selection and passes `installer_only=false` so zip/tar.gz/tar.xz assets are eligible; interactive picker shows exe/msi/zip/tar.gz/tar.xz for folder apps; `verify_folder_app` requires any file in the folder, not just .exe (zip/portable distributions may not have a top-level exe).
+
 ## [v3.0.72-rc.34] - 2026-11-16
 
 RC.34: New CLI command `ohub link-repo <exe-name> <owner/repo>` — links a folder-added app (managed under its exe name) to a GitHub repo so CLI `ohub update <owner/repo>` can find releases. Validates owner/repo format, checks app is managed, updates state.json with rollback on save failure (same as WebUI /apps/link-repo).
