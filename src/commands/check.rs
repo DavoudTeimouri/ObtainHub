@@ -840,7 +840,7 @@ async fn print_release_notes(
 /// Read the embedded Windows file version from an executable via PowerShell.
 /// Returns something like "10.0.19041.1" or None if unreadable / not Windows.
 #[cfg(windows)]
-fn read_exe_version(exe_path: &std::path::Path) -> Option<String> {
+pub(crate) fn read_exe_version(exe_path: &std::path::Path) -> Option<String> {
     let powershell = crate::commands::self_update::find_powershell();
     let script = format!(
         "[System.Diagnostics.FileVersionInfo]::GetVersionInfo('{}').FileVersion",
@@ -867,7 +867,7 @@ fn read_exe_version(exe_path: &std::path::Path) -> Option<String> {
 }
 
 #[cfg(not(windows))]
-fn read_exe_version(_exe_path: &std::path::Path) -> Option<String> {
+pub(crate) fn read_exe_version(_exe_path: &std::path::Path) -> Option<String> {
     None
 }
 

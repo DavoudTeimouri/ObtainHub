@@ -1,5 +1,6 @@
 use crate::core::{ConfigManager, StateManager, find_entry_for_repo, scan_uninstall_entries};
 use crate::cli::{AddArgs, AddType};
+use crate::commands::check::read_exe_version;
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use std::fs;
@@ -268,7 +269,7 @@ pub async fn execute(args: AddArgs, config: &mut ConfigManager, state: &mut Stat
 
                 added_repos.push(crate::core::state::InstalledRepo {
                     repo: exe_name.clone(),
-                    version: "unknown".to_string(),
+                    version: read_exe_version(path).unwrap_or_else(|| "unknown".to_string()),
                     install_path: path.to_path_buf(),
                     installed_at: file_time(path),
                     updated_at: None,

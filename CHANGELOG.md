@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.27] - 2026-11-16
+
+RC.27: Fix folder-app version detection — read exe's embedded Windows FileVersionInfo via PowerShell when adding folder apps instead of hardcoding "unknown". Fix update failures — removed strict check that downloaded file must still exist after running installer (some installers delete the source); changed "installer did not register" from hard error to warning so portable apps and in-place updates don't fail. CLI download progress via indicatif progress bar already works (quiet=false default).
+
 ## [v3.0.72-rc.26] - 2026-11-15
 
 RC.26: Reduce WebUI update polling noise — poll interval raised from 500ms to 3000ms; toasts only show on status change or every 5% progress instead of every poll. Background download progress unchanged.

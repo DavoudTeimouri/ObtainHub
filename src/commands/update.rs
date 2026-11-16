@@ -529,12 +529,8 @@ pub(crate) async fn install_release(
         let before = crate::core::scan_uninstall_entries();
 
         run_installer(&download_path)?;
-        // Verify installer ran: check app exe was updated
-        if !download_path.exists() {
-            return Err(anyhow::anyhow!(
-                "Installer ran but {} is missing afterwards",
-                asset.name
-            ));
+        if !quiet {
+            println!("  Installer ran: {}", asset.name);
         }
 
         // The installer registers itself; find the entry it added or bumped.
@@ -557,11 +553,15 @@ pub(crate) async fn install_release(
     }
 
     // If the installer ran but didn't register a new install (user cancelled,
-    // or silent installer exited 0 without changes), don't mark state as updated.
+    // or silent installer exited 0 without changes), warn but continue —
+    // registry detection is best-effort and some installers update in place
+    // without creating a new uninstall entry.
     if is_installer && detected_install_dir.is_none() {
-        return Err(anyhow::anyhow!(
-            "Installer did not register a new installation — update may have been cancelled"
-        ));
+        if !quiet {
+            eprintln!(
+                "  Warning: installer did not register a new installation — update may have been cancelled or applied in place"
+            );
+        }
     }
 
     // Update state
