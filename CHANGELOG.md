@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.33] - 2026-11-16
+
+RC.33: Review fixes for rc.32 — WebUI empty-chunk retry now uses exponential backoff + stall status (was a tight busy loop); frontend poll catch narrowed so transient `/apps/update-progress` network blips no longer masquerade as update failures — only genuine `status === 'error'` server responses toast an error and stop progress; Cargo.lock committed with version bump so release builds produce a clean lockfile.
+
 ## [v3.0.72-rc.32] - 2026-11-16
 
 RC.32: Download cancellation fix — CLI `streamed()` now advances by bytes actually received (`chunk.len()`) instead of requested range end, so short/empty chunks no longer skip file data and prematurely end downloads. Empty chunks are retried instead of treated as success. WebUI `download_inner()` retries on empty chunks instead of breaking and marking complete early. Error messages now include the actual HTTP status code (e.g. 429 rate limit, 416 range not satisfiable) instead of misleading "does not support range requests". WebUI frontend now shows ALL download errors as toasts, not just messages containing 'Update failed'.

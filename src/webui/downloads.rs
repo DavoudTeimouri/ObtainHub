@@ -46,6 +46,13 @@ pub struct StartDownloadResponse {
 
 const CHUNK_SIZE: u64 = 256 * 1024;
 
+/// After this many consecutive empty chunks, print a stall notification.
+const STALL_NOTIFY_THRESHOLD: u32 = 5;
+/// Initial backoff between empty-chunk retries.
+const INITIAL_BACKOFF_MS: u64 = 1000;
+/// Maximum backoff between empty-chunk retries.
+const MAX_BACKOFF_MS: u64 = 30_000;
+
 /// Extract a safe file name from the requested dest (both path separators),
 /// falling back to the URL's last segment. Only this name is joined onto the
 /// configured download dir — a no-auth localhost server must not become an
@@ -190,6 +197,8 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
     let mut start: u64 = 0;
     let window_start = Instant::now();
     let mut window_bytes: u64 = 0;
+    let mut consecutive_failures: u32 = 0;
+    let mut backoff_ms = INITIAL_BACKOFF_MS;
 
     // Overall download timeout: abort after this many seconds to prevent
     // a stalled download from hanging forever without reporting an error.
@@ -226,9 +235,34 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
         let chunk = resp.as_bytes();
         if chunk.is_empty() {
             // Server returned 206/200 with empty body — transient failure,
-            // retry the same range instead of marking the download complete.
+            // retry the same range with exponential backoff instead of
+            // marking the download complete or hammering in a tight loop.
+            consecutive_failures += 1;
+            if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
+                eprintln!(
+                    "Download stalled at {}/{} bytes ({} consecutive empty chunks). \
+                     Retrying in {}s... (press Ctrl+C to stop)",
+                    start,
+                    total,
+                    consecutive_failures,
+                    backoff_ms / 1000
+                );
+                update_job(registry, id, |j| {
+                    j.status = "stalled".to_string();
+                    j.error = Some(format!(
+                        "Download stalled at {}/{} bytes ({} consecutive empty chunks)",
+                        start, total, consecutive_failures
+                    ));
+                });
+            }
+            let delay = Duration::from_millis(backoff_ms);
+            std::thread::sleep(delay);
+            backoff_ms = (backoff_ms as f64 * 1.5) as u64;
+            backoff_ms = backoff_ms.min(MAX_BACKOFF_MS);
             continue;
         }
+        consecutive_failures = 0;
+        backoff_ms = INITIAL_BACKOFF_MS;
         file.write_all(chunk)
             .with_context(|| format!("Failed to write chunk to {}", part_path.display()))?;
         start += chunk.len() as u64;

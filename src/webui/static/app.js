@@ -911,6 +911,7 @@ class ObtainHubUI {
         for (let i = 0; i < 120; i++) { // poll up to ~6 minutes
           let allDone = true;
           for (const [r, info] of this.updatingApps.entries()) {
+            let serverError = null;
             try {
               const prog = await this.api('/apps/update-progress?job_id=' + encodeURIComponent(info.jobId));
               if (!prog) continue;
@@ -929,18 +930,17 @@ class ObtainHubUI {
                 this.showToast('Update complete: ' + r + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
                 this.loadApps();
               } else if (status === 'error') {
-                this.updatingApps.delete(r);
-                throw new Error(prog.error || 'Update failed for ' + r);
+                serverError = prog.error || 'Update failed for ' + r;
               } else {
                 allDone = false; // still at least one in progress
               }
             } catch (e) {
-              // Surface ANY download/update error to the user — not just
-              // ones whose message happens to include 'Update failed'.
+              // fetch/network blip — continue polling
+            }
+            if (serverError) {
               this.updatingApps.delete(r);
-              this.showToast(e.message || 'Update failed for ' + r, 'error');
+              this.showToast(serverError, 'error');
               this.loadApps();
-              // Polling errors are non-fatal; keep trying
             }
           }
           if (allDone) break;
