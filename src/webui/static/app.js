@@ -13,6 +13,8 @@ class ObtainHubUI {
     this.installedRepos = new Set();
     this.addedFromCandidates = new Set();
     this.sortState = { column: null, desc: false };
+    // Track in-progress updates per repo: repo -> {jobId, status, progress}
+    this.updatingApps = new Map();
     this.init();
   }
 
@@ -662,20 +664,31 @@ class ObtainHubUI {
         const updateBadge = app.update_available
           ? '<span class="badge badge-update">Update available → ' + this.cleanVersion(app.latest_version || '') + '</span>'
           : '<span class="badge badge-neutral">-</span>';
+        // Show update progress if this app is being updated
+        const updating = this.updatingApps.get(repo);
+        let progressHtml = '';
+        let btnsDisabled = '';
+        let rowStatus = app.status || 'unknown';
+        if (updating) {
+          const pct = updating.progress && updating.progress > 0 ? ' ' + updating.progress + '%' : '';
+          progressHtml = '<br><span class="update-progress">Updating: ' + updating.status + pct + '</span>';
+          btnsDisabled = ' disabled';
+          rowStatus = 'updating';
+        }
         tr.innerHTML =
           '<td><code>' + repo + '</code></td>' +
           '<td>' + this.escapeHtml(app.name) + '</td>' +
           '<td><code>' + this.escapeHtml(app.version) + '</code></td>' +
           '<td><code>' + this.escapeHtml(app.install_path || '-') + '</code></td>' +
-          '<td><span class="badge badge-' + statusClass + '">' + this.escapeHtml(app.status) + '</span></td>' +
+          '<td><span class="badge badge-' + statusClass + '">' + this.escapeHtml(rowStatus) + '</span>' + progressHtml + '</td>' +
           '<td>' + updateBadge + '</td>' +
           '<td>' + this.formatRelativeTime(app.installed_at) + '</td>' +
           '<td>' + this.formatRelativeTime(app.updated_at) + '</td>' +
           '<td class="actions-cell">' +
-            '<button class="action-btn action-check" data-repo="' + this.escapeHtmlAttr(repo) + '">Check</button> ' +
-            '<button class="action-btn action-update" data-repo="' + this.escapeHtmlAttr(repo) + '">Update</button> ' +
-            '<button class="action-btn action-uninstall" data-repo="' + this.escapeHtmlAttr(repo) + '">Uninstall</button> ' +
-            '<button class="action-btn btn-danger action-remove" data-repo="' + this.escapeHtmlAttr(repo) + '">Remove</button>' +
+            '<button class="action-btn action-check"' + btnsDisabled + ' data-repo="' + this.escapeHtmlAttr(repo) + '">Check</button> ' +
+            '<button class="action-btn action-update"' + btnsDisabled + ' data-repo="' + this.escapeHtmlAttr(repo) + '">Update</button> ' +
+            '<button class="action-btn action-uninstall"' + btnsDisabled + ' data-repo="' + this.escapeHtmlAttr(repo) + '">Uninstall</button> ' +
+            '<button class="action-btn btn-danger action-remove"' + btnsDisabled + ' data-repo="' + this.escapeHtmlAttr(repo) + '">Remove</button>' +
           '</td>';
         tbody.appendChild(tr);
       });
@@ -884,57 +897,64 @@ class ObtainHubUI {
         throw new Error('No job ID returned from server');
       }
 
-      // Poll for download progress
-      let lastProgress = '';
-      let lastPct = -1;
-      let downloaded = 0;
-      let total = 0;
-      const pollProgress = async () => {
-        for (let i = 0; i < 40; i++) { // poll up to ~2 minutes at 3s intervals
-          try {
-            const prog = await this.api('/apps/update-progress?job_id=' + encodeURIComponent(jobId));
-            if (!prog) continue;
-            const status = prog.status || '';
-            const d = prog.downloaded || 0;
-            const t = prog.total || 0;
-            const pct = t > 0 ? Math.round((d / t) * 100) : 0;
-            const progress = status + (pct ? ' ' + pct + '%' : '');
-            // Only toast on status change or every 5% progress — avoids noisy refreshes.
-            const pctChanged = lastPct < 0 || Math.abs(pct - lastPct) >= 5;
-            if (progress !== lastProgress || pctChanged) {
-              lastProgress = progress;
-              lastPct = pct;
-              downloaded = d;
-              total = t;
-              if (status === 'downloading') {
-                this.showToast('Downloading ' + (selectedAsset ? selectedAsset.name : 'update') + ': ' + pct + '%', 'info');
-              } else if (status === 'installing') {
-                this.showToast('Installing update...', 'info');
-              }
-            }
-            if (status === 'completed') {
-              this.showToast('Update complete: ' + repo + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
+      // Track this update so the app row shows progress and buttons are disabled.
+      this.updatingApps.set(repo, { jobId: jobId, status: 'starting', progress: 0 });
+      this.loadApps(); // re-render to show updating state immediately
+
+      // Poll for download progress — 3s interval, updates all active jobs.
+      const pollAll = async () => {
+        for (let i = 0; i < 120; i++) { // poll up to ~6 minutes
+          let allDone = true;
+          for (const [r, info] of this.updatingApps.entries()) {
+            try {
+              const prog = await this.api('/apps/update-progress?job_id=' + encodeURIComponent(info.jobId));
+              if (!prog) continue;
+              const status = prog.status || '';
+              const d = prog.downloaded || 0;
+              const t = prog.total || 0;
+              const pct = t > 0 ? Math.round((d / t) * 100) : 0;
+              info.status = status;
+              info.progress = pct;
+
+              // Re-render apps so the row shows current progress
               this.loadApps();
-              return;
+
+              if (status === 'completed') {
+                this.updatingApps.delete(r);
+                this.showToast('Update complete: ' + r + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
+                this.loadApps();
+              } else if (status === 'error') {
+                this.updatingApps.delete(r);
+                throw new Error(prog.error || 'Update failed for ' + r);
+              } else {
+                allDone = false; // still at least one in progress
+              }
+            } catch (e) {
+              if (e.message && e.message.includes('Update failed')) {
+                this.updatingApps.delete(r);
+                this.showToast(e.message, 'error');
+                this.loadApps();
+              }
+              // Polling errors are non-fatal; keep trying
             }
-            if (status === 'error') {
-              throw new Error(prog.error || 'Update failed');
-            }
-          } catch (e) {
-            if (e.message && e.message.includes('Update failed')) {
-              throw e;
-            }
-            // Polling errors are non-fatal; keep trying
           }
+          if (allDone) break;
           await new Promise(r => setTimeout(r, 3000));
         }
-        // Timeout — still show completion toast (update may have finished server-side)
-        this.showToast('Update complete: ' + repo + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
-        this.loadApps();
+        // If we timed out, clear remaining and notify
+        if (this.updatingApps.size > 0) {
+          for (const [r, info] of this.updatingApps.entries()) {
+            this.showToast('Update timed out for ' + r + ' — check server logs.', 'error');
+          }
+          this.updatingApps.clear();
+          this.loadApps();
+        }
       };
 
-      pollProgress().catch(err => {
+      pollAll().catch(err => {
         this.showToast('Update failed: ' + err.message, 'error');
+        this.updatingApps.delete(repo);
+        this.loadApps();
       });
     } catch (err) {
       this.showToast('Update failed: ' + err.message, 'error');

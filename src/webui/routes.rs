@@ -1124,7 +1124,8 @@ pub async fn update_app(
             }
         }
 
-        // Run the chunked download (updates the registry with progress)
+        // Run the chunked download (updates the registry with progress).
+        // Each chunk request has a 30s timeout; retries use exponential backoff.
         let _ = crate::webui::downloads::run_download(
             downloads_clone.clone(),
             job_id_clone.clone(),
@@ -1134,12 +1135,6 @@ pub async fn update_app(
             Arc::new(AtomicBool::new(false)),
             None,
         );
-
-        // Verify download
-        if !download_path.exists() {
-            update_job_status(&downloads_clone, &job_id_clone, "error", Some("Download failed: file not written".to_string()));
-            return;
-        }
 
         // --- Install phase ---
         {

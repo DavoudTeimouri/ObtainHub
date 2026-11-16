@@ -678,6 +678,9 @@ body.locked main .page .btn-danger {
 
 .badge-status-update,
 .badge-status-available { background: var(--warning-soft); color: var(--warning); }
+.badge-status-updating { background: var(--info-soft); color: var(--info); animation: pulse 2s infinite; }
+.update-progress { display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
 /* ---------- progress ---------- */
 .progress-bar {

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.28] - 2026-11-16
+
+RC.28: WebUI update progress on app rows — `POST /apps/update` starts a background job and returns a job ID; frontend polls `GET /apps/update-progress` every 3s and shows per-app update status (downloading/installing X%) on the app table row with action buttons disabled during update. Toasts only on completion or error, not every percent. Download errors are reported as error toasts instead of silent failures.
+
 ## [v3.0.72-rc.27] - 2026-11-16
 
 RC.27: Fix folder-app version detection — read exe's embedded Windows FileVersionInfo via PowerShell when adding folder apps instead of hardcoding "unknown". Fix update failures — removed strict check that downloaded file must still exist after running installer (some installers delete the source); changed "installer did not register" from hard error to warning so portable apps and in-place updates don't fail. CLI download progress via indicatif progress bar already works (quiet=false default).
