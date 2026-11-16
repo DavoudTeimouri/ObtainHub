@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.31] - 2026-11-16
+
+RC.31: Stable WebUI sort — default sort by repo name (ascending) so the app list no longer jumps around on every refresh; list only reorders when the user clicks a column header. Initial sort arrow shown on the repo column.
+
 ## [v3.0.72-rc.30] - 2026-11-16
 
 RC.30: Review fixes — added test for overall download timeout; fixed `timeout.as_secs()` clarity (use binding instead of re-unwrapping); added 10-minute overall timeout to `start_download` endpoint (was None); CLI downloads have no overall timeout by default (user can Ctrl+C). All 7 download tests pass.

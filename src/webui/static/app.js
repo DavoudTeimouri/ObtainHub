@@ -12,7 +12,7 @@ class ObtainHubUI {
     this.appsTab = 'list';
     this.installedRepos = new Set();
     this.addedFromCandidates = new Set();
-    this.sortState = { column: null, desc: false };
+    this.sortState = { column: 'repo', desc: false };
     // Track in-progress updates per repo: repo -> {jobId, status, progress}
     this.updatingApps = new Map();
     this.init();
@@ -146,6 +146,11 @@ class ObtainHubUI {
         }
       });
     });
+    // Set initial sort indicator on the default sort column (repo, ascending)
+    const defaultSortTh = document.querySelector('#appsTable th[data-sort="repo"]');
+    if (defaultSortTh) {
+      defaultSortTh.classList.add('sort-asc');
+    }
 
     // Command feature forms
     const wire = (id, handler) => {
