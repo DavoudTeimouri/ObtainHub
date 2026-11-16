@@ -249,7 +249,13 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                 }
 
                 // Perform update (reinstall with new version)
-                // Interactive asset selection: only .exe (setup) and .msi, correct architecture
+                // Folder-added apps (install_path is an exe) update in place and
+                // may distribute as zip/portable archives, not just .exe/.msi installers.
+                let is_folder_app = state
+                    .get_installed(&repo_name)
+                    .map(|e| PathBuf::from(&e.install_path).is_file())
+                    .unwrap_or(false);
+                let installer_only = !is_folder_app;
                 let selected_asset = if let Some(asset_name) = &args.asset {
                     // User-specified asset (from WebUI picker): look it up by name
                     release
@@ -267,13 +273,22 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                 } else {
                     // Interactive asset selection: only .exe (setup) and .msi, correct architecture.
                     // Get the best installer as default, then offer a list if not quiet.
-                    let default = install_select_asset(&release, &args.arch, None, true)?;
+                    let default = install_select_asset(&release, &args.arch, None, installer_only)?;
                     let installer_assets: Vec<&GitHubAsset> = release
                         .assets
                         .iter()
                         .filter(|a| {
                             let name = a.name.to_lowercase();
-                            name.ends_with(".exe") || name.ends_with(".msi")
+                            if installer_only {
+                                name.ends_with(".exe") || name.ends_with(".msi")
+                            } else {
+                                // Folder app: any archive or executable is eligible.
+                                name.ends_with(".exe")
+                                    || name.ends_with(".msi")
+                                    || name.ends_with(".zip")
+                                    || name.ends_with(".tar.gz")
+                                    || name.ends_with(".tar.xz")
+                            }
                         })
                         .collect();
                     if args.quiet || installer_assets.is_empty() {
@@ -681,6 +696,8 @@ fn install_folder_app_inner(download_path: &Path, install_dir: &Path) -> Result<
 }
 
 /// Verify the folder app is still installed correctly after update.
+/// Folder apps may be zip/portable distributions without a top-level .exe,
+/// so we only require the directory to exist and contain at least one file.
 fn verify_folder_app(install_dir: &Path, repo: &str) -> Result<()> {
     if !install_dir.exists() {
         return Err(anyhow::anyhow!(
@@ -689,19 +706,19 @@ fn verify_folder_app(install_dir: &Path, repo: &str) -> Result<()> {
         ));
     }
 
-    let mut has_exe = false;
+    let mut has_file = false;
     for entry in fs::read_dir(install_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() && path.extension().map(|e| e == "exe").unwrap_or(false) {
-            has_exe = true;
+        if path.is_file() {
+            has_file = true;
             break;
         }
     }
 
-    if !has_exe {
+    if !has_file {
         return Err(anyhow::anyhow!(
-            "No executable found in {} after update",
+            "No files found in {} after update",
             install_dir.display()
         ));
     }
