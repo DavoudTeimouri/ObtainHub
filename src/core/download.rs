@@ -152,7 +152,7 @@ async fn streamed(
                 pb.finish_and_clear();
                 return Err(anyhow::anyhow!(
                     "Download timed out after {} seconds",
-                    d.overall_timeout_secs.unwrap()
+                    timeout.as_secs()
                 ));
             }
         }

@@ -103,7 +103,7 @@ pub async fn start_download(
     let url = req.url;
     let token = req.token;
     tokio::task::spawn_blocking(move || {
-        run_download(registry, id, url, dest, token, cancel, bandwidth_limit, None);
+        run_download(registry, id, url, dest, token, cancel, bandwidth_limit, Some(600));
     });
 
     (StatusCode::OK, Json(StartDownloadResponse { id: job_id, status: "started".to_string() })).into_response()
@@ -202,11 +202,11 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             if started_at.elapsed() >= timeout {
                 update_job(registry, id, |j| {
                     j.status = "error".to_string();
-                    j.error = Some(format!("Download timed out after {} seconds", overall_timeout_secs.unwrap()));
+                    j.error = Some(format!("Download timed out after {} seconds", timeout.as_secs()));
                 });
                 return Err(anyhow::anyhow!(
                     "Download timed out after {} seconds",
-                    overall_timeout_secs.unwrap()
+                    timeout.as_secs()
                 ));
             }
         }
@@ -566,5 +566,52 @@ mod tests {
         let err = download_inner(&run).unwrap_err();
         assert!(format!("{err}").contains("cancelled"));
         assert!(!dest.exists());
+    }
+
+    #[test]
+    fn download_inner_times_out_with_overall_timeout() {
+        let body = vec![7u8; 100_000]; // 100KB - small enough to complete fast, but timeout fires first
+        let url = serve_with_ranges(body);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        let part = dest.with_extension("part");
+        let registry = new_registry();
+        let id = "job_timeout".to_string();
+        let cancel = AtomicBool::new(false);
+        let run = DownloadRun {
+            url: &url,
+            token: None,
+            dest: &dest,
+            part_path: &part,
+            registry: &registry,
+            id: &id,
+            cancel: &cancel,
+            bandwidth_limit: None,
+            overall_timeout_secs: Some(0), // timeout fires before first chunk
+        };
+
+        // Insert job into registry (normally done by run_download)
+        registry.lock().unwrap().insert(id.clone(), DownloadJob {
+            id: id.clone(),
+            url: url.clone(),
+            label: "test".to_string(),
+            dest: dest.display().to_string(),
+            total: 0,
+            downloaded: 0,
+            status: "starting".to_string(),
+            speed: None,
+            eta: None,
+            error: None,
+            cancel: Arc::new(AtomicBool::new(false)),
+        });
+
+        let err = download_inner(&run).unwrap_err();
+        assert!(format!("{err}").contains("timed out"));
+
+        // Job status should be "error" with timeout message
+        let map = registry.lock().unwrap();
+        let job = map.get(&id).unwrap();
+        assert_eq!(job.status, "error");
+        assert!(job.error.as_ref().unwrap().contains("timed out"));
     }
 }

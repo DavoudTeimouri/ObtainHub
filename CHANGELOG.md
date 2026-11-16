@@ -2,9 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.30] - 2026-11-16
+
+RC.30: Review fixes — added test for overall download timeout; fixed `timeout.as_secs()` clarity (use binding instead of re-unwrapping); added 10-minute overall timeout to `start_download` endpoint (was None); CLI downloads have no overall timeout by default (user can Ctrl+C). All 7 download tests pass.
+
 ## [v3.0.72-rc.29] - 2026-11-16
 
-RC.29: Overall download timeout — WebUI downloads now fail after 10 minutes instead of retrying forever on a stalled connection (reports error instead of hanging silently). CLI download progress via indicatif progress bar works for all install/update/download operations (quiet=false by default). All Download/DownloadRun constructions updated with the new overall_timeout_secs field.
+RC.29: Overall download timeout — WebUI downloads now fail after 10 minutes instead of retrying forever on a stalled connection (reports error instead of hanging silently). Added overall_timeout_secs to Download and DownloadRun structs; all callers updated. CLI downloads already show indicatif progress bars (unchanged).
 
 ## [v3.0.72-rc.28] - 2026-11-16
 
