@@ -939,11 +939,20 @@ pub async fn link_repo(
                 .into_response();
         }
     };
-    // Validate github_repo format (owner/repo)
-    if !body.github_repo.contains('/') || body.github_repo.starts_with('/') || body.github_repo.ends_with('/') {
+    // Validate github_repo format: exactly one slash, non-empty segments.
+    let parts: Vec<&str> = body.github_repo.split('/').collect();
+    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "github_repo must be in owner/repo format"})),
+        )
+            .into_response();
+    }
+    // Collision check: the target GitHub repo key must not already be taken.
+    if state_manager.get_installed(&body.github_repo).is_some() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("GitHub repo '{}' is already managed by another app", body.github_repo)})),
         )
             .into_response();
     }
@@ -953,7 +962,8 @@ pub async fn link_repo(
     entry.repo = body.github_repo.clone();
     state_manager.add_installed(entry);
     if let Err(e) = state_manager.save() {
-        // Rollback: restore old entry so a failed save doesn't lose the app.
+        // Rollback: remove the new key from memory, restore old entry.
+        state_manager.remove_installed(&body.github_repo);
         let _ = state_manager.add_installed(existing_entry.clone());
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1153,11 +1163,25 @@ pub async fn update_app(
 
         let result = if is_folder_app {
             let mut sm = state_manager.lock().await;
+            // Derive the real install directory from the existing entry's
+            // install_path (folder apps update in place), not config.install_dir/repo.
+            let real_install_dir = sm.get_installed(&repo_clone)
+                .map(|e| {
+                    let entry_path = PathBuf::from(&e.install_path);
+                    if entry_path.is_file() {
+                        entry_path.parent().unwrap_or(&entry_path).to_path_buf()
+                    } else if entry_path.is_dir() {
+                        entry_path
+                    } else {
+                        install_dir_clone.join(&repo_clone)
+                    }
+                })
+                .unwrap_or_else(|| install_dir_clone.join(&repo_clone));
             crate::commands::update::install_folder_app(
                 &repo_clone,
                 &crate::core::normalize_version(&release_tag_name_clone),
                 &download_path,
-                &install_dir_clone.join(&repo_clone),
+                &real_install_dir,
                 &mut sm,
                 None,
                 true, // quiet

@@ -4,11 +4,9 @@ use anyhow::Result;
 use tracing::info;
 
 pub async fn execute(args: LinkRepoArgs, _config: &ConfigManager, state: &mut StateManager) -> Result<()> {
-    // Validate github_repo format (owner/repo)
-    if !args.github_repo.contains('/')
-        || args.github_repo.starts_with('/')
-        || args.github_repo.ends_with('/')
-    {
+    // Validate github_repo format: exactly one slash, non-empty segments.
+    let parts: Vec<&str> = args.github_repo.split('/').collect();
+    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
         anyhow::bail!(
             "github_repo must be in owner/repo format (got '{}')",
             args.github_repo
@@ -28,6 +26,15 @@ pub async fn execute(args: LinkRepoArgs, _config: &ConfigManager, state: &mut St
         }
     };
 
+    // Collision check: the target GitHub repo key must not already be taken.
+    if state.get_installed(&args.github_repo).is_some() {
+        anyhow::bail!(
+            "GitHub repo '{}' is already managed by another app. Remove it first with 'ohub remove {}'.",
+            args.github_repo,
+            args.github_repo
+        );
+    }
+
     // Remove old entry (keyed by current repo name), re-add under GitHub repo name.
     state.remove_installed(&args.repo);
     let mut entry = existing_entry.clone();
@@ -35,7 +42,8 @@ pub async fn execute(args: LinkRepoArgs, _config: &ConfigManager, state: &mut St
     state.add_installed(entry);
 
     if let Err(e) = state.save() {
-        // Rollback: restore old entry so a failed save doesn't lose the app.
+        // Rollback: remove the new key from memory, restore old entry.
+        state.remove_installed(&args.github_repo);
         let _ = state.add_installed(existing_entry.clone());
         anyhow::bail!("Failed to save state: {}", e);
     }

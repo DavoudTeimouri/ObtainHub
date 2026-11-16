@@ -12,6 +12,8 @@ use dialoguer::{Select, theme::ColorfulTheme, Confirm};
 use zip::ZipWriter;
 use zip::write::FileOptions;
 use zip::read::ZipArchive;
+use flate2::read::GzDecoder;
+use tar::Archive;
 
 use crate::commands::install::{fetch_published_checksum, GitHubAsset, GitHubRelease, select_asset as install_select_asset};
 
@@ -222,7 +224,8 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
         // They must be linked via /apps/link-repo before updates can find releases.
         if !repo_name.contains('/') {
             reporter.say(&format!(
-                "  Not a GitHub repository — link it in WebUI to check for updates"
+                "  Not a GitHub repository — run 'ohub link-repo {} <owner/repo>' to link it for updates",
+                repo_name
             ));
             continue;
         }
@@ -282,12 +285,12 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                             if installer_only {
                                 name.ends_with(".exe") || name.ends_with(".msi")
                             } else {
-                                // Folder app: any archive or executable is eligible.
+                                // Folder app: zip/tar.gz archives or executables are eligible.
                                 name.ends_with(".exe")
                                     || name.ends_with(".msi")
                                     || name.ends_with(".zip")
                                     || name.ends_with(".tar.gz")
-                                    || name.ends_with(".tar.xz")
+                                    || name.ends_with(".tgz")
                             }
                         })
                         .collect();
@@ -650,9 +653,10 @@ pub(crate) async fn install_folder_app(
             // Clean up backup on success
             let _ = std::fs::remove_file(&backup_path);
 
-            // Find the main exe for install_path
+            // Find the main exe for install_path. For exe-less zip/portable
+            // apps, use the install directory itself (files were extracted there).
             let install_path = find_main_exe(install_dir)
-                .unwrap_or_else(|| install_dir.join(repo));
+                .unwrap_or_else(|| install_dir.to_path_buf());
 
             // Update state
             let new_repo = crate::core::state::InstalledRepo {
@@ -685,8 +689,11 @@ pub(crate) async fn install_folder_app(
 
 /// Install downloaded files into the folder: extract zip or copy exe/portable.
 fn install_folder_app_inner(download_path: &Path, install_dir: &Path) -> Result<()> {
-    if download_path.extension().map(|e| e == "zip").unwrap_or(false) {
+    let name = download_path.file_name().unwrap().to_string_lossy().to_lowercase();
+    if name.ends_with(".zip") {
         extract_zip_to_folder(download_path, install_dir)
+    } else if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+        extract_tar_gz_to_folder(download_path, install_dir)
     } else {
         // Copy the downloaded file (exe/portable) into the folder, overwriting
         let dest = install_dir.join(download_path.file_name().unwrap());
@@ -812,14 +819,48 @@ fn restore_folder_from_zip(zip_path: &Path, dest_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Extract a zip archive into a folder.
+/// Extract a .tar.gz archive into a folder.
+fn extract_tar_gz_to_folder(tar_path: &Path, dest_dir: &Path) -> Result<()> {
+    let file = fs::File::open(tar_path)?;
+    let gz = GzDecoder::new(file);
+    let mut archive = Archive::new(gz);
+    archive.unpack(dest_dir)?;
+    Ok(())
+}
+
+/// Extract a zip archive into a folder. Flattens a single root directory
+/// if the zip contains everything under one top-level folder (e.g. App-1.2.3/...)
+/// so files land directly in dest_dir instead of dest_dir/App-1.2.3/.
 fn extract_zip_to_folder(zip_path: &Path, dest_dir: &Path) -> Result<()> {
     let file = fs::File::open(zip_path)?;
     let mut archive = ZipArchive::new(file)?;
 
+    // Detect single root dir: all entries share the same first path component.
+    let mut root_dir: Option<String> = None;
+    for i in 0..archive.len() {
+        let file = archive.by_index(i)?;
+        let name = file.mangled_name().to_string_lossy().to_string();
+        let mut parts = name.split('/');
+        let first = parts.next().unwrap_or("");
+        if !first.is_empty() {
+            match &root_dir {
+                None => root_dir = Some(first.to_string()),
+                Some(r) if r != first => { root_dir = None; break; }
+                _ => {}
+            }
+        }
+    }
+
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        let out_path = dest_dir.join(file.mangled_name());
+        let name = file.mangled_name().to_string_lossy().to_string();
+        let out_path = if let Some(ref root) = root_dir {
+            // Strip the single root dir prefix
+            let stripped = name.strip_prefix(&format!("{root}/")).unwrap_or(&name);
+            dest_dir.join(stripped)
+        } else {
+            dest_dir.join(name)
+        };
 
         if let Some(parent) = out_path.parent() {
             fs::create_dir_all(parent)?;
