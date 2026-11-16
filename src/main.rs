@@ -127,5 +127,6 @@ async fn main() -> Result<()> {
         Commands::Apps(args) => commands::apps::execute(args, &config_manager, &state_manager).await,
         Commands::Cleanup(args) => commands::cleanup::execute(args, &config_manager, &mut state_manager).await,
         Commands::Reset(args) => commands::reset::execute(args, &mut config_manager, &mut state_manager).await,
+        Commands::LinkRepo(args) => commands::link_repo::execute(args, &config_manager, &mut state_manager).await,
     }
 }

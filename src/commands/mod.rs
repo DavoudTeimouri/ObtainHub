@@ -25,3 +25,4 @@ pub mod apps;
 pub mod cleanup;
 pub mod log;
 pub mod reset;
+pub mod link_repo;

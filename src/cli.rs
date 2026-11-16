@@ -293,6 +293,9 @@ pub enum Commands {
 
     /// Reset ohub state and configuration
     Reset(ResetArgs),
+
+    /// Link a folder-added app (exe-name repo) to a GitHub repo so CLI `ohub update` can find releases
+    LinkRepo(LinkRepoArgs),
 }
 
 #[derive(Args, Debug)]
@@ -1109,3 +1112,20 @@ pub struct ResetArgs {
     #[arg(long)]
     pub move_token: Option<String>,
 }
+
+#[derive(Args, Debug)]
+#[command(after_help = EX_LINK_REPO)]
+pub struct LinkRepoArgs {
+    /// Name of the folder-added app as managed (exe name, no '/')
+    #[arg(value_name = "REPO")]
+    pub repo: String,
+
+    /// GitHub repo to link it to (owner/repo)
+    #[arg(value_name = "OWNER/REPO")]
+    pub github_repo: String,
+}
+
+const EX_LINK_REPO: &str = "\
+Examples:
+  ohub link-repo WhiteVPN_Desktop.exe DavoudTeimouri/WhiteVPN
+  ohub link-repo myapp.exe owner/myapp-repo";
