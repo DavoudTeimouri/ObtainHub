@@ -1136,7 +1136,8 @@ pub async fn update_app(
 
         // Run the chunked download (updates the registry with progress).
         // Each chunk request has a 30s timeout; retries use exponential backoff.
-        let _ = crate::webui::downloads::run_download(
+        // Pass the known asset size to avoid probing.
+        crate::webui::downloads::run_download_with_size(
             downloads_clone.clone(),
             job_id_clone.clone(),
             download_url.clone(),
@@ -1145,7 +1146,18 @@ pub async fn update_app(
             Arc::new(AtomicBool::new(false)),
             None,
             Some(600), // 10-minute overall timeout
+            Some(asset.size), // known asset size from GitHub API
         );
+
+        // Check if download succeeded before proceeding to install.
+        let download_ok = {
+            let map = downloads_clone.lock().unwrap();
+            map.get(&job_id_clone).map(|j| j.status == "completed").unwrap_or(false)
+        };
+        if !download_ok {
+            // Download failed; error already recorded in job status.
+            return;
+        }
 
         // --- Install phase ---
         {

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.39] - 2026-11-17
+
+RC.39: Folder-app download stall fix — downloads disappearing at ~20% without error. CLI `streamed()` and WebUI `download_inner()` now fail after 60 consecutive empty chunks instead of retrying forever; WebUI chunk requests have a 30s timeout; both paths default to a 600s overall timeout when none specified; WebUI uses known asset size from GitHub API instead of probing; WebUI `update_app` aborts install if download failed. `cargo test --release` green (61 tests).
+
 ## [v3.0.72-rc.38] - 2026-11-17
 
 RC.38: Review fixes for rc.37 — WebUI version badge now fetched from /version in init() (badge matches built binary at startup, not only after About tab); /version added to PUBLIC_ROUTES; PROJECT.md §2 version sites include index.html (#versionBadge fallback + style.css?v=); zip flattening skips the root dir entry itself; added unit tests for zip single-root flatten; bash completion ignored in tests (pre-existing clap_complete 4.6.11 panic) so cargo test is green per release gate.

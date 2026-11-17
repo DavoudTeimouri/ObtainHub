@@ -52,6 +52,8 @@ const STALL_NOTIFY_THRESHOLD: u32 = 5;
 const INITIAL_BACKOFF_MS: u64 = 1000;
 /// Maximum backoff between empty-chunk retries.
 const MAX_BACKOFF_MS: u64 = 30_000;
+/// Maximum consecutive empty chunks before giving up (prevents indefinite stall).
+const MAX_EMPTY_CHUNK_RETRIES: u32 = 60;
 
 /// Extract a safe file name from the requested dest (both path separators),
 /// falling back to the URL's last segment. Only this name is joined onto the
@@ -129,6 +131,8 @@ pub(crate) struct DownloadRun<'a> {
     bandwidth_limit: Option<u64>,
     /// Overall download timeout in seconds. `None` means no overall timeout.
     overall_timeout_secs: Option<u64>,
+    /// Known total size from caller (e.g., GitHub asset size). If None, will probe.
+    total_size: Option<u64>,
 }
 
 /// Run a chunked ranged download, updating the registry as it progresses.
@@ -142,6 +146,21 @@ pub(crate) fn run_download(
     bandwidth_limit: Option<u64>,
     overall_timeout_secs: Option<u64>,
 ) {
+    run_download_with_size(registry, id, url, dest, token, cancel, bandwidth_limit, overall_timeout_secs, None);
+}
+
+/// Run a chunked ranged download with known total size.
+pub(crate) fn run_download_with_size(
+    registry: DownloadRegistry,
+    id: String,
+    url: String,
+    dest: PathBuf,
+    token: Option<String>,
+    cancel: Arc<AtomicBool>,
+    bandwidth_limit: Option<u64>,
+    overall_timeout_secs: Option<u64>,
+    total_size: Option<u64>,
+) {
     let part_path = dest.with_extension("part");
     let run = DownloadRun {
         url: &url,
@@ -153,6 +172,7 @@ pub(crate) fn run_download(
         cancel: &cancel,
         bandwidth_limit,
         overall_timeout_secs,
+        total_size,
     };
     let result = download_inner(&run);
 
@@ -188,8 +208,8 @@ pub(crate) fn run_download(
 }
 
 fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
-    let DownloadRun { url, token, dest, part_path, registry, id, cancel, bandwidth_limit, overall_timeout_secs } = *run;
-    let total = probe_size(url, token).unwrap_or(0);
+    let DownloadRun { url, token, dest, part_path, registry, id, cancel, bandwidth_limit, overall_timeout_secs, total_size } = *run;
+    let total = total_size.unwrap_or_else(|| probe_size(url, token).unwrap_or(0));
     update_job(registry, id, |j| { j.total = total; j.status = "downloading".to_string(); });
 
     let mut file = std::fs::File::create(part_path)
@@ -198,12 +218,15 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
     let window_start = Instant::now();
     let mut window_bytes: u64 = 0;
     let mut consecutive_failures: u32 = 0;
+    let mut consecutive_empty_chunks: u32 = 0;
     let mut backoff_ms = INITIAL_BACKOFF_MS;
 
     // Overall download timeout: abort after this many seconds to prevent
     // a stalled download from hanging forever without reporting an error.
     let started_at = Instant::now();
     let overall_timeout = overall_timeout_secs.map(Duration::from_secs);
+    // Default overall timeout if none specified (10 minutes) to prevent indefinite stalls.
+    let overall_timeout = overall_timeout.or(Some(Duration::from_secs(600)));
 
     loop {
         // Check overall timeout before each chunk.
@@ -227,6 +250,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             .with_header("User-Agent", crate::core::USER_AGENT)
             .with_header("Range", format!("bytes={start}-{end}"))
             .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
+            .with_timeout(30_000)
             .send()
             .context("chunk request failed")?;
         if resp.status_code != 206 && resp.status_code != 200 {
@@ -237,10 +261,17 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             // Server returned 206/200 with empty body — transient failure,
             // retry the same range with exponential backoff instead of
             // marking the download complete or hammering in a tight loop.
+            consecutive_empty_chunks += 1;
             consecutive_failures += 1;
+            if consecutive_empty_chunks >= MAX_EMPTY_CHUNK_RETRIES {
+                return Err(anyhow::anyhow!(
+                    "Download failed: too many consecutive empty chunks ({} retries) at {}/{} bytes",
+                    MAX_EMPTY_CHUNK_RETRIES, start, total
+                ));
+            }
             if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
                 eprintln!(
-                    "Download stalled at {}/{} bytes ({} consecutive empty chunks). \
+                    "Download stalled at {}/{} bytes ({} consecutive empty chunks). \\
                      Retrying in {}s... (press Ctrl+C to stop)",
                     start,
                     total,
@@ -261,6 +292,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             backoff_ms = backoff_ms.min(MAX_BACKOFF_MS);
             continue;
         }
+        consecutive_empty_chunks = 0;
         consecutive_failures = 0;
         backoff_ms = INITIAL_BACKOFF_MS;
         file.write_all(chunk)
@@ -343,24 +375,25 @@ pub async fn cancel_download(
 fn probe_size(url: &str, token: Option<&str>) -> anyhow::Result<u64> {
     let mut req = minreq::get(url)
         .with_header("Range", "bytes=0-0")
-        .with_header("User-Agent", crate::core::USER_AGENT);
-    
+        .with_header("User-Agent", crate::core::USER_AGENT)
+        .with_timeout(30_000);
+
     if let Some(token) = token {
         req = req.with_header("Authorization", format!("Bearer {}", token));
     }
-    
+
     let response = req.send().context("Failed to probe size")?;
-    
+
     if response.status_code != 206 {
-        anyhow::bail!("Server does not support range requests");
+        anyhow::bail!("Server returned HTTP {} for size probe — expected 206 Partial Content", response.status_code);
     }
-    
+
     let content_range = response
         .headers
         .get("content-range")
         .map(|v| v.as_str())
         .unwrap_or("");
-    
+
     total_from_content_range(content_range)
         .ok_or_else(|| anyhow::anyhow!("Server did not report file size"))
 }
@@ -515,9 +548,10 @@ mod tests {
 
     /// Serve `body` with HTTP Range support on an ephemeral port; returns the
     /// base URL and a handle to stop. Runs on a plain std thread.
-    fn serve_with_ranges(body: Vec<u8>) -> String {
+    fn serve_with_ranges(body: &[u8]) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
+        let body = body.to_vec();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let mut stream = match stream { Ok(s) => s, Err(_) => break };
@@ -554,7 +588,7 @@ mod tests {
     #[test]
     fn download_inner_fetches_all_bytes_via_ranges() {
         let body: Vec<u8> = (0..700_000u32).map(|i| (i % 251) as u8).collect();
-        let url = serve_with_ranges(body.clone());
+        let url = serve_with_ranges(&body);
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("file.bin");
         let part = dest.with_extension("part");
@@ -571,6 +605,7 @@ mod tests {
             cancel: &cancel,
             bandwidth_limit: None,
             overall_timeout_secs: None,
+            total_size: Some(body.len() as u64),
         };
 
         download_inner(&run).unwrap();
@@ -582,7 +617,7 @@ mod tests {
     #[test]
     fn download_inner_aborts_when_cancelled() {
         let body = vec![7u8; 5_000_000]; // larger than CHUNK_SIZE so cancel can land mid-loop
-        let url = serve_with_ranges(body);
+        let url = serve_with_ranges(&body);
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("file.bin");
         let part = dest.with_extension("part");
@@ -599,6 +634,7 @@ mod tests {
             cancel: &cancel,
             bandwidth_limit: None,
             overall_timeout_secs: None,
+            total_size: Some(body.len() as u64),
         };
 
         let err = download_inner(&run).unwrap_err();
@@ -609,7 +645,7 @@ mod tests {
     #[test]
     fn download_inner_times_out_with_overall_timeout() {
         let body = vec![7u8; 100_000]; // 100KB - small enough to complete fast, but timeout fires first
-        let url = serve_with_ranges(body);
+        let url = serve_with_ranges(&body);
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("file.bin");
         let part = dest.with_extension("part");
@@ -626,6 +662,7 @@ mod tests {
             cancel: &cancel,
             bandwidth_limit: None,
             overall_timeout_secs: Some(0), // timeout fires before first chunk
+            total_size: Some(body.len() as u64),
         };
 
         // Insert job into registry (normally done by run_download)

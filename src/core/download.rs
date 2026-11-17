@@ -48,6 +48,9 @@ const INITIAL_BACKOFF_MS: u64 = 1000;
 /// Maximum backoff between chunk retries.
 const MAX_BACKOFF_MS: u64 = 30_000;
 
+/// Maximum consecutive empty chunks before giving up (prevents indefinite stall).
+const MAX_EMPTY_CHUNK_RETRIES: u32 = 60;
+
 /// Download `d.url` into `d.dest`.
 ///
 /// Every download in the tool goes through here: the registry path, the
@@ -131,12 +134,15 @@ async fn streamed(
     let pb = progress_bar(d, total, resume_from);
     let mut start = resume_from;
     let mut consecutive_failures: u32 = 0;
+    let mut consecutive_empty_chunks: u32 = 0;
     let mut backoff_ms = INITIAL_BACKOFF_MS;
 
     // Overall download timeout: if set, abort after this many seconds to
     // prevent a stalled download from hanging forever without reporting an error.
     let started_at = std::time::Instant::now();
     let overall_timeout = d.overall_timeout_secs.map(std::time::Duration::from_secs);
+    // Default overall timeout if none specified (10 minutes) to prevent indefinite stalls.
+    let overall_timeout = overall_timeout.or(Some(std::time::Duration::from_secs(600)));
 
     // Open the part file for appending (create if missing).
     let mut file = OpenOptions::new()
@@ -170,10 +176,17 @@ async fn streamed(
                         if chunk.is_empty() {
                             // Server returned 206 with empty body — treat as
                             // a transient failure and retry the same range.
+                            consecutive_empty_chunks += 1;
                             consecutive_failures += 1;
+                            if consecutive_empty_chunks >= MAX_EMPTY_CHUNK_RETRIES {
+                                return Err(anyhow::anyhow!(
+                                    "Download failed: too many consecutive empty chunks ({} retries) at {}/{} bytes",
+                                    MAX_EMPTY_CHUNK_RETRIES, start, total
+                                ));
+                            }
                             if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
                                 eprintln!(
-                                    "Download stalled at {}/{} bytes ({} consecutive failures). \
+                                    "Download stalled at {}/{} bytes ({} consecutive failures). \\
                                      Retrying in {}s... (press Ctrl+C to stop)",
                                     start,
                                     total,
@@ -187,6 +200,7 @@ async fn streamed(
                             backoff_ms = backoff_ms.min(MAX_BACKOFF_MS);
                             continue;
                         }
+                        consecutive_empty_chunks = 0;
                         file.write_all(&chunk)
                             .with_context(|| format!("Failed to write chunk to {}", part_path.display()))?;
                         pb.inc(chunk.len() as u64);
@@ -208,7 +222,7 @@ async fn streamed(
                         #[allow(unknown_lints, clippy::manual_is_multiple_of)]
                         if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
                             eprintln!(
-                                "Download stalled at {}/{} bytes ({} consecutive failures). \
+                                "Download stalled at {}/{} bytes ({} consecutive failures). \\
                                  Retrying in {}s... (press Ctrl+C to stop)",
                                 start,
                                 total,
