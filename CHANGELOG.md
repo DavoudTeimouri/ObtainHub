@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.41] - 2026-11-17
+
+RC.41: HTTP 429 rate limit handling + WebUI background download messaging. CLI fetch_chunk()/probe_size() retry on 429 with Retry-After/X-RateLimit-Reset headers. WebUI download_inner() same 429 retry handling. WebUI run_webui() background task logs download progress every 3s to terminal (label, bytes, %, speed, ETA). Registries github_get_with_retry() for API calls with 429 handling. cargo test --release: 61/61 pass.
+
 ## [v3.0.72-rc.40] - 2026-11-17
 
 RC.40: Folder-app ZIP download silently passing verification — downloads stopping at ~20% were marked complete because `total_size` was overwritten with actual downloaded size instead of the expected asset size. CLI `install_release()` now saves `expected_size = asset.size` before download and verifies `written_size != expected_size` after download. WebUI `routes.rs` added post-download verification comparing actual file size to `asset.size`, aborting install on mismatch with clear error. WebUI `downloads.rs` treats `Some(0)` from GitHub API as unknown size (triggers probe instead of using 0).
