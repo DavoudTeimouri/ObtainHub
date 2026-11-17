@@ -440,7 +440,8 @@ pub(crate) async fn install_release(
     // Download to ObtainHub's download folder (not the app folder)
     let download_path = download_dir.join(&asset.name);
 
-    // Get expected size from GitHub API for skip-check
+    // Get expected size from GitHub API for skip-check AND final verification
+    let expected_size = asset.size;
     let mut total_size: u64 = 0;
     let expected_hash = {
         fetch_published_checksum(release, &asset.name, token).await?
@@ -513,12 +514,12 @@ pub(crate) async fn install_release(
             download_path.display()
         ));
     }
-    if written_size != total_size {
+    if written_size != expected_size {
         return Err(anyhow::anyhow!(
             "Download failed: {} wrote {} bytes, expected {}",
             asset.name,
             written_size,
-            total_size
+            expected_size
         ));
     }
 

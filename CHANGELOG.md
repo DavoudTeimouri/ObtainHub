@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.40] - 2026-11-17
+
+RC.40: Folder-app ZIP download silently passing verification — downloads stopping at ~20% were marked complete because `total_size` was overwritten with actual downloaded size instead of the expected asset size. CLI `install_release()` now saves `expected_size = asset.size` before download and verifies `written_size != expected_size` after download. WebUI `routes.rs` added post-download verification comparing actual file size to `asset.size`, aborting install on mismatch with clear error. WebUI `downloads.rs` treats `Some(0)` from GitHub API as unknown size (triggers probe instead of using 0).
+
 ## [v3.0.72-rc.39] - 2026-11-17
 
 RC.39: Folder-app download stall fix — downloads disappearing at ~20% without error. CLI `streamed()` and WebUI `download_inner()` now fail after 60 consecutive empty chunks instead of retrying forever; WebUI chunk requests have a 30s timeout; both paths default to a 600s overall timeout when none specified; WebUI uses known asset size from GitHub API instead of probing; WebUI `update_app` aborts install if download failed. `cargo test --release` green (61 tests).

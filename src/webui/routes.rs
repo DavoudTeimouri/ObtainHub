@@ -1100,6 +1100,8 @@ pub async fn update_app(
     let job_id_clone = job_id.clone();
     let repo_clone = repo.clone();
     let asset_clone = asset.clone();
+    let asset_name_for_response = asset.name.clone();
+    let asset_size = asset.size;
     let release_tag_name_clone = release_tag_name.clone();
 
     // Create the download job in the registry so the frontend can poll progress
@@ -1157,6 +1159,25 @@ pub async fn update_app(
         if !download_ok {
             // Download failed; error already recorded in job status.
             return;
+        }
+
+        // Verify downloaded file size matches expected asset size (catches incomplete downloads)
+        let expected_size = asset.size;
+        let asset_name = asset.name.clone();
+        if expected_size > 0 {
+            let actual_size = std::fs::metadata(&download_path).map(|m| m.len()).unwrap_or(0);
+            if actual_size != expected_size {
+                let err_msg = format!(
+                    "Download failed: {} wrote {} bytes, expected {}",
+                    asset_name, actual_size, expected_size
+                );
+                update_job_status(&downloads_clone, &job_id_clone, "error", Some(err_msg.clone()));
+                let mut map = downloads_clone.lock().unwrap();
+                if let Some(job) = map.get_mut(&job_id_clone) {
+                    job.error = Some(err_msg);
+                }
+                return;
+            }
         }
 
         // --- Install phase ---
@@ -1231,7 +1252,7 @@ pub async fn update_app(
         "job_id": job_id,
         "status": "started",
         "repo": repo,
-        "asset": asset.name,
+        "asset": asset_name_for_response,
     }))).into_response()
 }
 

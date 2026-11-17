@@ -209,7 +209,7 @@ pub(crate) fn run_download_with_size(
 
 fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
     let DownloadRun { url, token, dest, part_path, registry, id, cancel, bandwidth_limit, overall_timeout_secs, total_size } = *run;
-    let total = total_size.unwrap_or_else(|| probe_size(url, token).unwrap_or(0));
+    let total = total_size.filter(|&s| s > 0).unwrap_or_else(|| probe_size(url, token).unwrap_or(0));
     update_job(registry, id, |j| { j.total = total; j.status = "downloading".to_string(); });
 
     let mut file = std::fs::File::create(part_path)
