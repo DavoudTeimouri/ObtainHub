@@ -30,6 +30,75 @@ pub fn github_get(url: &str) -> minreq::Request {
         .with_header("User-Agent", crate::core::USER_AGENT)
 }
 
+/// HTTP 429 rate limit handling.
+const RATE_LIMIT_MAX_RETRIES: u32 = 10;
+
+/// Calculate wait time from rate limit headers.
+/// Prefers `Retry-After` (seconds), falls back to `X-RateLimit-Reset` (unix timestamp).
+/// Returns None if headers are missing/invalid.
+fn rate_limit_wait_seconds(resp: &minreq::Response) -> Option<u64> {
+    if let Some(retry_after) = resp.headers.get("retry-after") {
+        if let Ok(secs) = retry_after.as_str().trim().parse::<u64>() {
+            return Some(secs.max(1).min(3600));
+        }
+    }
+    if let Some(reset) = resp.headers.get("x-ratelimit-reset") {
+        if let Ok(reset_ts) = reset.as_str().trim().parse::<u64>() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_secs();
+            if reset_ts > now {
+                return Some((reset_ts - now).max(1).min(3600));
+            }
+        }
+    }
+    None
+}
+
+/// Execute a GitHub API request with 429 rate limit handling.
+/// Retries on 429 respecting Retry-After / X-RateLimit-Reset headers.
+pub fn github_get_with_retry(url: &str, token: Option<&str>) -> Result<minreq::Response> {
+    let mut rate_limit_retries = 0u32;
+
+    loop {
+        let mut req = github_get(url);
+        if let Some(token) = token {
+            req = req.with_header("Authorization", format!("Bearer {}", token));
+        }
+
+        let resp = req.send().with_context(|| format!("Failed to request {url}"))?;
+
+        if resp.status_code == 429 {
+            rate_limit_retries += 1;
+            if rate_limit_retries > RATE_LIMIT_MAX_RETRIES {
+                anyhow::bail!(
+                    "GitHub API rate limit exceeded: too many 429 responses ({} retries) for {url}",
+                    RATE_LIMIT_MAX_RETRIES
+                );
+            }
+            if let Some(wait_secs) = rate_limit_wait_seconds(&resp) {
+                eprintln!(
+                    "GitHub API rate limited (429) for {url} — waiting {}s (retry {}/{})",
+                    wait_secs, rate_limit_retries, RATE_LIMIT_MAX_RETRIES
+                );
+                std::thread::sleep(Duration::from_secs(wait_secs));
+                continue;
+            }
+            let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
+            let backoff = backoff.min(30_000);
+            eprintln!(
+                "GitHub API rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
+                backoff, rate_limit_retries, RATE_LIMIT_MAX_RETRIES
+            );
+            std::thread::sleep(Duration::from_millis(backoff));
+            continue;
+        }
+
+        return Ok(resp);
+    }
+}
+
 /// The asset-name tokens that identify an architecture.
 ///
 /// `Auto` follows the machine the binary runs on. The list is deliberately
@@ -189,14 +258,11 @@ impl GitHubRegistry {
     ) -> Result<RegistryRelease> {
         let repo = Self::get_repo_from_package(package_name);
         let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-        let mut req = github_get(&url);
-        if let Some(token) = token {
-            req = req.with_header("Authorization", format!("Bearer {}", token));
-        }
-        let resp: RegistryRelease = req.send()?.json()?;
-        Ok(resp)
+        let resp = github_get_with_retry(&url, token)?;
+        let release: RegistryRelease = resp.json()?;
+        Ok(release)
     }
-    
+
     pub async fn fetch_release_by_tag(
         &self,
         package_name: &str,
@@ -205,12 +271,9 @@ impl GitHubRegistry {
     ) -> Result<RegistryRelease> {
         let repo = Self::get_repo_from_package(package_name);
         let url = format!("https://api.github.com/repos/{}/releases/tags/{}", repo, tag);
-        let mut req = github_get(&url);
-        if let Some(token) = token {
-            req = req.with_header("Authorization", format!("Bearer {}", token));
-        }
-        let resp: RegistryRelease = req.send()?.json()?;
-        Ok(resp)
+        let resp = github_get_with_retry(&url, token)?;
+        let release: RegistryRelease = resp.json()?;
+        Ok(release)
     }
 
     /// Latest release including pre-releases. `releases/latest` excludes
@@ -223,11 +286,8 @@ impl GitHubRegistry {
     ) -> Result<RegistryRelease> {
         let repo = Self::get_repo_from_package(package_name);
         let url = format!("https://api.github.com/repos/{}/releases", repo);
-        let mut req = github_get(&url);
-        if let Some(token) = token {
-            req = req.with_header("Authorization", format!("Bearer {}", token));
-        }
-        let releases: Vec<RegistryRelease> = req.send()?.json()?;
+        let resp = github_get_with_retry(&url, token)?;
+        let releases: Vec<RegistryRelease> = resp.json()?;
         releases
             .into_iter()
             .next()
