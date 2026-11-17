@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.38] - 2026-11-17
+
+RC.38: Review fixes for rc.37 — WebUI version badge now fetched from /version in init() (badge matches built binary at startup, not only after About tab); /version added to PUBLIC_ROUTES; PROJECT.md §2 version sites include index.html (#versionBadge fallback + style.css?v=); zip flattening skips the root dir entry itself; added unit tests for zip single-root flatten; bash completion ignored in tests (pre-existing clap_complete 4.6.11 panic) so cargo test is green per release gate.
+
 ## [v3.0.72-rc.37] - 2026-11-16
 
 RC.37: WebUI version badge fix — footer showed hardcoded `v3.0.72-rc.22` (never bumped with releases). Made the badge dynamic via the existing `/version` API endpoint in `loadAbout()` so it always matches the built binary; hardcoded fallback also bumped to rc.37.
