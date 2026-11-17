@@ -1440,6 +1440,9 @@ class ObtainHubUI {
       document.getElementById('aboutPlatform').textContent = navigator.platform;
       document.getElementById('aboutRust').textContent = '1.85+';
       document.getElementById('aboutBuildTime').textContent = new Date().toISOString();
+      // Footer version badge (always visible) — keep in sync with the built version
+      const badge = document.getElementById('versionBadge');
+      if (badge) badge.textContent = ver;
     } catch (err) {
       document.getElementById('aboutVersion').textContent = 'unknown';
       document.getElementById('aboutBuildVersion').textContent = 'unknown';
