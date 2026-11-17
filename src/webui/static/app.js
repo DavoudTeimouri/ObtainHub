@@ -22,6 +22,7 @@ class ObtainHubUI {
     this.setupNavigation();
     window.addEventListener('hashchange', () => this.route());
     this.loadAuthMode().then(() => this.route());
+    this.loadVersionBadge(); // footer badge — always matches built binary
 
     // Apps table action delegation (Check/Update/Uninstall/Remove/Install via data-repo)
     const appsBody = document.getElementById('appsTableBody');
@@ -1440,12 +1441,23 @@ class ObtainHubUI {
       document.getElementById('aboutPlatform').textContent = navigator.platform;
       document.getElementById('aboutRust').textContent = '1.85+';
       document.getElementById('aboutBuildTime').textContent = new Date().toISOString();
-      // Footer version badge (always visible) — keep in sync with the built version
-      const badge = document.getElementById('versionBadge');
-      if (badge) badge.textContent = ver;
+      this.loadVersionBadge();
     } catch (err) {
       document.getElementById('aboutVersion').textContent = 'unknown';
       document.getElementById('aboutBuildVersion').textContent = 'unknown';
+    }
+  }
+
+  /// Fetch /version and set the footer version badge so it always matches
+  /// the built binary — runs at startup, not only when the About tab opens.
+  async loadVersionBadge() {
+    try {
+      const info = await this.api('/version');
+      const ver = info && info.version ? info.version : 'unknown';
+      const badge = document.getElementById('versionBadge');
+      if (badge) badge.textContent = ver;
+    } catch (err) {
+      // badge keeps its hardcoded fallback
     }
   }
 

@@ -16,6 +16,7 @@ const PUBLIC_ROUTES: &[(&str, &[Method])] = &[
     ("/config/sources", &[Method::GET]),
     ("/auth/login", &[Method::POST]),
     ("/help", &[Method::GET]),
+    ("/version", &[Method::GET]),
 ];
 
 /// Check if the given path and method are publicly accessible.

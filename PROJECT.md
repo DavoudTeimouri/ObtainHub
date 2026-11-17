@@ -35,7 +35,8 @@ Before tagging:
 
 1. All four version sites bumped — `Cargo.toml`, `installer/ObtainHub.nsi`
    `!define VERSION`, `installer/setup.wxs` (`Version` + `Comments`),
-   `CHANGELOG.md`.
+   `CHANGELOG.md`, plus `src/webui/static/index.html` (footer `#versionBadge`
+   fallback + `style.css?v=` cache-buster).
 2. `## [vX.Y.Z]` section written and non-empty.
 3. `cargo test` green.
 4. `makensis installer/ObtainHub.nsi` — zero warnings.

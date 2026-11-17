@@ -855,6 +855,10 @@ fn extract_zip_to_folder(zip_path: &Path, dest_dir: &Path) -> Result<()> {
         let mut file = archive.by_index(i)?;
         let name = file.mangled_name().to_string_lossy().to_string();
         let out_path = if let Some(ref root) = root_dir {
+            if name == *root {
+                // Root directory entry itself — maps to dest root, skip.
+                continue;
+            }
             // Strip the single root dir prefix
             let stripped = name.strip_prefix(&format!("{root}/")).unwrap_or(&name);
             dest_dir.join(stripped)
@@ -919,5 +923,81 @@ fn cleanup_download_folder(download_dir: &std::path::Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+
+    /// A zip whose every entry lives under a single root dir (App-1.2.3/...)
+    /// should be flattened so files land directly in dest_dir.
+    #[test]
+    fn extract_zip_flattens_single_root_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        let zip_bytes = {
+            let mut buf = Vec::new();
+            {
+                let mut zip = zip::write::ZipWriter::new(Cursor::new(&mut buf));
+                let opts = zip::write::FileOptions::default();
+                zip.add_directory("App-1.2.3/", opts).unwrap();
+                zip.start_file("App-1.2.3/app.exe", opts).unwrap();
+                zip.write_all(b"fake exe").unwrap();
+                zip.start_file("App-1.2.3/README.md", opts).unwrap();
+                zip.write_all(b"readme").unwrap();
+                zip.finish().unwrap();
+            }
+            buf
+        };
+
+        let zip_path = tmp.path().join("App-1.2.3.zip");
+        std::fs::write(&zip_path, &zip_bytes).unwrap();
+
+        extract_zip_to_folder(&zip_path, &dest).unwrap();
+
+        // Files should be at dest/app.exe and dest/README.md, NOT dest/App-1.2.3/...
+        assert!(dest.join("app.exe").exists(), "app.exe should be flattened to dest root");
+        assert!(
+            dest.join("README.md").exists(),
+            "README.md should be flattened to dest root"
+        );
+        assert!(
+            !dest.join("App-1.2.3").exists(),
+            "single root dir should not be preserved"
+        );
+    }
+
+    /// A zip with mixed top-level entries (no single root) should not be flattened.
+    #[test]
+    fn extract_zip_no_root_dir_stays_as_is() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        let zip_bytes = {
+            let mut buf = Vec::new();
+            {
+                let mut zip = zip::write::ZipWriter::new(Cursor::new(&mut buf));
+                let opts = zip::write::FileOptions::default();
+                zip.start_file("top.exe", opts).unwrap();
+                zip.write_all(b"exe").unwrap();
+                zip.start_file("sub/deep.txt", opts).unwrap();
+                zip.write_all(b"deep").unwrap();
+                zip.finish().unwrap();
+            }
+            buf
+        };
+
+        let zip_path = tmp.path().join("mixed.zip");
+        std::fs::write(&zip_path, &zip_bytes).unwrap();
+
+        extract_zip_to_folder(&zip_path, &dest).unwrap();
+
+        assert!(dest.join("top.exe").exists());
+        assert!(dest.join("sub/deep.txt").exists());
+    }
 }
 
