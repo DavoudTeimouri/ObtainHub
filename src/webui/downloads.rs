@@ -2,6 +2,7 @@ use axum::{Json, response::IntoResponse, extract::{State, Path}, http::StatusCod
 use serde::{Serialize, Deserialize};
 use anyhow::Context;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -136,6 +137,8 @@ pub(crate) struct DownloadRun<'a> {
     overall_timeout_secs: Option<u64>,
     /// Known total size from caller (e.g., GitHub asset size). If None, will probe.
     total_size: Option<u64>,
+    /// Byte offset to resume from. 0 means start from beginning.
+    resume_from: u64,
 }
 
 /// Run a chunked ranged download, updating the registry as it progresses.
@@ -149,7 +152,7 @@ pub(crate) fn run_download(
     bandwidth_limit: Option<u64>,
     overall_timeout_secs: Option<u64>,
 ) {
-    run_download_with_size(registry, id, url, dest, token, cancel, bandwidth_limit, overall_timeout_secs, None);
+    run_download_with_size(registry, id, url, dest, token, cancel, bandwidth_limit, overall_timeout_secs, None, 0);
 }
 
 /// Run a chunked ranged download with known total size.
@@ -163,6 +166,7 @@ pub(crate) fn run_download_with_size(
     bandwidth_limit: Option<u64>,
     overall_timeout_secs: Option<u64>,
     total_size: Option<u64>,
+    resume_from: u64,
 ) {
     let part_path = dest.with_extension("part");
     let run = DownloadRun {
@@ -176,6 +180,7 @@ pub(crate) fn run_download_with_size(
         bandwidth_limit,
         overall_timeout_secs,
         total_size,
+        resume_from,
     };
     let result = download_inner(&run);
 
@@ -211,13 +216,16 @@ pub(crate) fn run_download_with_size(
 }
 
 fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
-    let DownloadRun { url, token, dest, part_path, registry, id, cancel, bandwidth_limit, overall_timeout_secs, total_size } = *run;
+    let DownloadRun { url, token, dest, part_path, registry, id, cancel, bandwidth_limit, overall_timeout_secs, total_size, resume_from } = *run;
     let total = total_size.filter(|&s| s > 0).unwrap_or_else(|| probe_size(url, token).unwrap_or(0));
     update_job(registry, id, |j| { j.total = total; j.status = "downloading".to_string(); });
 
-    let mut file = std::fs::File::create(part_path)
-        .with_context(|| format!("Failed to create {}", part_path.display()))?;
-    let mut start: u64 = 0;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(part_path)
+        .with_context(|| format!("Failed to open {} for append", part_path.display()))?;
+    let mut start: u64 = resume_from;
     let window_start = Instant::now();
     let mut window_bytes: u64 = 0;
     let mut consecutive_failures: u32 = 0;
@@ -450,6 +458,79 @@ pub async fn cancel_download(
             (StatusCode::OK, Json(serde_json::json!({"status": "cancelled", "id": id}))).into_response()
         }
         Some(_) => (StatusCode::CONFLICT, Json(serde_json::json!({"error": "download already finished"}))).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "unknown download id"}))).into_response(),
+    }
+}
+
+/// Pause a download by ID.
+pub async fn pause_download(
+    State(app_state): State<Arc<super::AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let mut map = app_state.downloads.lock().unwrap();
+    match map.get_mut(&id) {
+        Some(job) if matches!(job.status.as_str(), "downloading" | "stalled") => {
+            job.cancel.store(true, Ordering::Relaxed);
+            job.status = "paused".to_string();
+            job.error = None;
+            (StatusCode::OK, Json(serde_json::json!({"status": "paused", "id": id}))).into_response()
+        }
+        Some(_) => (StatusCode::CONFLICT, Json(serde_json::json!({"error": "download cannot be paused from current state"}))).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "unknown download id"}))).into_response(),
+    }
+}
+
+/// Resume a paused/cancelled/error download by ID.
+#[axum::debug_handler]
+pub async fn resume_download(
+    State(app_state): State<Arc<super::AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let bandwidth_limit = {
+        let config_manager = app_state.config_manager.lock().await;
+        config_manager.get().download_bandwidth_limit
+    };
+    
+    let mut map = app_state.downloads.lock().unwrap();
+    match map.get_mut(&id) {
+        Some(job) if matches!(job.status.as_str(), "paused" | "cancelled" | "error") => {
+            let resume_from = job.downloaded;
+            let total_size = job.total;
+            job.cancel.store(false, Ordering::Relaxed);
+            job.status = "downloading".to_string();
+            job.error = None;
+            let url = job.url.clone();
+            let dest = PathBuf::from(&job.dest);
+            let cancel = job.cancel.clone();
+            
+            let id_for_spawn = id.clone();
+            let registry = app_state.downloads.clone();
+            tokio::task::spawn_blocking(move || {
+                run_download_with_size(registry, id_for_spawn, url, dest, None, cancel, bandwidth_limit, None, Some(total_size), resume_from);
+            });
+            (StatusCode::OK, Json(serde_json::json!({"status": "downloading", "id": id}))).into_response()
+        }
+        Some(_) => (StatusCode::CONFLICT, Json(serde_json::json!({"error": "download cannot be resumed from current state"}))).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "unknown download id"}))).into_response(),
+    }
+}
+
+/// Remove a download by ID (delete from registry and remove part file).
+pub async fn remove_download(
+    State(app_state): State<Arc<super::AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let mut map = app_state.downloads.lock().unwrap();
+    match map.get(&id) {
+        Some(job) if matches!(job.status.as_str(), "downloading" | "stalled") => {
+            (StatusCode::CONFLICT, Json(serde_json::json!({"error": "download must be paused or stopped before removal"}))).into_response()
+        }
+        Some(job) => {
+            let part_path = PathBuf::from(&job.dest).with_extension("part");
+            let _ = std::fs::remove_file(&part_path);
+            map.remove(&id);
+            (StatusCode::OK, Json(serde_json::json!({"status": "removed", "id": id}))).into_response()
+        }
         None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "unknown download id"}))).into_response(),
     }
 }
@@ -747,6 +828,7 @@ mod tests {
             bandwidth_limit: None,
             overall_timeout_secs: Some(300),
             total_size: Some(body.len() as u64),
+            resume_from: 0,
         };
         registry.lock().unwrap().insert(id.clone(), DownloadJob {
             id: id.clone(),
@@ -816,6 +898,7 @@ mod tests {
             bandwidth_limit: None,
             overall_timeout_secs: None,
             total_size: Some(body.len() as u64),
+            resume_from: 0,
         };
         registry.lock().unwrap().insert(id.clone(), DownloadJob {
             id: id.clone(),
@@ -858,6 +941,7 @@ mod tests {
             bandwidth_limit: None,
             overall_timeout_secs: None,
             total_size: Some(body.len() as u64),
+            resume_from: 0,
         };
 
         download_inner(&run).unwrap();
@@ -887,6 +971,7 @@ mod tests {
             bandwidth_limit: None,
             overall_timeout_secs: None,
             total_size: Some(body.len() as u64),
+            resume_from: 0,
         };
 
         let err = download_inner(&run).unwrap_err();
@@ -915,6 +1000,7 @@ mod tests {
             bandwidth_limit: None,
             overall_timeout_secs: Some(0), // timeout fires before first chunk
             total_size: Some(body.len() as u64),
+            resume_from: 0,
         };
 
         // Insert job into registry (normally done by run_download)

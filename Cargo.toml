@@ -1,6 +1,6 @@
 [package]
 name = "obtainhub"
-version = "3.0.72-rc.51"
+version = "3.0.72-rc.52"
 edition = "2021"
 license = "MIT"
 description = "ObtainHub - GitHub repository search and management CLI"
@@ -83,7 +83,7 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter", "fmt"] }
 # tracing-appender = "0.2.3"
 
 # Web UI
-axum = { version = "0.7", features = ["tracing"] }
+axum = { version = "0.7", features = ["tracing", "macros"] }
 
 # Error handling
 anyhow = "1.0"

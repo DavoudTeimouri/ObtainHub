@@ -1825,19 +1825,43 @@ class ObtainHubUI {
         const statusClass = 'status-' + status;
         const tr = document.createElement('tr');
         tr.id = 'dl-row-' + this.escapeHtml(dl.id);
+        
+        // Build action buttons based on status
+        let actionsHtml = '<td class="actions-cell">';
+        if (status === 'downloading' || status === 'stalled') {
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.pause_download(\'' + this.escapeHtml(dl.id) + '\')" title="Pause">Pause</button> ';
+          actionsHtml += '<button class="btn btn-danger btn-sm" onclick="app.stop_download(\'' + this.escapeHtml(dl.id) + '\')" title="Stop">Stop</button> ';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove" disabled>Remove</button>';
+        } else if (status === 'paused') {
+          actionsHtml += '<button class="btn btn-primary btn-sm" onclick="app.resume_download(\'' + this.escapeHtml(dl.id) + '\')" title="Resume">Resume</button> ';
+          actionsHtml += '<button class="btn btn-danger btn-sm" onclick="app.stop_download(\'' + this.escapeHtml(dl.id) + '\')" title="Stop">Stop</button> ';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button>';
+        } else if (status === 'completed') {
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button>';
+        } else if (status === 'error' || status === 'cancelled') {
+          actionsHtml += '<button class="btn btn-primary btn-sm" onclick="app.resume_download(\'' + this.escapeHtml(dl.id) + '\')" title="Resume">Resume</button> ';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button>';
+        } else if (status === 'cancelling') {
+          actionsHtml += '<span class="text-muted">Cancelling...</span>';
+        } else {
+          actionsHtml += '<span class="text-muted">—</span>';
+        }
+        actionsHtml += '</td>';
+        
         tr.innerHTML =
           '<td><code>' + this.escapeHtml(dl.id) + '</code></td>' +
           '<td><code style="font-size:0.78rem;">' + this.escapeHtml(dl.url) + '</code></td>' +
           '<td><span class="badge ' + statusClass + '">' + this.escapeHtml(dl.status) + '</span></td>' +
           '<td><div class="progress-bar"><div class="progress-fill" id="dl-progress-' + this.escapeHtml(dl.id) + '" style="width:' + pct + '%;"></div></div></td>' +
           '<td>' + this.formatBytes(dl.downloaded) + ' / ' + this.formatBytes(dl.total) + '</td>' +
-          '<td class="speed-eta">' + (dl.speed ? this.formatBytes(dl.speed) + '/s' : '&ndash;') + (dl.eta ? ' &bull; ETA ' + dl.eta + 's' : '') + '</td>';
+          '<td class="speed-eta">' + (dl.speed ? this.formatBytes(dl.speed) + '/s' : '&ndash;') + (dl.eta ? ' &bull; ETA ' + dl.eta + 's' : '') + '</td>' +
+          actionsHtml;
         tbody.appendChild(tr);
       });
       this.applyTableFilters();
     } catch (err) {
       const tbody = document.getElementById('downloadsTableBody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load downloads: ' + this.escapeHtml(err.message) + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Failed to load downloads: ' + this.escapeHtml(err.message) + '</td></tr>';
     }
   }
 
@@ -1904,6 +1928,46 @@ class ObtainHubUI {
     if (app) app.classList.remove('blur-bg');
     this.showToast('Logged out', 'info');
     this.navigate('dashboard');
+  }
+
+  async pause_download(id) {
+    try {
+      await this.api('/downloads/' + id + '/pause', { method: 'POST' });
+      this.showToast('Download paused', 'success');
+      this.loadDownloads();
+    } catch (err) {
+      this.showToast('Failed to pause download: ' + err.message, 'error');
+    }
+  }
+
+  async resume_download(id) {
+    try {
+      await this.api('/downloads/' + id + '/resume', { method: 'POST' });
+      this.showToast('Download resumed', 'success');
+      this.loadDownloads();
+    } catch (err) {
+      this.showToast('Failed to resume download: ' + err.message, 'error');
+    }
+  }
+
+  async stop_download(id) {
+    try {
+      await this.api('/downloads/' + id + '/cancel', { method: 'POST' });
+      this.showToast('Download stopped', 'success');
+      this.loadDownloads();
+    } catch (err) {
+      this.showToast('Failed to stop download: ' + err.message, 'error');
+    }
+  }
+
+  async remove_download(id) {
+    try {
+      await this.api('/downloads/' + id + '/remove', { method: 'POST' });
+      this.showToast('Download removed', 'success');
+      this.loadDownloads();
+    } catch (err) {
+      this.showToast('Failed to remove download: ' + err.message, 'error');
+    }
   }
 }
 

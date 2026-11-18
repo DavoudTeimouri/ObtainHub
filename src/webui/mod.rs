@@ -166,6 +166,9 @@ pub async fn run_webui(
         .route("/downloads", axum::routing::post(downloads::start_download))
         // axum 0.7 path params use `:id` (`{id}` would be a literal segment).
         .route("/downloads/:id/cancel", axum::routing::post(downloads::cancel_download))
+        .route("/downloads/:id/pause", axum::routing::post(downloads::pause_download))
+        .route("/downloads/:id/resume", axum::routing::post(downloads::resume_download))
+        .route("/downloads/:id/remove", axum::routing::post(downloads::remove_download))
         // Protected update check
         .route("/update-check", axum::routing::post(downloads::update_check))
         // Protected diagnostics: full state export and schedule log tail

@@ -1148,6 +1148,7 @@ pub async fn update_app(
             None,
             None, // no overall timeout — slow connections can take hours; user cancels via Cancel button
             Some(asset.size), // known asset size from GitHub API
+            0, // resume_from: start from beginning
         );
 
         // Check if download succeeded before proceeding to install.
