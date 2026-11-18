@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.48] - 2026-11-18
+
+RC.48: Download progress never disappears on retry. All transient errors retry indefinitely — HTTP 429 and all 5xx (server errors), network errors (timeouts, connection resets), and empty chunk responses. Only permanent 4xx client errors (403, 404, 416, etc.) bail immediately. Every retry path writes `downloaded = start` to the registry so the WebUI percentage never resets to 0 mid-download. Progress only disappears when the download genuinely completes or fails with a permanent error. cargo check --release clean, cargo test --release: 63/63 pass.
+
 ## [v3.0.72-rc.47] - 2026-11-18
 
 RC.47: Download progress no longer disappears on 429/5xx retry. WebUI `download_inner` and CLI `fetch_chunk`/`probe_size` now retry HTTP 429/502/503/504 indefinitely (was bailing after 10 retries, which failed the download and removed the job from the WebUI). All retry paths write `downloaded = start` to the registry so the WebUI percentage never resets. cargo check --release clean, cargo test --release: 63/63 pass.

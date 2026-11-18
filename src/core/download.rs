@@ -279,7 +279,7 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
         let resp = req.send()
             .with_context(|| format!("Failed to request {label} ({url})"))?;
 
-        if resp.status_code == 429 {
+        if resp.status_code == 429 || (resp.status_code >= 500 && resp.status_code < 600) {
             rate_limit_retries += 1;
             if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
                 eprintln!(
@@ -298,14 +298,12 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
             tokio::time::sleep(Duration::from_millis(backoff)).await;
             continue;
         }
-
-        if resp.status_code != 206 {
+        if resp.status_code >= 400 && resp.status_code < 500 {
             anyhow::bail!(
                 "Server returned HTTP {} for range request {url} — expected 206 Partial Content",
                 resp.status_code
             );
         }
-
         return Ok(resp.as_bytes().to_vec());
     }
 }
@@ -345,7 +343,7 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
         let resp = req.send()
             .with_context(|| format!("Failed to request {url}"))?;
 
-        if resp.status_code == 429 {
+        if resp.status_code == 429 || (resp.status_code >= 500 && resp.status_code < 600) {
             rate_limit_retries += 1;
             if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
                 eprintln!(
@@ -364,8 +362,7 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
             tokio::time::sleep(Duration::from_millis(backoff)).await;
             continue;
         }
-
-        if resp.status_code != 206 {
+        if resp.status_code >= 400 && resp.status_code < 500 {
             anyhow::bail!(
                 "Server returned HTTP {} for size probe {url} — expected 206 Partial Content",
                 resp.status_code

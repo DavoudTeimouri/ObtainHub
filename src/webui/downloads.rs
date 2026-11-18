@@ -266,7 +266,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             }
             match req.send() {
                 Ok(resp) => {
-                    if resp.status_code == 429 || matches!(resp.status_code, 502 | 503 | 504) {
+                    if resp.status_code == 429 || (resp.status_code >= 500 && resp.status_code < 600) {
                         rate_limit_retries += 1;
                         consecutive_failures += 1;
                         // Always report current progress on retry so the percentage
@@ -291,6 +291,13 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                         std::thread::sleep(Duration::from_millis(backoff));
                         continue;
                     }
+                    if resp.status_code >= 400 && resp.status_code < 500 {
+                        // Permanent client error (403, 404, 416, etc.) — not retryable.
+                        anyhow::bail!(
+                            "Download failed: server returned HTTP {} for range request {url}",
+                            resp.status_code
+                        );
+                    }
                     break resp;
                 }
                 Err(e) => {
@@ -301,12 +308,6 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                     update_job(registry, id, |j| {
                         j.downloaded = start;
                     });
-                    if chunk_fetch_retries > MAX_CHUNK_FETCH_RETRIES {
-                        return Err(anyhow::anyhow!(
-                            "Download failed: chunk request failed after {} retries at {}/{} bytes: {e}",
-                            chunk_fetch_retries, start, total
-                        ));
-                    }
                     if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
                         eprintln!(
                             "Download stalled at {}/{} bytes ({} consecutive failures): {e}. Retrying in {}s... (press Cancel to stop)",
@@ -330,9 +331,6 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             }
         };
 
-        if resp.status_code != 206 && resp.status_code != 200 {
-            anyhow::bail!("unexpected HTTP {} for range request", resp.status_code);
-        }
         let chunk = resp.as_bytes();
         if chunk.is_empty() {
             // Server returned 206/200 with empty body — transient failure,
@@ -345,16 +343,10 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             update_job(registry, id, |j| {
                 j.downloaded = start;
             });
-            if consecutive_empty_chunks >= MAX_EMPTY_CHUNK_RETRIES {
-                return Err(anyhow::anyhow!(
-                    "Download failed: too many consecutive empty chunks ({} retries) at {}/{} bytes",
-                    MAX_EMPTY_CHUNK_RETRIES, start, total
-                ));
-            }
             if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
                 eprintln!(
                     "Download stalled at {}/{} bytes ({} consecutive empty chunks). \\
-                     Retrying in {}s... (press Ctrl+C to stop)",
+                     Retrying in {}s... (press Cancel to stop)",
                     start,
                     total,
                     consecutive_failures,
