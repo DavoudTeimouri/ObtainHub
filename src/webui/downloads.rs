@@ -268,17 +268,16 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                 Ok(resp) => {
                     if resp.status_code == 429 || matches!(resp.status_code, 502 | 503 | 504) {
                         rate_limit_retries += 1;
-                        if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
-                            anyhow::bail!(
-                                "Download rate limit exceeded: too many {} responses ({} retries) for {url}",
-                                if resp.status_code == 429 { "429" } else { "server error" },
-                                DOWNLOAD_RATE_LIMIT_MAX_RETRIES
-                            );
-                        }
+                        consecutive_failures += 1;
+                        // Always report current progress on retry so the percentage
+                        // doesn't disappear from the WebUI.
+                        update_job(registry, id, |j| {
+                            j.downloaded = start;
+                        });
                         if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
                             eprintln!(
-                                "Download rate limited ({}) for {url} — waiting {}s (retry {}/{})",
-                                resp.status_code, wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                                "Download rate limited ({}) for {url} — waiting {}s (retry {})",
+                                resp.status_code, wait_secs, rate_limit_retries
                             );
                             std::thread::sleep(Duration::from_secs(wait_secs));
                             continue;
@@ -286,8 +285,8 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                         let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
                         let backoff = backoff.min(30_000);
                         eprintln!(
-                            "Download limited ({}) for {url} — backing off {}ms (retry {}/{})",
-                            resp.status_code, backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                            "Download limited ({}) for {url} — backing off {}ms (retry {})",
+                            resp.status_code, backoff, rate_limit_retries
                         );
                         std::thread::sleep(Duration::from_millis(backoff));
                         continue;

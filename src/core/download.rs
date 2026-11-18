@@ -281,16 +281,10 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
 
         if resp.status_code == 429 {
             rate_limit_retries += 1;
-            if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
-                anyhow::bail!(
-                    "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
-                    DOWNLOAD_RATE_LIMIT_MAX_RETRIES
-                );
-            }
             if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
                 eprintln!(
-                    "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
-                    wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                    "Download rate limited (429) for {url} — waiting {}s (retry {})",
+                    wait_secs, rate_limit_retries
                 );
                 tokio::time::sleep(Duration::from_secs(wait_secs)).await;
                 continue;
@@ -298,8 +292,8 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
             let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
             let backoff = backoff.min(30_000);
             eprintln!(
-                "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
-                backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                "Download rate limited (429) for {url} — backing off {}ms (retry {})",
+                backoff, rate_limit_retries
             );
             tokio::time::sleep(Duration::from_millis(backoff)).await;
             continue;
@@ -353,16 +347,10 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
 
         if resp.status_code == 429 {
             rate_limit_retries += 1;
-            if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
-                anyhow::bail!(
-                    "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
-                    DOWNLOAD_RATE_LIMIT_MAX_RETRIES
-                );
-            }
             if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
                 eprintln!(
-                    "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
-                    wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                    "Download rate limited (429) for {url} — waiting {}s (retry {})",
+                    wait_secs, rate_limit_retries
                 );
                 tokio::time::sleep(Duration::from_secs(wait_secs)).await;
                 continue;
@@ -370,8 +358,8 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
             let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
             let backoff = backoff.min(30_000);
             eprintln!(
-                "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
-                backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                "Download rate limited (429) for {url} — backing off {}ms (retry {})",
+                backoff, rate_limit_retries
             );
             tokio::time::sleep(Duration::from_millis(backoff)).await;
             continue;
