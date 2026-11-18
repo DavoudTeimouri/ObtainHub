@@ -297,6 +297,11 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                 Err(e) => {
                     chunk_fetch_retries += 1;
                     consecutive_failures += 1;
+                    // Always report current progress on retry so the percentage
+                    // doesn't disappear from the WebUI.
+                    update_job(registry, id, |j| {
+                        j.downloaded = start;
+                    });
                     if chunk_fetch_retries > MAX_CHUNK_FETCH_RETRIES {
                         return Err(anyhow::anyhow!(
                             "Download failed: chunk request failed after {} retries at {}/{} bytes: {e}",
@@ -310,6 +315,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                         );
                         update_job(registry, id, |j| {
                             j.status = "stalled".to_string();
+                            j.downloaded = start;
                             j.error = Some(format!(
                                 "Download stalled at {}/{} bytes ({} consecutive failures): {e}",
                                 start, total, consecutive_failures
@@ -335,6 +341,11 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             // marking the download complete or hammering in a tight loop.
             consecutive_empty_chunks += 1;
             consecutive_failures += 1;
+            // Always report current progress on retry so the percentage
+            // doesn't disappear from the WebUI.
+            update_job(registry, id, |j| {
+                j.downloaded = start;
+            });
             if consecutive_empty_chunks >= MAX_EMPTY_CHUNK_RETRIES {
                 return Err(anyhow::anyhow!(
                     "Download failed: too many consecutive empty chunks ({} retries) at {}/{} bytes",
@@ -352,6 +363,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                 );
                 update_job(registry, id, |j| {
                     j.status = "stalled".to_string();
+                    j.downloaded = start;
                     j.error = Some(format!(
                         "Download stalled at {}/{} bytes ({} consecutive empty chunks)",
                         start, total, consecutive_failures

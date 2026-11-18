@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.46] - 2026-11-18
+
+RC.46: Download progress no longer disappears on retry. WebUI `download_inner` now writes `downloaded = start` to the registry on every chunk fetch error and empty chunk retry, so the WebUI progress bar and percentage keep showing the bytes already received instead of resetting to 0. Also set `downloaded` on "stalled" status updates. cargo check --release clean, cargo test --release: 63/63 pass.
+
 ## [v3.0.72-rc.45] - 2026-11-18
 
 RC.45: Review follow-ups. Fixed `start_download` manual download path still carrying `Some(600)` overall timeout — changed to `None` like `update_app`. Added retry on transient server errors (502/503/504) in WebUI `download_inner`, not just 429. Split `MAX_EMPTY_CHUNK_RETRIES` into `MAX_EMPTY_CHUNK_RETRIES` (empty chunks) and `MAX_CHUNK_FETCH_RETRIES` (network errors) for clarity. Moved `AtomicUsize` import into `mod tests` (was unused at crate level). Added test `download_inner_retries_on_chunk_fetch_error_then_succeeds` covering 503 retry. cargo check --release clean, cargo test --release: 63/63 pass.
