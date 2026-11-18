@@ -370,6 +370,14 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
         consecutive_empty_chunks = 0;
         consecutive_failures = 0;
         backoff_ms = INITIAL_BACKOFF_MS;
+        // Reset status from "stalled" back to "downloading" after a successful chunk
+        // following a retry (429/5xx/network error/empty chunk).
+        update_job(registry, id, |j| {
+            if j.status == "stalled" {
+                j.status = "downloading".to_string();
+                j.error = None;
+            }
+        });
         file.write_all(chunk)
             .with_context(|| format!("Failed to write chunk to {}", part_path.display()))?;
         start += chunk.len() as u64;

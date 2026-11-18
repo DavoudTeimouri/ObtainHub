@@ -159,6 +159,8 @@ pub async fn run_webui(
         .route("/search", get(routes::search_repos))
         .route("/config/sources", axum::routing::post(routes::post_source))
         .route("/config/sources/*name", axum::routing::delete(routes::delete_source))
+        // Protected cleanup routes
+        .route("/cleanup", axum::routing::post(routes::cleanup))
         // Protected download routes
         .route("/downloads", axum::routing::get(downloads::list_downloads))
         .route("/downloads", axum::routing::post(downloads::start_download))

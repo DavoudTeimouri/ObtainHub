@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::sync::Mutex as TokioMutex;
 use walkdir::WalkDir;
 use uuid::Uuid;
@@ -1317,12 +1318,12 @@ pub async fn update_progress(
                 StatusCode::OK,
                 Json(serde_json::json!({
                     "job_id": job_id,
-                    "status": "completed",
+                    "status": "not_found",
                     "downloaded": 0u64,
                     "total": 0u64,
                     "speed": Option::<u64>::None,
                     "eta": Option::<u64>::None,
-                    "error": Option::<String>::None,
+                    "error": Some("Job not found in registry".to_string()),
                     "label": ""
                 })),
             ).into_response()
@@ -1554,4 +1555,124 @@ Add to management types:
 "#;
     let full = format!("{}\n{}", cli_help, webui_help);
     ([(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")], full)
+}
+
+/// Cleanup request body for WebUI.
+#[derive(Deserialize)]
+pub struct CleanupRequest {
+    pub action: String,
+    pub force: bool,
+}
+
+/// Run cleanup operations via WebUI. Mirrors `ohub cleanup` CLI.
+pub async fn cleanup(
+    State(app_state): State<Arc<crate::webui::AppState>>,
+    Json(body): Json<CleanupRequest>,
+) -> impl IntoResponse {
+    let config_manager = app_state.config_manager.lock().await;
+    let config = config_manager.get();
+    let download_dir = config.download_dir.clone();
+    let install_dir = config.install_dir.clone();
+    drop(config_manager);
+
+    let action = body.action.as_str();
+    let force = body.force;
+    let mut cleaned_count = 0u64;
+    let mut messages: Vec<String> = Vec::new();
+
+    let run_downloads = action == "downloads" || action == "all";
+    let run_repos = action == "repos" || action == "all";
+
+    // Clean old versioned archives in download folder, keeping newest per app.
+    if run_downloads && download_dir.exists() {
+        let mut groups: HashMap<String, Vec<PathBuf>> = HashMap::new();
+        if let Ok(entries) = std::fs::read_dir(&download_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let base = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                groups.entry(base).or_default().push(path);
+            }
+        }
+        for (_, mut files) in groups {
+            if files.len() <= 1 {
+                continue;
+            }
+            files.sort_by(|a, b| {
+                let ma = a.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                let mb = b.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                mb.cmp(&ma)
+            });
+            for path in files.into_iter().skip(1) {
+                if force {
+                    match std::fs::remove_file(&path) {
+                        Ok(_) => {
+                        cleaned_count += 1;
+                        messages.push(format!("Removed old archive: {}", path.display()));
+                        }
+                        Err(e) => messages.push(format!("Failed to remove {}: {}", path.display(), e)),
+                    }
+                } else {
+                    messages.push(format!("[DRY RUN] Would remove old archive: {}", path.display()));
+                }
+            }
+        }
+    }
+
+    // Clean empty repo folders under install_dir/repos (or install_dir itself).
+    if run_repos && install_dir.exists() {
+        let mut empty_dirs: Vec<PathBuf> = Vec::new();
+        for entry in WalkDir::new(&install_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.is_dir() && path != install_dir {
+                if let Ok(rd) = std::fs::read_dir(path) {
+                    if rd.count() == 0 {
+                        empty_dirs.push(path.to_path_buf());
+                    }
+                }
+            }
+        }
+        // Remove deepest first
+        empty_dirs.sort_by(|a, b| b.components().count().cmp(&a.components().count()));
+        for dir in empty_dirs {
+            if force {
+                match std::fs::remove_dir(&dir) {
+                    Ok(_) => {
+                        cleaned_count += 1;
+                        messages.push(format!("Removed empty folder: {}", dir.display()));
+                    }
+                    Err(e) => messages.push(format!("Failed to remove {}: {}", dir.display(), e)),
+                }
+            } else {
+                messages.push(format!("[DRY RUN] Would remove empty folder: {}", dir.display()));
+            }
+        }
+    }
+
+    let dry_run_label = if force { "" } else { " (dry run)" };
+    let summary = format!(
+        "Cleanup{dry_run_label}: {} item(s) cleaned{}",
+        cleaned_count,
+        if cleaned_count > 0 { "" } else { ", nothing to clean" }
+    );
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "action": action,
+            "force": force,
+            "cleaned_count": cleaned_count,
+            "summary": summary,
+            "messages": messages,
+        })),
+    )
 }

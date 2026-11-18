@@ -907,6 +907,13 @@ class ObtainHubUI {
       this.updatingApps.set(repo, { jobId: jobId, status: 'starting', progress: 0 });
       this.loadApps(); // re-render to show updating state immediately
 
+      // Offer a link to the Downloads page to watch progress.
+      this.showToast(
+        'Update started for ' + repo + ' — <a href="#" onclick="document.getElementById(\'navDownloads\').click(); return false;">view download progress</a>',
+        'info',
+        5000
+      );
+
       // Poll for download progress — 3s interval, updates all active jobs.
       const pollAll = async () => {
         for (let i = 0; i < 120; i++) { // poll up to ~6 minutes
@@ -930,7 +937,7 @@ class ObtainHubUI {
                 this.updatingApps.delete(r);
                 this.showToast('Update complete: ' + r + (selectedAsset ? ' (' + selectedAsset.name + ')' : ''), 'success');
                 this.loadApps();
-              } else if (status === 'error') {
+              } else if (status === 'error' || status === 'not_found') {
                 serverError = prog.error || 'Update failed for ' + r;
               } else {
                 allDone = false; // still at least one in progress
@@ -1319,6 +1326,28 @@ class ObtainHubUI {
         saveBtn.textContent = 'Save Changes';
         saveBtn.onclick = () => this.saveConfig();
         wrap.parentNode.insertBefore(saveBtn, wrap.nextSibling);
+      }
+
+      // Add Cleanup button if not already present
+      if (!document.getElementById('cleanupBtn')) {
+        const cleanupBtn = document.createElement('button');
+        cleanupBtn.id = 'cleanupBtn';
+        cleanupBtn.type = 'button';
+        cleanupBtn.className = 'btn btn-secondary';
+        cleanupBtn.textContent = 'Clean Old Downloads & Empty Folders';
+        cleanupBtn.title = 'Remove old versioned archives (keep newest per app) and empty repo folders';
+        cleanupBtn.onclick = async () => {
+          const force = confirm('Permanently delete old download archives and empty folders? This cannot be undone.');
+          if (!force) return;
+          try {
+            const res = await this.api('/cleanup', { method: 'POST', body: { action: 'all', force: true } });
+            this.showToast(res.summary || 'Cleanup complete', 'success');
+            console.log('Cleanup messages:', res.messages || []);
+          } catch (e) {
+            this.showToast('Cleanup failed: ' + e.message, 'error');
+          }
+        };
+        wrap.parentNode.insertBefore(cleanupBtn, wrap.nextSibling);
       }
 
       // Read-only info sections
