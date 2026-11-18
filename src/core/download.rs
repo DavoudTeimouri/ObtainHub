@@ -8,6 +8,32 @@ use std::time::Duration;
 
 use crate::core::config::ConfigManager;
 
+/// HTTP 429 rate limit handling for downloads.
+const DOWNLOAD_RATE_LIMIT_MAX_RETRIES: u32 = 10;
+
+/// Calculate wait time from rate limit headers.
+/// Prefers `Retry-After` (seconds), falls back to `X-RateLimit-Reset` (unix timestamp).
+/// Returns None if headers are missing/invalid.
+fn download_rate_limit_wait_seconds(resp: &minreq::Response) -> Option<u64> {
+    if let Some(retry_after) = resp.headers.get("retry-after") {
+        if let Ok(secs) = retry_after.as_str().trim().parse::<u64>() {
+            return Some(secs.max(1).min(3600));
+        }
+    }
+    if let Some(reset) = resp.headers.get("x-ratelimit-reset") {
+        if let Ok(reset_ts) = reset.as_str().trim().parse::<u64>() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_secs();
+            if reset_ts > now {
+                return Some((reset_ts - now).max(1).min(3600));
+            }
+        }
+    }
+    None
+}
+
 /// Whether the progress bar drops its colours.
 static NO_COLOR: AtomicBool = AtomicBool::new(false);
 
@@ -265,22 +291,52 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
     let token = d.token.map(|s| s.to_string());
     let label = d.label.to_string();
 
-    let resp = minreq::get(&url)
-        .with_header("User-Agent", crate::core::USER_AGENT)
-        .with_header("Range", format!("bytes={start}-{end}"))
-        .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
-        .with_timeout(30_000)
-        .send()
-        .with_context(|| format!("Failed to request {label} ({url})"))?;
+    let mut rate_limit_retries = 0u32;
 
-    if resp.status_code != 206 {
-        anyhow::bail!(
-            "Server returned HTTP {} for range request {url} — expected 206 Partial Content",
-            resp.status_code
-        );
+    loop {
+        let resp = minreq::get(&url)
+            .with_header("User-Agent", crate::core::USER_AGENT)
+            .with_header("Range", format!("bytes={start}-{end}"))
+            .with_header("Authorization", format!("Bearer {}", token.clone().unwrap_or_default()))
+            .with_timeout(30_000)
+            .send()
+            .with_context(|| format!("Failed to request {label} ({url})"))?;
+
+        if resp.status_code == 429 {
+            rate_limit_retries += 1;
+            if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
+                anyhow::bail!(
+                    "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
+                    DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                );
+            }
+            if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
+                eprintln!(
+                    "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
+                    wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                );
+                tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                continue;
+            }
+            let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
+            let backoff = backoff.min(30_000);
+            eprintln!(
+                "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
+                backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+            );
+            tokio::time::sleep(Duration::from_millis(backoff)).await;
+            continue;
+        }
+
+        if resp.status_code != 206 {
+            anyhow::bail!(
+                "Server returned HTTP {} for range request {url} — expected 206 Partial Content",
+                resp.status_code
+            );
+        }
+
+        return Ok(resp.as_bytes().to_vec());
     }
-
-    Ok(resp.as_bytes().to_vec())
 }
 
 /// Path of the part file that caches downloaded chunks.
@@ -305,31 +361,61 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
     let url = d.url.to_string();
     let token = d.token.map(|s| s.to_string());
 
-    let resp = minreq::get(&url)
-        .with_header("User-Agent", crate::core::USER_AGENT)
-        .with_header("Range", "bytes=0-0")
-        .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
-        .with_timeout(30_000)
-        .send()
-        .with_context(|| format!("Failed to request {url}"))?;
+    let mut rate_limit_retries = 0u32;
 
-    if resp.status_code != 206 {
-        anyhow::bail!(
-            "Server returned HTTP {} for size probe {url} — expected 206 Partial Content",
-            resp.status_code
-        );
+    loop {
+        let resp = minreq::get(&url)
+            .with_header("User-Agent", crate::core::USER_AGENT)
+            .with_header("Range", "bytes=0-0")
+            .with_header("Authorization", format!("Bearer {}", token.clone().unwrap_or_default()))
+            .with_timeout(30_000)
+            .send()
+            .with_context(|| format!("Failed to request {url}"))?;
+
+        if resp.status_code == 429 {
+            rate_limit_retries += 1;
+            if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
+                anyhow::bail!(
+                    "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
+                    DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                );
+            }
+            if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
+                eprintln!(
+                    "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
+                    wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                );
+                tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                continue;
+            }
+            let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
+            let backoff = backoff.min(30_000);
+            eprintln!(
+                "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
+                backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+            );
+            tokio::time::sleep(Duration::from_millis(backoff)).await;
+            continue;
+        }
+
+        if resp.status_code != 206 {
+            anyhow::bail!(
+                "Server returned HTTP {} for size probe {url} — expected 206 Partial Content",
+                resp.status_code
+            );
+        }
+
+        let content_range = resp
+            .headers
+            .get("content-range")
+            .map(|v| v.as_str())
+            .unwrap_or("");
+        return total_from_content_range(content_range).ok_or_else(|| {
+            anyhow::anyhow!(
+                "The server at {url} did not report the file size, so the download cannot be resumed"
+            )
+        });
     }
-
-    let content_range = resp
-        .headers
-        .get("content-range")
-        .map(|v| v.as_str())
-        .unwrap_or("");
-    total_from_content_range(content_range).ok_or_else(|| {
-        anyhow::anyhow!(
-            "The server at {url} did not report the file size, so the download cannot be resumed"
-        )
-    })
 }
 
 /// `Content-Range: bytes 0-0/12345` -> `12345`.

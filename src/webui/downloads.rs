@@ -46,6 +46,32 @@ pub struct StartDownloadResponse {
 
 const CHUNK_SIZE: u64 = 256 * 1024;
 
+/// HTTP 429 rate limit handling for downloads.
+const DOWNLOAD_RATE_LIMIT_MAX_RETRIES: u32 = 10;
+
+/// Calculate wait time from rate limit headers.
+/// Prefers `Retry-After` (seconds), falls back to `X-RateLimit-Reset` (unix timestamp).
+/// Returns None if headers are missing/invalid.
+fn download_rate_limit_wait_seconds(resp: &minreq::Response) -> Option<u64> {
+    if let Some(retry_after) = resp.headers.get("retry-after") {
+        if let Ok(secs) = retry_after.as_str().trim().parse::<u64>() {
+            return Some(secs.max(1).min(3600));
+        }
+    }
+    if let Some(reset) = resp.headers.get("x-ratelimit-reset") {
+        if let Ok(reset_ts) = reset.as_str().trim().parse::<u64>() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_secs();
+            if reset_ts > now {
+                return Some((reset_ts - now).max(1).min(3600));
+            }
+        }
+    }
+    None
+}
+
 /// After this many consecutive empty chunks, print a stall notification.
 const STALL_NOTIFY_THRESHOLD: u32 = 5;
 /// Initial backoff between empty-chunk retries.
@@ -228,6 +254,8 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
     // Default overall timeout if none specified (10 minutes) to prevent indefinite stalls.
     let overall_timeout = overall_timeout.or(Some(Duration::from_secs(600)));
 
+    let mut rate_limit_retries = 0u32;
+
     loop {
         // Check overall timeout before each chunk.
         if let Some(timeout) = overall_timeout {
@@ -246,13 +274,46 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             anyhow::bail!("cancelled");
         }
         let end = if total > 0 { (start + CHUNK_SIZE - 1).min(total - 1) } else { start + CHUNK_SIZE - 1 };
-        let resp = minreq::get(url)
-            .with_header("User-Agent", crate::core::USER_AGENT)
-            .with_header("Range", format!("bytes={start}-{end}"))
-            .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
-            .with_timeout(30_000)
-            .send()
-            .context("chunk request failed")?;
+
+        // Inner loop for 429 rate limit handling
+        let resp = loop {
+            let resp = minreq::get(url)
+                .with_header("User-Agent", crate::core::USER_AGENT)
+                .with_header("Range", format!("bytes={start}-{end}"))
+                .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
+                .with_timeout(30_000)
+                .send()
+                .context("chunk request failed")?;
+
+            if resp.status_code == 429 {
+                rate_limit_retries += 1;
+                if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
+                    anyhow::bail!(
+                        "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
+                        DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                    );
+                }
+                if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
+                    eprintln!(
+                        "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
+                        wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                    );
+                    std::thread::sleep(Duration::from_secs(wait_secs));
+                    continue;
+                }
+                let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
+                let backoff = backoff.min(30_000);
+                eprintln!(
+                    "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
+                    backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                );
+                std::thread::sleep(Duration::from_millis(backoff));
+                continue;
+            }
+
+            break resp;
+        };
+
         if resp.status_code != 206 && resp.status_code != 200 {
             anyhow::bail!("unexpected HTTP {} for range request", resp.status_code);
         }
@@ -373,29 +434,59 @@ pub async fn cancel_download(
 
 /// Probe the server for file size.
 fn probe_size(url: &str, token: Option<&str>) -> anyhow::Result<u64> {
-    let mut req = minreq::get(url)
-        .with_header("Range", "bytes=0-0")
-        .with_header("User-Agent", crate::core::USER_AGENT)
-        .with_timeout(30_000);
+    let mut rate_limit_retries = 0u32;
 
-    if let Some(token) = token {
-        req = req.with_header("Authorization", format!("Bearer {}", token));
+    loop {
+        let mut req = minreq::get(url)
+            .with_header("Range", "bytes=0-0")
+            .with_header("User-Agent", crate::core::USER_AGENT)
+            .with_timeout(30_000);
+
+        if let Some(token) = token {
+            req = req.with_header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = req.send().context("Failed to probe size")?;
+
+        if response.status_code == 429 {
+            rate_limit_retries += 1;
+            if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
+                anyhow::bail!(
+                    "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
+                    DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                );
+            }
+            if let Some(wait_secs) = download_rate_limit_wait_seconds(&response) {
+                eprintln!(
+                    "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
+                    wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                );
+                std::thread::sleep(Duration::from_secs(wait_secs));
+                continue;
+            }
+            let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
+            let backoff = backoff.min(30_000);
+            eprintln!(
+                "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
+                backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+            );
+            std::thread::sleep(Duration::from_millis(backoff));
+            continue;
+        }
+
+        if response.status_code != 206 {
+            anyhow::bail!("Server returned HTTP {} for size probe — expected 206 Partial Content", response.status_code);
+        }
+
+        let content_range = response
+            .headers
+            .get("content-range")
+            .map(|v| v.as_str())
+            .unwrap_or("");
+
+        return total_from_content_range(content_range)
+            .ok_or_else(|| anyhow::anyhow!("Server did not report file size"));
     }
-
-    let response = req.send().context("Failed to probe size")?;
-
-    if response.status_code != 206 {
-        anyhow::bail!("Server returned HTTP {} for size probe — expected 206 Partial Content", response.status_code);
-    }
-
-    let content_range = response
-        .headers
-        .get("content-range")
-        .map(|v| v.as_str())
-        .unwrap_or("");
-
-    total_from_content_range(content_range)
-        .ok_or_else(|| anyhow::anyhow!("Server did not report file size"))
 }
 
 /// Parse Content-Range header.

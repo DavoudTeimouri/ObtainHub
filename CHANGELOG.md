@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.42] - 2026-11-17
+
+RC.42: WebUI background action logging. `ohub webui` now spawns a background task that logs active download/install jobs to the terminal every 3s (label, bytes, %, speed, ETA), covering both `downloading`/`stalled` and `installing` statuses. Cargo.toml, NSIS, MSI, index.html, CHANGELOG bumped.
+
 ## [v3.0.72-rc.41] - 2026-11-17
 
 RC.41: HTTP 429 rate limit handling + WebUI background download messaging. CLI fetch_chunk()/probe_size() retry on 429 with Retry-After/X-RateLimit-Reset headers. WebUI download_inner() same 429 retry handling. WebUI run_webui() background task logs download progress every 3s to terminal (label, bytes, %, speed, ETA). Registries github_get_with_retry() for API calls with 429 handling. cargo test --release: 61/61 pass.

@@ -129,6 +129,7 @@ pub async fn run_webui(
         warn!("Failed to write WebUI PID file: {e}");
     }
 
+    let downloads_log = app_state.downloads.clone();
     let app = Router::new()
         // Public read-only routes
         .route("/", get(spa))
@@ -231,6 +232,50 @@ pub async fn run_webui(
         let _ = std::process::Command::new(opener)
             .args(&opener_args)
             .spawn();
+    });
+
+    // Background task: log download/install progress to the terminal every 3s
+    // so the user running `ohub webui` can see what is happening, with speed and ETA.
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            let map = match downloads_log.lock() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let active: Vec<_> = map.values().filter(|j| {
+                matches!(j.status.as_str(), "downloading" | "stalled" | "installing")
+            }).collect();
+            if active.is_empty() {
+                continue;
+            }
+            for job in &active {
+                let pct = if job.total > 0 {
+                    (job.downloaded as f64 / job.total as f64 * 100.0) as u64
+                } else {
+                    0
+                };
+                let speed_str = job.speed.map_or_else(
+                    || "—".to_string(),
+                    |s| format!("{} B/s", s),
+                );
+                let eta_str = job.eta.map_or_else(
+                    || "—".to_string(),
+                    |e| format!("{}s", e),
+                );
+                let action = match job.status.as_str() {
+                    "installing" => "Installing",
+                    "stalled" => "Stalled",
+                    _ => "Downloading",
+                };
+                info!(
+                    "{} {}: {}/{} bytes ({}%) — {} — ETA {}",
+                    action, job.label, job.downloaded, job.total, pct, speed_str, eta_str
+                );
+            }
+        }
     });
 
     // Serve until Ctrl+C. On the signal the server future is dropped, which
