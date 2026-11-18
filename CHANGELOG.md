@@ -2,13 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.0.72-rc.42] - 2026-11-17
+## [v3.0.72-rc.43] - 2026-11-18
 
-RC.42: WebUI background action logging. `ohub webui` now spawns a background task that logs active download/install jobs to the terminal every 3s (label, bytes, %, speed, ETA), covering both `downloading`/`stalled` and `installing` statuses. Cargo.toml, NSIS, MSI, index.html, CHANGELOG bumped.
+RC.43: Review follow-ups. Extracted shared rate-limit module `core/rate_limit.rs` used by both CLI and WebUI download paths (eliminates duplication). Fixed empty `Authorization: Bearer` header — only sent when token present. Removed unused variables (`prerelease`, `asset_size`) in `routes.rs`. Added test `download_inner_retries_on_429_then_succeeds` verifying download succeeds after 429 retry. cargo check --release clean, cargo test --release: 62/62 pass.
+
+## [v3.0.72-rc.42] - 2026-11-18
+
+RC.42: Download 429 rate limit handling + WebUI background action logging. All four download paths (CLI fetch_chunk/probe_size, WebUI download_inner/probe_size) retry on HTTP 429 with Retry-After/X-RateLimit-Reset headers, exponential backoff fallback, max 10 retries — fixes downloads failing at ~30% on large files due to GitHub CDN rate limiting. WebUI run_webui() background task logs active download/install jobs every 3s (label, bytes, %, speed, ETA). Shared rate-limit logic in core/rate_limit.rs. Only adds Authorization header when token present. cargo check --release clean, cargo test --release: 61/61 pass.
 
 ## [v3.0.72-rc.41] - 2026-11-17
 
-RC.41: HTTP 429 rate limit handling + WebUI background download messaging. CLI fetch_chunk()/probe_size() retry on 429 with Retry-After/X-RateLimit-Reset headers. WebUI download_inner() same 429 retry handling. WebUI run_webui() background task logs download progress every 3s to terminal (label, bytes, %, speed, ETA). Registries github_get_with_retry() for API calls with 429 handling. cargo test --release: 61/61 pass.
+RC.41: HTTP 429 rate limit handling for GitHub API calls — `github_get_with_retry()` in `registries.rs` retries on 429 with Retry-After/X-RateLimit-Reset headers. All three API call sites (latest release, release by tag, prerelease) use it. cargo test --release: 61/61 pass.
 
 ## [v3.0.72-rc.40] - 2026-11-17
 

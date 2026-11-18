@@ -1,4 +1,5 @@
 pub mod config;
+pub mod rate_limit;
 pub mod state;
 pub mod logger;
 pub mod assets;

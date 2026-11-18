@@ -7,32 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::core::config::ConfigManager;
-
-/// HTTP 429 rate limit handling for downloads.
-const DOWNLOAD_RATE_LIMIT_MAX_RETRIES: u32 = 10;
-
-/// Calculate wait time from rate limit headers.
-/// Prefers `Retry-After` (seconds), falls back to `X-RateLimit-Reset` (unix timestamp).
-/// Returns None if headers are missing/invalid.
-fn download_rate_limit_wait_seconds(resp: &minreq::Response) -> Option<u64> {
-    if let Some(retry_after) = resp.headers.get("retry-after") {
-        if let Ok(secs) = retry_after.as_str().trim().parse::<u64>() {
-            return Some(secs.max(1).min(3600));
-        }
-    }
-    if let Some(reset) = resp.headers.get("x-ratelimit-reset") {
-        if let Ok(reset_ts) = reset.as_str().trim().parse::<u64>() {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()?
-                .as_secs();
-            if reset_ts > now {
-                return Some((reset_ts - now).max(1).min(3600));
-            }
-        }
-    }
-    None
-}
+use crate::core::rate_limit::{download_rate_limit_wait_seconds, DOWNLOAD_RATE_LIMIT_MAX_RETRIES};
 
 /// Whether the progress bar drops its colours.
 static NO_COLOR: AtomicBool = AtomicBool::new(false);
@@ -294,12 +269,14 @@ async fn fetch_chunk(d: &Download<'_>, start: u64, end: u64) -> Result<Vec<u8>> 
     let mut rate_limit_retries = 0u32;
 
     loop {
-        let resp = minreq::get(&url)
+        let mut req = minreq::get(&url)
             .with_header("User-Agent", crate::core::USER_AGENT)
             .with_header("Range", format!("bytes={start}-{end}"))
-            .with_header("Authorization", format!("Bearer {}", token.clone().unwrap_or_default()))
-            .with_timeout(30_000)
-            .send()
+            .with_timeout(30_000);
+        if let Some(token) = &token {
+            req = req.with_header("Authorization", format!("Bearer {}", token));
+        }
+        let resp = req.send()
             .with_context(|| format!("Failed to request {label} ({url})"))?;
 
         if resp.status_code == 429 {
@@ -364,12 +341,14 @@ async fn probe_size(d: &Download<'_>) -> Result<u64> {
     let mut rate_limit_retries = 0u32;
 
     loop {
-        let resp = minreq::get(&url)
+        let mut req = minreq::get(&url)
             .with_header("User-Agent", crate::core::USER_AGENT)
             .with_header("Range", "bytes=0-0")
-            .with_header("Authorization", format!("Bearer {}", token.clone().unwrap_or_default()))
-            .with_timeout(30_000)
-            .send()
+            .with_timeout(30_000);
+        if let Some(token) = &token {
+            req = req.with_header("Authorization", format!("Bearer {}", token));
+        }
+        let resp = req.send()
             .with_context(|| format!("Failed to request {url}"))?;
 
         if resp.status_code == 429 {

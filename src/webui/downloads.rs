@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
+use crate::core::rate_limit::{download_rate_limit_wait_seconds, DOWNLOAD_RATE_LIMIT_MAX_RETRIES};
 
 /// One tracked download job. `cancel` is runtime-only, never serialized.
 #[derive(Serialize, Clone)]
@@ -45,32 +46,6 @@ pub struct StartDownloadResponse {
 }
 
 const CHUNK_SIZE: u64 = 256 * 1024;
-
-/// HTTP 429 rate limit handling for downloads.
-const DOWNLOAD_RATE_LIMIT_MAX_RETRIES: u32 = 10;
-
-/// Calculate wait time from rate limit headers.
-/// Prefers `Retry-After` (seconds), falls back to `X-RateLimit-Reset` (unix timestamp).
-/// Returns None if headers are missing/invalid.
-fn download_rate_limit_wait_seconds(resp: &minreq::Response) -> Option<u64> {
-    if let Some(retry_after) = resp.headers.get("retry-after") {
-        if let Ok(secs) = retry_after.as_str().trim().parse::<u64>() {
-            return Some(secs.max(1).min(3600));
-        }
-    }
-    if let Some(reset) = resp.headers.get("x-ratelimit-reset") {
-        if let Ok(reset_ts) = reset.as_str().trim().parse::<u64>() {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()?
-                .as_secs();
-            if reset_ts > now {
-                return Some((reset_ts - now).max(1).min(3600));
-            }
-        }
-    }
-    None
-}
 
 /// After this many consecutive empty chunks, print a stall notification.
 const STALL_NOTIFY_THRESHOLD: u32 = 5;
@@ -277,13 +252,14 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
 
         // Inner loop for 429 rate limit handling
         let resp = loop {
-            let resp = minreq::get(url)
+            let mut req = minreq::get(url)
                 .with_header("User-Agent", crate::core::USER_AGENT)
                 .with_header("Range", format!("bytes={start}-{end}"))
-                .with_header("Authorization", format!("Bearer {}", token.unwrap_or_default()))
-                .with_timeout(30_000)
-                .send()
-                .context("chunk request failed")?;
+                .with_timeout(30_000);
+            if let Some(token) = token {
+                req = req.with_header("Authorization", format!("Bearer {}", token));
+            }
+            let resp = req.send().context("chunk request failed")?;
 
             if resp.status_code == 429 {
                 rate_limit_retries += 1;
@@ -674,6 +650,75 @@ mod tests {
 
     fn new_registry() -> DownloadRegistry {
         Arc::new(Mutex::new(HashMap::new()))
+    }
+
+    #[test]
+    fn download_inner_retries_on_429_then_succeeds() {
+        let body = vec![7u8; 100_000]; // 100KB
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = body.to_vec();
+        let attempt = Arc::new(AtomicUsize::new(0));
+        let attempt_clone = attempt.clone();
+        let body_clone = body.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = match stream { Ok(s) => s, Err(_) => break };
+                let mut buf = [0u8; 8192];
+                let _ = stream.read(&mut buf);
+                let a = attempt_clone.fetch_add(1, Ordering::Relaxed);
+                if a == 0 {
+                    // First request: 429 rate limited
+                    let head = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 0\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    let _ = stream.write_all(head.as_bytes());
+                } else {
+                    // Second request: success with full body
+                    let head = format!(
+                        "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes 0-{}/{}\r\nConnection: close\r\n\r\n",
+                        body_clone.len(), body_clone.len() - 1, body_clone.len()
+                    );
+                    let _ = stream.write_all(head.as_bytes());
+                    let _ = stream.write_all(&body_clone);
+                }
+            }
+        });
+        let url = format!("http://{addr}/file.bin");
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        let part = dest.with_extension("part");
+        let registry = new_registry();
+        let id = "job_429".to_string();
+        let cancel = AtomicBool::new(false);
+        let run = DownloadRun {
+            url: &url,
+            token: None,
+            dest: &dest,
+            part_path: &part,
+            registry: &registry,
+            id: &id,
+            cancel: &cancel,
+            bandwidth_limit: None,
+            overall_timeout_secs: Some(300),
+            total_size: Some(body.len() as u64),
+        };
+        registry.lock().unwrap().insert(id.clone(), DownloadJob {
+            id: id.clone(),
+            url: url.clone(),
+            label: "test".to_string(),
+            dest: dest.display().to_string(),
+            total: 0,
+            downloaded: 0,
+            status: "starting".to_string(),
+            speed: None,
+            eta: None,
+            error: None,
+            cancel: Arc::new(AtomicBool::new(false)),
+        });
+        let result = download_inner(&run);
+        assert!(result.is_ok(), "download should succeed after 429 retry: {result:?}");
+        assert_eq!(attempt.load(Ordering::Relaxed), 2, "should retry once after 429");
+        let written = std::fs::read(&dest).unwrap();
+        assert_eq!(written, body, "file content should match");
     }
 
     #[test]

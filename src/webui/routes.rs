@@ -1008,7 +1008,6 @@ pub async fn update_app(
     let repo = body.repo;
     let asset_name = body.asset.clone();
     let arch = parse_arch(body.arch.as_deref());
-    let prerelease = body.prerelease;
 
     let (token, download_dir, install_dir) = {
         let cm = app_state.config_manager.lock().await;
@@ -1101,7 +1100,6 @@ pub async fn update_app(
     let repo_clone = repo.clone();
     let asset_clone = asset.clone();
     let asset_name_for_response = asset.name.clone();
-    let asset_size = asset.size;
     let release_tag_name_clone = release_tag_name.clone();
 
     // Create the download job in the registry so the frontend can poll progress
