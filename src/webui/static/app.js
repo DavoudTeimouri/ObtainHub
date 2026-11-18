@@ -932,14 +932,15 @@ class ObtainHubUI {
               const prog = await this.api('/apps/update-progress?job_id=' + encodeURIComponent(info.jobId));
               if (!prog) continue;
               const status = prog.status || '';
-              const d = prog.downloaded || 0;
-              const t = prog.total || 0;
-              const pct = t > 0 ? Math.round((d / t) * 100) : 0;
+              const prevStatus = info.status;
               info.status = status;
-              info.progress = pct;
+              info.progress = prog.downloaded || 0;
 
-              // Re-render apps so the row shows current status
-              this.loadApps();
+              // Re-render apps only when status actually changes — no page
+              // refresh on every poll tick.
+              if (prevStatus !== status) {
+                this.loadApps();
+              }
 
               if (status === 'completed') {
                 this.updatingApps.delete(r);
@@ -968,7 +969,7 @@ class ObtainHubUI {
           const noticeText = document.getElementById('activeUpdatesText');
           if (notice && noticeText) {
             if (!allDone && activeList.length > 0) {
-              noticeText.textContent = activeList.join(' • ') + ' — ' + (activeList.length === 1 ? 'updating' : 'updating');
+              noticeText.textContent = activeList.join(' • ');
               notice.style.display = 'block';
             } else if (allDone) {
               notice.style.display = 'none';

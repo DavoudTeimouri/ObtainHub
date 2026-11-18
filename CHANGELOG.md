@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.51] - 2026-11-18
+
+RC.51: WebUI — no page refresh during download/update, simple status text.
+
+1. Removed `loadApps()` from active polling loop — page no longer refreshes every 3s during updates/downloads. Table re-renders only when status actually changes (downloading → installing → completed/error).
+2. Removed % percentage from status — row shows simple "Updating: downloading" / "Updating: installing" text.
+3. Bottom notification banner still shows active updates with dismiss button.
+
+cargo check --release clean, cargo test --release: 63/63 pass.
+
 ## [v3.0.72-rc.50] - 2026-11-18
 
 RC.50: WebUI UX — progress moved out of Managed Applications rows, bottom notification added.
