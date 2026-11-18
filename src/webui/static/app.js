@@ -676,8 +676,7 @@ class ObtainHubUI {
         let btnsDisabled = '';
         let rowStatus = app.status || 'unknown';
         if (updating) {
-          const pct = updating.progress && updating.progress > 0 ? ' ' + updating.progress + '%' : '';
-          progressHtml = '<br><span class="update-progress">Updating: ' + updating.status + pct + '</span>';
+          progressHtml = '<br><span class="update-progress">Updating: ' + updating.status + '</span>';
           btnsDisabled = ' disabled';
           rowStatus = 'updating';
         }
@@ -907,6 +906,14 @@ class ObtainHubUI {
       this.updatingApps.set(repo, { jobId: jobId, status: 'starting', progress: 0 });
       this.loadApps(); // re-render to show updating state immediately
 
+      // Show bottom notification immediately
+      const notice = document.getElementById('activeUpdatesNotice');
+      const noticeText = document.getElementById('activeUpdatesText');
+      if (notice && noticeText) {
+        noticeText.textContent = repo + ' (starting)';
+        notice.style.display = 'block';
+      }
+
       // Offer a link to the Downloads page to watch progress.
       this.showToast(
         'Update started for ' + repo + ' — <a href="#" onclick="document.getElementById(\'navDownloads\').click(); return false;">view download progress</a>',
@@ -918,6 +925,7 @@ class ObtainHubUI {
       const pollAll = async () => {
         for (let i = 0; i < 120; i++) { // poll up to ~6 minutes
           let allDone = true;
+          const activeList = [];
           for (const [r, info] of this.updatingApps.entries()) {
             let serverError = null;
             try {
@@ -930,7 +938,7 @@ class ObtainHubUI {
               info.status = status;
               info.progress = pct;
 
-              // Re-render apps so the row shows current progress
+              // Re-render apps so the row shows current status
               this.loadApps();
 
               if (status === 'completed') {
@@ -941,9 +949,12 @@ class ObtainHubUI {
                 serverError = prog.error || 'Update failed for ' + r;
               } else {
                 allDone = false; // still at least one in progress
+                activeList.push(r + ' (' + status + ')');
               }
             } catch (e) {
               // fetch/network blip — continue polling
+              allDone = false;
+              activeList.push(r + ' (' + info.status + ')');
             }
             if (serverError) {
               this.updatingApps.delete(r);
@@ -951,6 +962,19 @@ class ObtainHubUI {
               this.loadApps();
             }
           }
+
+          // Show/hide bottom notification for active updates
+          const notice = document.getElementById('activeUpdatesNotice');
+          const noticeText = document.getElementById('activeUpdatesText');
+          if (notice && noticeText) {
+            if (!allDone && activeList.length > 0) {
+              noticeText.textContent = activeList.join(' • ') + ' — ' + (activeList.length === 1 ? 'updating' : 'updating');
+              notice.style.display = 'block';
+            } else if (allDone) {
+              notice.style.display = 'none';
+            }
+          }
+
           if (allDone) break;
           await new Promise(r => setTimeout(r, 3000));
         }
@@ -961,6 +985,8 @@ class ObtainHubUI {
           }
           this.updatingApps.clear();
           this.loadApps();
+          const notice = document.getElementById('activeUpdatesNotice');
+          if (notice) notice.style.display = 'none';
         }
       };
 

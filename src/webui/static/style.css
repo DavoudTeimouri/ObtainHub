@@ -1263,3 +1263,40 @@ a:hover {
   background: currentColor;
 }
 
+/* Active updates bottom notification */
+.active-updates-notice {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--accent);
+  color: #fff;
+  z-index: 1000;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
+}
+.active-updates-notice .notice-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.active-updates-notice .notice-icon {
+  font-size: 16px;
+}
+.active-updates-notice .notice-text {
+  flex: 1;
+}
+.active-updates-notice .notice-close {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 4px;
+  line-height: 1;
+}
+

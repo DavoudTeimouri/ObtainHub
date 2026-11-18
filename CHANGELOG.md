@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.50] - 2026-11-18
+
+RC.50: WebUI UX — progress moved out of Managed Applications rows, bottom notification added.
+
+1. Removed % progress from Managed Applications table rows — buttons stay disabled during update/download, status badge shows "updating" instead.
+2. Added bottom notification banner ("active-updates-notice") showing which apps are currently updating/downloading, with dismiss button. Shows immediately when an update starts, updates during polling, hides when all done.
+3. Added `POST /cleanup` WebUI endpoint + Cleanup button on Configuration page (old download archives + empty repo folders).
+4. Update start toast offers link to Downloads page to watch progress.
+
+cargo check --release clean, cargo test --release: 63/63 pass.
+
 ## [v3.0.72-rc.49] - 2026-11-18
 
 RC.49: Fix WebUI download progress disappearing on 429 retry + cleanup WebUI + download page link.
