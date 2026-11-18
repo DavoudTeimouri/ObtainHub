@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 use crate::core::rate_limit::{download_rate_limit_wait_seconds, DOWNLOAD_RATE_LIMIT_MAX_RETRIES};
@@ -55,6 +55,8 @@ const INITIAL_BACKOFF_MS: u64 = 1000;
 const MAX_BACKOFF_MS: u64 = 30_000;
 /// Maximum consecutive empty chunks before giving up (prevents indefinite stall).
 const MAX_EMPTY_CHUNK_RETRIES: u32 = 60;
+/// Maximum consecutive chunk fetch errors (timeouts, resets) before giving up.
+const MAX_CHUNK_FETCH_RETRIES: u32 = 60;
 
 /// Extract a safe file name from the requested dest (both path separators),
 /// falling back to the URL's last segment. Only this name is joined onto the
@@ -113,7 +115,7 @@ pub async fn start_download(
     let url = req.url;
     let token = req.token;
     tokio::task::spawn_blocking(move || {
-        run_download(registry, id, url, dest, token, cancel, bandwidth_limit, Some(600));
+        run_download(registry, id, url, dest, token, cancel, bandwidth_limit, None);
     });
 
     (StatusCode::OK, Json(StartDownloadResponse { id: job_id, status: "started".to_string() })).into_response()
@@ -264,18 +266,19 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             }
             match req.send() {
                 Ok(resp) => {
-                    if resp.status_code == 429 {
+                    if resp.status_code == 429 || matches!(resp.status_code, 502 | 503 | 504) {
                         rate_limit_retries += 1;
                         if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
                             anyhow::bail!(
-                                "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
+                                "Download rate limit exceeded: too many {} responses ({} retries) for {url}",
+                                if resp.status_code == 429 { "429" } else { "server error" },
                                 DOWNLOAD_RATE_LIMIT_MAX_RETRIES
                             );
                         }
                         if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
                             eprintln!(
-                                "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
-                                wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                                "Download rate limited ({}) for {url} — waiting {}s (retry {}/{})",
+                                resp.status_code, wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
                             );
                             std::thread::sleep(Duration::from_secs(wait_secs));
                             continue;
@@ -283,8 +286,8 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                         let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
                         let backoff = backoff.min(30_000);
                         eprintln!(
-                            "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
-                            backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                            "Download limited ({}) for {url} — backing off {}ms (retry {}/{})",
+                            resp.status_code, backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
                         );
                         std::thread::sleep(Duration::from_millis(backoff));
                         continue;
@@ -294,7 +297,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                 Err(e) => {
                     chunk_fetch_retries += 1;
                     consecutive_failures += 1;
-                    if chunk_fetch_retries > MAX_EMPTY_CHUNK_RETRIES {
+                    if chunk_fetch_retries > MAX_CHUNK_FETCH_RETRIES {
                         return Err(anyhow::anyhow!(
                             "Download failed: chunk request failed after {} retries at {}/{} bytes: {e}",
                             chunk_fetch_retries, start, total
@@ -636,6 +639,7 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn dest_file_name_strips_windows_and_unix_paths() {
@@ -749,6 +753,75 @@ mod tests {
         let result = download_inner(&run);
         assert!(result.is_ok(), "download should succeed after 429 retry: {result:?}");
         assert_eq!(attempt.load(Ordering::Relaxed), 2, "should retry once after 429");
+        let written = std::fs::read(&dest).unwrap();
+        assert_eq!(written, body, "file content should match");
+    }
+
+    #[test]
+    fn download_inner_retries_on_chunk_fetch_error_then_succeeds() {
+        let body = vec![7u8; 50_000]; // 50KB
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = body.to_vec();
+        let attempt = Arc::new(AtomicUsize::new(0));
+        let attempt_clone = attempt.clone();
+        let body_clone = body.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = match stream { Ok(s) => s, Err(_) => break };
+                let mut buf = [0u8; 8192];
+                let _ = stream.read(&mut buf);
+                let a = attempt_clone.fetch_add(1, Ordering::Relaxed);
+                if a == 0 {
+                    // First request: 503 server error → retry
+                    let head = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    let _ = stream.write_all(head.as_bytes());
+                } else {
+                    // Second request: success with full body
+                    let head = format!(
+                        "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes 0-{}/{}\r\nConnection: close\r\n\r\n",
+                        body_clone.len(), body_clone.len() - 1, body_clone.len()
+                    );
+                    let _ = stream.write_all(head.as_bytes());
+                    let _ = stream.write_all(&body_clone);
+                }
+            }
+        });
+        let url = format!("http://{addr}/file.bin");
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        let part = dest.with_extension("part");
+        let registry = new_registry();
+        let id = "job_chunk_err".to_string();
+        let cancel = AtomicBool::new(false);
+        let run = DownloadRun {
+            url: &url,
+            token: None,
+            dest: &dest,
+            part_path: &part,
+            registry: &registry,
+            id: &id,
+            cancel: &cancel,
+            bandwidth_limit: None,
+            overall_timeout_secs: None,
+            total_size: Some(body.len() as u64),
+        };
+        registry.lock().unwrap().insert(id.clone(), DownloadJob {
+            id: id.clone(),
+            url: url.clone(),
+            label: "test".to_string(),
+            dest: dest.display().to_string(),
+            total: 0,
+            downloaded: 0,
+            status: "starting".to_string(),
+            speed: None,
+            eta: None,
+            error: None,
+            cancel: Arc::new(AtomicBool::new(false)),
+        });
+        let result = download_inner(&run);
+        assert!(result.is_ok(), "download should succeed after chunk fetch error retry: {result:?}");
+        assert_eq!(attempt.load(Ordering::Relaxed), 2, "should retry once after send error");
         let written = std::fs::read(&dest).unwrap();
         assert_eq!(written, body, "file content should match");
     }

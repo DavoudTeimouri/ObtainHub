@@ -2,9 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.45] - 2026-11-18
+
+RC.45: Review follow-ups. Fixed `start_download` manual download path still carrying `Some(600)` overall timeout — changed to `None` like `update_app`. Added retry on transient server errors (502/503/504) in WebUI `download_inner`, not just 429. Split `MAX_EMPTY_CHUNK_RETRIES` into `MAX_EMPTY_CHUNK_RETRIES` (empty chunks) and `MAX_CHUNK_FETCH_RETRIES` (network errors) for clarity. Moved `AtomicUsize` import into `mod tests` (was unused at crate level). Added test `download_inner_retries_on_chunk_fetch_error_then_succeeds` covering 503 retry. cargo check --release clean, cargo test --release: 63/63 pass.
+
 ## [v3.0.72-rc.44] - 2026-11-18
 
-RC.44: Download retry on slow/stalled connections. WebUI `download_inner` retries chunk fetch errors (timeouts, connection resets) with exponential backoff instead of bailing immediately — at 400 B/s a 256KiB chunk takes ~10 min and previously hit the 30s request timeout and died. Per-chunk timeout raised to 300s. Removed default 600s overall timeout (slow downloads can take hours; user cancels via Cancel button). Chunk fetch errors report "stalled" status to registry so WebUI shows the error. cargo check --release clean, cargo test --release: 62/62 pass.
+RC.44: Download retry on slow/stalled connections. WebUI `download_inner` retries chunk fetch errors (timeouts, connection resets) with exponential backoff instead of bailing immediately — at 400 B/s a 256KiB chunk takes ~10 min and previously hit the 30s request timeout and died. Per-chunk timeout raised to 300s. Removed default 600s overall timeout for both `start_download` (manual downloads) and `update_app` (app updates) — slow downloads can take hours; user cancels via Cancel button. Chunk fetch errors report "stalled" status to registry so WebUI shows the error. cargo check --release clean, cargo test --release: 63/63 pass.
 
 ## [v3.0.72-rc.43] - 2026-11-18
 
