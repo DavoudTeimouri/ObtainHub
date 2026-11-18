@@ -226,8 +226,6 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
     // a stalled download from hanging forever without reporting an error.
     let started_at = Instant::now();
     let overall_timeout = overall_timeout_secs.map(Duration::from_secs);
-    // Default overall timeout if none specified (10 minutes) to prevent indefinite stalls.
-    let overall_timeout = overall_timeout.or(Some(Duration::from_secs(600)));
 
     let mut rate_limit_retries = 0u32;
 
@@ -250,44 +248,78 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
         }
         let end = if total > 0 { (start + CHUNK_SIZE - 1).min(total - 1) } else { start + CHUNK_SIZE - 1 };
 
-        // Inner loop for 429 rate limit handling
+        // Inner loop for 429 rate limit handling and transient chunk errors.
+        // Chunk fetch errors (timeouts, connection resets) are retried with
+        // backoff instead of failing the whole download — slow connections
+        // (e.g. 400 B/s) take minutes per chunk and would otherwise hit the
+        // request timeout and die with no retry.
+        let mut chunk_fetch_retries = 0u32;
         let resp = loop {
             let mut req = minreq::get(url)
                 .with_header("User-Agent", crate::core::USER_AGENT)
                 .with_header("Range", format!("bytes={start}-{end}"))
-                .with_timeout(30_000);
+                .with_timeout(300_000);
             if let Some(token) = token {
                 req = req.with_header("Authorization", format!("Bearer {}", token));
             }
-            let resp = req.send().context("chunk request failed")?;
-
-            if resp.status_code == 429 {
-                rate_limit_retries += 1;
-                if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
-                    anyhow::bail!(
-                        "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
-                        DOWNLOAD_RATE_LIMIT_MAX_RETRIES
-                    );
+            match req.send() {
+                Ok(resp) => {
+                    if resp.status_code == 429 {
+                        rate_limit_retries += 1;
+                        if rate_limit_retries > DOWNLOAD_RATE_LIMIT_MAX_RETRIES {
+                            anyhow::bail!(
+                                "Download rate limit exceeded: too many 429 responses ({} retries) for {url}",
+                                DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                            );
+                        }
+                        if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
+                            eprintln!(
+                                "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
+                                wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                            );
+                            std::thread::sleep(Duration::from_secs(wait_secs));
+                            continue;
+                        }
+                        let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
+                        let backoff = backoff.min(30_000);
+                        eprintln!(
+                            "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
+                            backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
+                        );
+                        std::thread::sleep(Duration::from_millis(backoff));
+                        continue;
+                    }
+                    break resp;
                 }
-                if let Some(wait_secs) = download_rate_limit_wait_seconds(&resp) {
-                    eprintln!(
-                        "Download rate limited (429) for {url} — waiting {}s (retry {}/{})",
-                        wait_secs, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
-                    );
-                    std::thread::sleep(Duration::from_secs(wait_secs));
+                Err(e) => {
+                    chunk_fetch_retries += 1;
+                    consecutive_failures += 1;
+                    if chunk_fetch_retries > MAX_EMPTY_CHUNK_RETRIES {
+                        return Err(anyhow::anyhow!(
+                            "Download failed: chunk request failed after {} retries at {}/{} bytes: {e}",
+                            chunk_fetch_retries, start, total
+                        ));
+                    }
+                    if consecutive_failures % STALL_NOTIFY_THRESHOLD == 0 {
+                        eprintln!(
+                            "Download stalled at {}/{} bytes ({} consecutive failures): {e}. Retrying in {}s... (press Cancel to stop)",
+                            start, total, consecutive_failures, backoff_ms / 1000
+                        );
+                        update_job(registry, id, |j| {
+                            j.status = "stalled".to_string();
+                            j.error = Some(format!(
+                                "Download stalled at {}/{} bytes ({} consecutive failures): {e}",
+                                start, total, consecutive_failures
+                            ));
+                        });
+                    }
+                    let delay = Duration::from_millis(backoff_ms);
+                    std::thread::sleep(delay);
+                    backoff_ms = (backoff_ms as f64 * 1.5) as u64;
+                    backoff_ms = backoff_ms.min(MAX_BACKOFF_MS);
                     continue;
                 }
-                let backoff = 1000_u64 * 2_u64.pow(rate_limit_retries - 1);
-                let backoff = backoff.min(30_000);
-                eprintln!(
-                    "Download rate limited (429) for {url} — no Retry-After header, backing off {}ms (retry {}/{})",
-                    backoff, rate_limit_retries, DOWNLOAD_RATE_LIMIT_MAX_RETRIES
-                );
-                std::thread::sleep(Duration::from_millis(backoff));
-                continue;
             }
-
-            break resp;
         };
 
         if resp.status_code != 206 && resp.status_code != 200 {

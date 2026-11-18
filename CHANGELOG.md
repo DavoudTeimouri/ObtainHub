@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.44] - 2026-11-18
+
+RC.44: Download retry on slow/stalled connections. WebUI `download_inner` retries chunk fetch errors (timeouts, connection resets) with exponential backoff instead of bailing immediately — at 400 B/s a 256KiB chunk takes ~10 min and previously hit the 30s request timeout and died. Per-chunk timeout raised to 300s. Removed default 600s overall timeout (slow downloads can take hours; user cancels via Cancel button). Chunk fetch errors report "stalled" status to registry so WebUI shows the error. cargo check --release clean, cargo test --release: 62/62 pass.
+
 ## [v3.0.72-rc.43] - 2026-11-18
 
 RC.43: Review follow-ups. Extracted shared rate-limit module `core/rate_limit.rs` used by both CLI and WebUI download paths (eliminates duplication). Fixed empty `Authorization: Bearer` header — only sent when token present. Removed unused variables (`prerelease`, `asset_size`) in `routes.rs`. Added test `download_inner_retries_on_429_then_succeeds` verifying download succeeds after 429 retry. cargo check --release clean, cargo test --release: 62/62 pass.
