@@ -833,7 +833,7 @@ fn extract_zip_to_folder(zip_path: &Path, dest_dir: &Path) -> Result<()> {
     let mut root_dir: Option<String> = None;
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        let name = file.mangled_name().to_string_lossy().to_string();
+        let name = file.name().to_string();
         let mut parts = name.split('/');
         let first = parts.next().unwrap_or("");
         if !first.is_empty() {
@@ -847,7 +847,7 @@ fn extract_zip_to_folder(zip_path: &Path, dest_dir: &Path) -> Result<()> {
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        let name = file.mangled_name().to_string_lossy().to_string();
+        let name = file.name().to_string();
         let out_path = if let Some(ref root) = root_dir {
             if name == *root {
                 // Root directory entry itself — maps to dest root, skip.

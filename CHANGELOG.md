@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.60] - 2026-11-19
+
+RC.60: Fix Windows compilation errors.
+
+- Restore `use std::process::Command;` behind #[cfg(windows)] in check.rs
+  (CI compiles for x86_64-pc-windows-msvc; Linux check doesn't cover it)
+- Rename entry.install_date → entry._install_date in check.rs to match
+  the renamed winreg::UninstallEntry field
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+
 ## [v3.0.72-rc.59] - 2026-11-19
 
 RC.59: Clippy -D warnings clean.
