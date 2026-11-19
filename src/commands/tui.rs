@@ -1,6 +1,6 @@
 use crate::core::{ConfigManager, StateManager};
 use crate::cli::{AddArgs, AddType, InstallArgs, RemoveArgs, TuiArgs, UpdateArgs};
-use crate::utils::retry::{execute_with_retry, RetryConfig};
+use crate::utils::retry::RetryConfig;
 use anyhow::Result;
 use ratatui;
 use ratatui::{
@@ -206,40 +206,8 @@ struct GitHubRelease {
     tag_name: String,
 }
 
-async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Option<String>> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-    let token_clone = token.map(|s| s.to_string());
-
-    let result = execute_with_retry(retry_config, || {
-        let url = url.clone();
-        let token = token_clone.clone();
-        async move {
-            let mut req = crate::core::registries::github_get(&url);
-            if let Some(token) = token {
-                req = req.with_header("Authorization", format!("Bearer {}", token));
-            }
-            let resp = req.send()?;
-
-            if resp.status_code == 404 {
-                return Ok(None);
-            }
-
-            if resp.status_code == 403 {
-                return Err(anyhow::anyhow!(
-                    "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
-                ));
-            }
-
-            if !(resp.status_code >= 200 && resp.status_code < 300) {
-                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
-            }
-
-            let release: GitHubRelease = resp.json()?;
-            Ok(Some(release.tag_name))
-        }
-    }, "fetch_latest_release").await?;
-
-    Ok(result)
+async fn fetch_latest_release(repo: &str, token: Option<&str>, _retry_config: &RetryConfig) -> Result<Option<String>> {
+    Ok(crate::core::registries::fetch_latest_release_optional(repo, token).await?.map(|r| r.tag_name))
 }
 
 /// The status column for an app, from its installed and latest versions.

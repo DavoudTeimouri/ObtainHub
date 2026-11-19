@@ -19,8 +19,16 @@ pub async fn execute(args: ConfigArgs, config: &mut ConfigManager, state: &mut S
             }
             println!("{}", toml::to_string_pretty(&shown)?);
         }
-        ConfigAction::Set { key, value } => {
+        ConfigAction::Set { key, stdin, value } => {
             // Never echo the token: it lands in shell history and CI logs.
+            // Use --stdin to read the value from stdin (avoids shell history leakage for secrets).
+            let value = if stdin {
+                let mut buf = String::new();
+                std::io::stdin().read_line(&mut buf)?;
+                buf.trim_end().to_string()
+            } else {
+                value.ok_or_else(|| anyhow::anyhow!("value is required unless --stdin is given"))?
+            };
             let secret = key == "github_token";
             if secret {
                 info!("Setting config: {}", key);

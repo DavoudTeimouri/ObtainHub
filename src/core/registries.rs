@@ -345,6 +345,29 @@ impl GitHubRegistry {
     }
 }
 
+/// Fetch the latest GitHub release for a repo, returning `None` if the repo
+/// has no releases (HTTP 404). Uses `github_get_with_retry` internally so
+/// HTTP 429 rate-limit responses are retried with backoff. Other non-2xx
+/// responses are returned as errors.
+pub async fn fetch_latest_release_optional(
+    repo: &str,
+    token: Option<&str>,
+) -> Result<Option<RegistryRelease>> {
+    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+    let resp = github_get_with_retry(&url, token)?;
+
+    if resp.status_code == 404 {
+        return Ok(None);
+    }
+
+    if !(resp.status_code >= 200 && resp.status_code < 300) {
+        anyhow::bail!("GitHub API error: {}", resp.status_code);
+    }
+
+    let release: RegistryRelease = resp.json()?;
+    Ok(Some(release))
+}
+
 /// Crates.io registry implementation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CratesIoRegistry;

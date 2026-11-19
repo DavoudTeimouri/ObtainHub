@@ -971,7 +971,9 @@ pub enum ConfigAction {
     /// Show current configuration
     Show,
     /// Set a configuration value
-    Set { key: String, value: String },
+    /// Use --stdin to read the value from stdin (avoids shell history leakage for secrets).
+    /// If --stdin is given, `value` is not required.
+    Set { key: String, #[arg(long)] stdin: bool, value: Option<String> },
     /// Get a configuration value
     Get { key: String },
     /// Reset to defaults

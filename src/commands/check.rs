@@ -871,40 +871,24 @@ pub(crate) fn read_exe_version(_exe_path: &std::path::Path) -> Option<String> {
     None
 }
 
-async fn fetch_latest_release(repo: &str, token: Option<&str>, retry_config: &RetryConfig) -> Result<Option<GitHubRelease>> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-    let token_clone = token.map(|s| s.to_string());
-
-    let result = execute_with_retry(retry_config, || {
-        let url = url.clone();
-        let token = token_clone.clone();
-        async move {
-            let mut req = crate::core::registries::github_get(&url);
-            if let Some(token) = token {
-                req = req.with_header("Authorization", format!("Bearer {}", token));
-            }
-            let resp = req.send()?;
-
-            if resp.status_code == 403 {
-                return Err(anyhow::anyhow!(
-                    "GitHub API rate limited or access denied (403). Set a token: ohub config set github_token <token>"
-                ));
-            }
-
-            if resp.status_code == 404 {
-                return Ok(None);
-            }
-
-            if !(resp.status_code >= 200 && resp.status_code < 300) {
-                return Err(anyhow::anyhow!("GitHub API error: {}", resp.status_code));
-            }
-
-            let release: GitHubRelease = resp.json()?;
-            Ok(Some(release))
-        }
-    }, "fetch_latest_release").await?;
-
-    Ok(result)
+async fn fetch_latest_release(repo: &str, token: Option<&str>, _retry_config: &RetryConfig) -> Result<Option<GitHubRelease>> {
+    match crate::core::registries::fetch_latest_release_optional(repo, token).await? {
+        Some(release) => Ok(Some(GitHubRelease {
+            tag_name: release.tag_name,
+            name: release.name,
+            prerelease: release.prerelease,
+            draft: release.draft,
+            assets: release.assets.into_iter().map(|a| GitHubAsset {
+                name: a.name,
+                browser_download_url: a.browser_download_url,
+                size: a.size,
+                content_type: a.content_type,
+            }).collect(),
+            zipball_url: release.zipball_url,
+            tarball_url: release.tarball_url,
+        })),
+        None => Ok(None),
+    }
 }
 
 #[cfg(windows)]
