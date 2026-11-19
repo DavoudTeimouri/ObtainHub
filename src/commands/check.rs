@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+#[cfg(windows)]
+use std::process::Command;
 use std::time::Duration;
 use tracing::info;
 use comfy_table::{Table, Cell};
@@ -939,7 +941,7 @@ fn enumerate_all_installed_software() -> Result<Vec<crate::core::state::Installe
                 entry.display_version.clone()
             },
             install_path,
-            installed_at: entry.install_date.as_deref()
+            installed_at: entry._install_date.as_deref()
                 .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
                 .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
                 .unwrap_or_else(chrono::Utc::now),
