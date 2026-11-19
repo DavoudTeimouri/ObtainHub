@@ -1092,6 +1092,9 @@ pub async fn update_app(
     let download_path = download_dir.join(&asset.name);
     let release_tag_name = release.tag_name.clone();
     std::fs::create_dir_all(&download_dir).ok();
+    // Remove any stale .part file from a previously interrupted download so
+    // we don't append to it and corrupt the new download.
+    let _ = std::fs::remove_file(download_path.with_extension("part"));
 
     let job_id = Uuid::new_v4().to_string();
     let downloads = app_state.downloads.clone();

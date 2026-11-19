@@ -54,10 +54,6 @@ const STALL_NOTIFY_THRESHOLD: u32 = 5;
 const INITIAL_BACKOFF_MS: u64 = 1000;
 /// Maximum backoff between empty-chunk retries.
 const MAX_BACKOFF_MS: u64 = 30_000;
-/// Maximum consecutive empty chunks before giving up (prevents indefinite stall).
-const MAX_EMPTY_CHUNK_RETRIES: u32 = 60;
-/// Maximum consecutive chunk fetch errors (timeouts, resets) before giving up.
-const MAX_CHUNK_FETCH_RETRIES: u32 = 60;
 
 /// Extract a safe file name from the requested dest (both path separators),
 /// falling back to the URL's last segment. Only this name is joined onto the
@@ -89,6 +85,10 @@ pub async fn start_download(
         (c.download_dir.clone(), c.download_bandwidth_limit)
     };
     let dest = download_dir.join(&file_name);
+    // Remove any stale .part file from a previously interrupted download so
+    // we don't append to it and corrupt the new download.
+    let part_path = dest.with_extension("part");
+    let _ = std::fs::remove_file(&part_path);
     if let Some(parent) = dest.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -457,7 +457,7 @@ pub async fn cancel_download(
 ) -> impl IntoResponse {
     let mut map = app_state.downloads.lock().unwrap();
     match map.get_mut(&id) {
-        Some(job) if matches!(job.status.as_str(), "starting" | "downloading") => {
+        Some(job) if matches!(job.status.as_str(), "starting" | "downloading" | "stalled") => {
             job.cancel.store(true, Ordering::Relaxed);
             job.status = "cancelling".to_string();
             (StatusCode::OK, Json(serde_json::json!({"status": "cancelled", "id": id}))).into_response()
