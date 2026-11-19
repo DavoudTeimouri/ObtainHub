@@ -7,7 +7,7 @@ file disagree, the code is the bug.
 **Start at `AGENTS.md`** — it is the entry point and points here.
 This file also owns the **changelog template** (§0).
 
-Last verified against: `main` @ `fd29b62` (v3.0.68).
+Last verified against: `main` @ `06e9759` (v3.0.72).
 
 ---
 
@@ -180,8 +180,7 @@ WiX `Product Id="*"` made ProductCode a fresh GUID on every build, so NSIS's
   now targets the real MSI ProductCode.
 - WiX `RegistrySearch` for NSIS uninstall entry matches NSIS's shared GUID key.
 
-WiX `Comments` field still says `ObtainHub v3.0.68` — stale but cosmetic; not
-a functional defect.
+WiX `Comments` field now `ObtainHub v3.0.72` — was `v3.0.68`, updated in rc.69.
 
 ---
 

@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72] - 2026-11-19
+
+Stable release consolidating all RC.61–RC.71 changes.
+
+### Features
+- Manifest-declared install dependencies: `obtainhub-deps.json` asset parsed at release fetch, dependencies auto-installed (`src/core/registries.rs`, `src/commands/install.rs`)
+- Open Folder button on downloads page (WebUI) with `POST /downloads/:id/open-folder` backend endpoint (`src/webui/downloads.rs`, `src/webui/static/app.js`, `src/webui/static/index.html`)
+- GitHub token via `--stdin` for `config github-token` (`src/commands/config.rs`)
+- Version badge now dynamic via `/version` API — always matches built binary (`src/webui/static/app.js`, `src/webui/static/index.html`)
+
+### Fixes
+- MSI↔NSIS mutual refusal: WiX ProductId pinned to shared GUID, MajorUpgrade prevents coexistence (`installer/setup.wxs`)
+- Orphan registry key on uninstall: NSIS deletes `HKLM\Software\ObtainHub` (`installer/ObtainHub.nsi`)
+- WebUI showing stale RC version (rc.53) — cache-bust + versionBadge now track built version (`src/webui/static/index.html`, `src/webui/static/app.js`)
+- Windows CI dead_code: removed unused `GitHubRelease` struct + unused serde imports from `src/commands/tui.rs` (rc.71)
+- Manifest fetch/parse errors logged with debug/warn instead of silent ignore (`src/core/registries.rs`)
+
+### Verified
+- `cargo check --all-targets` clean
+- `cargo clippy --all-targets -- -D warnings` clean
+- `cargo test --release`: 63/63 pass
+- Windows CI (stable Rust): check, build, MSI, NSIS, release all green
+
 ## [v3.0.72-rc.71] - 2026-11-19
 
 RC.71: Fix Windows CI dead_code error — remove unused GitHubRelease struct from tui.rs.
