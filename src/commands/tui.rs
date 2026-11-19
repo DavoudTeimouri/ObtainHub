@@ -16,7 +16,6 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 use tracing::info;
 
@@ -199,11 +198,6 @@ enum Pending {
     Update { targets: Vec<(String, String)> },
     /// Stop managing this app, leaving its files alone.
     Remove { name: String, repo: String },
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-struct GitHubRelease {
-    tag_name: String,
 }
 
 async fn fetch_latest_release(repo: &str, token: Option<&str>, _retry_config: &RetryConfig) -> Result<Option<String>> {
