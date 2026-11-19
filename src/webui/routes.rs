@@ -880,13 +880,6 @@ pub async fn list_assets(
     if !repo.contains('/') {
         return (StatusCode::OK, Json(serde_json::json!({"repo": repo, "assets": []}))).into_response();
     }
-    if !cfg!(windows) {
-        return (
-            StatusCode::NOT_IMPLEMENTED,
-            Json(serde_json::json!({"error": "asset listing available on Windows only"})),
-        )
-            .into_response();
-    }
     let token = None;
     let registry = crate::core::registries::Registry::GitHub(
         crate::core::registries::GitHubRegistry::new(),
@@ -1319,7 +1312,7 @@ pub async fn update_progress(
         }
         None => {
             (
-                StatusCode::OK,
+                StatusCode::NOT_FOUND,
                 Json(serde_json::json!({
                     "job_id": job_id,
                     "status": "not_found",

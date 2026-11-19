@@ -953,9 +953,17 @@ class ObtainHubUI {
                 activeList.push(r + ' (' + status + ')');
               }
             } catch (e) {
-              // fetch/network blip — continue polling
-              allDone = false;
-              activeList.push(r + ' (' + info.status + ')');
+              // 404 from update_progress means the job is gone (completed
+              // and cleaned, or never existed) — treat as done with error.
+              if (e.message && e.message.includes('HTTP 404')) {
+                this.updatingApps.delete(r);
+                this.showToast('Update failed for ' + r + ': job not found', 'error');
+                this.loadApps();
+              } else {
+                // fetch/network blip — continue polling
+                allDone = false;
+                activeList.push(r + ' (' + info.status + ')');
+              }
             }
             if (serverError) {
               this.updatingApps.delete(r);
