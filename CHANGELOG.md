@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.62] - 2026-11-19
+
+RC.62: Fix clippy manual_ok_err/manual_is_multiple_of on CI.
+
+- CI clippy 1.100.0 enables manual_ok_err and manual_is_multiple_of lints
+  that local clippy 1.85 does not have
+- Add crate-level #[allow(unknown_lints, clippy::manual_ok_err,
+  clippy::manual_is_multiple_of)] in src/main.rs
+- These are style preferences, not bugs — .ok() and % work correctly
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
 ## [v3.0.72-rc.61] - 2026-11-19
 
 RC.61: Fix zip root-dir detection broken on Windows.
