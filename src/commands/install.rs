@@ -180,7 +180,69 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
     }
 
     // Find appropriate asset
-    let asset = registry.select_asset(&release, &args.arch, args.asset.as_deref())?;
+    let asset = if let Some(name) = &args.asset {
+        // User-specified asset name: look it up directly
+        registry.select_asset(&release, &args.arch, Some(name))?
+    } else {
+        // Gather compatible installer assets (.exe/.msi for installer mode)
+        let mut candidates: Vec<&_> = release
+            .assets
+            .iter()
+            .filter(|a| {
+                let n = a.name.to_lowercase();
+                (n.ends_with(".exe") || n.ends_with(".msi"))
+                    && crate::core::registries::matches_arch(&n, &args.arch)
+            })
+            .collect();
+        if candidates.is_empty() {
+            // Fall back to arch-agnostic installers
+            candidates = release
+                .assets
+                .iter()
+                .filter(|a| {
+                    let n = a.name.to_lowercase();
+                    n.ends_with(".exe") || n.ends_with(".msi")
+                })
+                .collect();
+        }
+        if candidates.is_empty() {
+            anyhow::bail!(
+                "No installer assets (.exe/.msi) found in release {}",
+                release.tag_name
+            );
+        }
+        // Sort: .msi first, then .exe, then alphabetical
+        candidates.sort_by(|a, b| {
+            let a_msi = a.name.to_lowercase().ends_with(".msi");
+            let b_msi = b.name.to_lowercase().ends_with(".msi");
+            match b_msi.cmp(&a_msi) {
+                std::cmp::Ordering::Equal => a.name.cmp(&b.name),
+                other => other,
+            }
+        });
+        if args.yes || candidates.len() == 1 {
+            candidates[0].clone()
+        } else {
+            // Multiple compatible assets — let the user pick
+            let theme = dialoguer::theme::ColorfulTheme::default();
+            let items: Vec<String> = candidates
+                .iter()
+                .map(|a| format!("{} ({} bytes)", a.name, a.size))
+                .collect();
+            let choice = dialoguer::Select::with_theme(&theme)
+                .with_prompt(format!(
+                    "Select installer asset for {} (arch: {:?})",
+                    release.tag_name, args.arch
+                ))
+                .items(&items)
+                .default(0)
+                .interact_opt()?;
+            match choice {
+                Some(idx) => candidates[idx].clone(),
+                None => candidates[0].clone(),
+            }
+        }
+    };
     debug!("Selected asset: {} ({} bytes)", asset.name, asset.size);
     
     // Create install directory

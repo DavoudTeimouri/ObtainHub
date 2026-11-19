@@ -4,7 +4,7 @@ use clap_complete::Shell;
 #[derive(Parser, Debug)]
 #[command(
     name = "ObtainHub CLI",
-    version,
+    version = concat!("ObtainHub CLI ", env!("CARGO_PKG_VERSION")),
     long_version = concat!(
         env!("CARGO_PKG_VERSION"),
         "\nA Windows app installer and manager, driven by GitHub releases.",
