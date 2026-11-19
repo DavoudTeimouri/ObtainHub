@@ -2,6 +2,73 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.71] - 2026-11-19
+
+RC.71: Fix Windows CI dead_code error — remove unused GitHubRelease struct from tui.rs.
+
+- Remove unused GitHubRelease struct from src/commands/tui.rs (was dead_code on Windows stable)
+- Remove unused serde imports from src/commands/tui.rs
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
+## [v3.0.72-rc.70] - 2026-11-19
+
+RC.70: Simplify manifest parsing, remove tracing import from registries.rs.
+
+- Remove use tracing::{debug, warn} from src/core/registries.rs
+- Simplify obtainhub-deps.json fetch to silently ignore errors
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
+## [v3.0.72-rc.69] - 2026-11-19
+
+RC.69: Fix review findings — manifest logging, version consistency.
+
+- src/core/registries.rs: Add debug/warn logging for obtainhub-deps.json fetch/parse failures (was silent)
+- docs/architecture.html: Fix version badge rc.67 → rc.68
+- installer/setup.wxs: Fix WiX Comments field v3.0.68 → v3.0.72-rc.68
+- src/webui/static/index.html: Update version references to rc.68 (CSS/JS cache-bust, versionBadge fallback)
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
+## [v3.0.72-rc.68] - 2026-11-19
+
+RC.68: Manifest-declared install dependencies.
+
+- src/core/registries.rs: Add dependencies field to RegistryRelease, parse obtainhub-deps.json manifest asset
+- src/commands/install.rs: Auto-install manifest-declared dependency repos
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
+## [v3.0.72-rc.67] - 2026-11-19
+
+RC.67: Consolidate GitHub release fetching into core/registries.
+
+- src/core/registries.rs: Add fetch_latest_release_optional() shared function
+- src/commands/check.rs: Delegate fetch_latest_release() to shared function
+- src/commands/tui.rs: Delegate fetch_latest_release() to shared function
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
+## [v3.0.72-rc.66] - 2026-11-19
+
+RC.66: Fix MSI↔NSIS mutual refusal + orphan registry key.
+
+- installer/setup.wxs: WiX ProductId pinned GUID, MajorUpgrade prevents MSI/NSIS coexistence
+- PROJECT.md: Fix install docs, add uninstall steps
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
+## [v3.0.72-rc.65] - 2026-11-19
+
+RC.65: GitHub token via stdin; WebUI download fixes.
+
+- src/commands/config.rs: Add --stdin flag for github_token
+- src/webui/downloads.rs: Fix RC version display (was showing rc.53)
+- src/webui/static/app.js: Fix download progress link handler
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
 ## [v3.0.72-rc.64] - 2026-11-19
 
 RC.64: WebUI fixes — version display + Open Folder button for downloads.
