@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*"
+  <Product Id="{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
            Name="ObtainHub"
            Language="1033"
            Version="3.0.72.64"
@@ -18,8 +18,6 @@
 
     <Icon Id="AppIcon" SourceFile="installer/icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
-
-    <MajorUpgrade DowngradeErrorMessage="A newer version of ObtainHub is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
 

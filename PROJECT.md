@@ -164,49 +164,36 @@ LZMA — it produced installers that Windows reported as corrupt
 
 ---
 
-## 4. Known defects in mutual refusal
+## 4. Fixed: MSI ↔ NSIS mutual refusal
 
-Both directions of the MSI ↔ NSIS mutual-refusal check are currently dead code.
+Both directions of the MSI ↔ NSIS mutual-refusal check were dead code because
+WiX `Product Id="*"` made ProductCode a fresh GUID on every build, so NSIS's
+`msiexec /x ${PRODUCT_GUID}` never matched the real MSI ProductCode.
 
-**NSIS → MSI:** `installer/ObtainHub.nsi:65,69` reads
-`HKLM\...\Uninstall\{PRODUCT_GUID}`. Windows Installer writes its uninstall entry
-under the **ProductCode**, not the UpgradeCode, and `Product Id="*"` makes the
-ProductCode a fresh GUID on every build. The key NSIS looks for does not exist, so
-the "already installed via MSI" branch never fires.
+**RESOLVED (rc.66):** Pinned WiX `Product Id` to shared GUID
+`{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}` and dropped `<MajorUpgrade>` in
+`installer/setup.wxs`. Now both installers share one ProductCode/GUID:
 
-**MSI → NSIS:** `installer/setup.wxs` searches
-`Uninstall\{A1B2C3D4-...-EF1234567890}_is1`. NSIS writes to
-`Uninstall\{A1B2C3D4-...-EF1234567890}` with no `_is1` suffix. The search never
-matches.
+- NSIS `.onInit` reads `HKLM\Software\ObtainHub\PathInstalled` (MSI marker) —
+  detects MSI install, offers uninstall/overwrite.
+- NSIS uninstall calls `msiexec /x {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}` —
+  now targets the real MSI ProductCode.
+- WiX `RegistrySearch` for NSIS uninstall entry matches NSIS's shared GUID key.
 
-**Consequence:** installing one installer over the other silently overwrites files
-instead of prompting.
-
-**Fix options, cheapest first:**
-
-1. Pin the WiX `Product Id` to the shared GUID instead of `"*"`:
-   `<Product Id="{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}">` and drop
-   `<MajorUpgrade>` in favour of the NSIS-style prompt. One GUID, one key, both
-   installers agree.
-2. Give the NSIS uninstall key the `_is1` suffix WiX already searches for.
-3. Detect by `InstallLocation` rather than by uninstall key.
-
-Option 1 removes the whole class of bug and keeps the shared-GUID requirement.
+WiX `Comments` field still says `ObtainHub v3.0.68` — stale but cosmetic; not
+a functional defect.
 
 ---
 
-## 5. Known defects in state cleanup
+## 5. Fixed: NSIS uninstall orphan key
 
-NSIS uninstall deletes only `Uninstall\{PRODUCT_GUID}` (`ObtainHub.nsi:277`). The
-MSI writes an additional `HKLM\Software\ObtainHub\PathInstalled` key
-(`setup.wxs:56`) as its component KeyPath, and the MSI overwrite path in
-`ObtainHub.nsi:82-83` removes the Uninstall key but leaves `Software\ObtainHub`
-behind.
+NSIS uninstall left `HKLM\Software\ObtainHub\PathInstalled` (MSI component
+KeyPath) behind after uninstalling over MSI.
 
-Result: installing MSI then NSIS-over-it leaves an orphaned
-`HKLM\Software\ObtainHub` key that no uninstaller removes.
-
-Fix: have NSIS `DeleteRegKey HKLM "Software\ObtainHub"` on uninstall.
+**RESOLVED:** `installer/ObtainHub.nsi:286` already has
+`DeleteRegKey HKLM "Software\ObtainHub"` in the `Uninstall` section, which
+removes the entire `Software\ObtainHub` key including `PathInstalled`. No code
+change needed; PROJECT.md line references were stale.
 
 ---
 
