@@ -916,7 +916,7 @@ class ObtainHubUI {
 
       // Offer a link to the Downloads page to watch progress.
       this.showToast(
-        'Update started for ' + repo + ' — <a href="#" onclick="document.getElementById(\'navDownloads\').click(); return false;">view download progress</a>',
+        'Update started for ' + repo + ' — open Downloads to view progress',
         'info',
         5000
       );
