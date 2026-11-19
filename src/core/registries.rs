@@ -5,7 +5,6 @@ use minreq;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tracing::{debug, warn};
 
 /// The HTTP timeout for this run, in seconds.
 ///
@@ -273,15 +272,12 @@ impl GitHubRegistry {
             .iter()
             .find(|a| a.name == "obtainhub-deps.json")
         {
-            match github_get_with_retry(&dep_asset.browser_download_url, token) {
-                Ok(dep_resp) if dep_resp.status_code == 200 => {
-                    match dep_resp.json::<Vec<String>>() {
-                        Ok(deps) => release.dependencies = deps,
-                        Err(e) => warn!("Failed to parse obtainhub-deps.json: {e}"),
+            if let Ok(dep_resp) = github_get_with_retry(&dep_asset.browser_download_url, token) {
+                if dep_resp.status_code == 200 {
+                    if let Ok(deps) = dep_resp.json::<Vec<String>>() {
+                        release.dependencies = deps;
                     }
                 }
-                Ok(resp) => debug!("obtainhub-deps.json returned HTTP {}", resp.status_code),
-                Err(e) => debug!("Failed to fetch obtainhub-deps.json: {e}"),
             }
         }
 
