@@ -148,6 +148,10 @@ pub struct RegistryRelease {
     /// crates.io publishes it; GitHub keeps it in the release digest instead.
     #[serde(default)]
     pub checksum: Option<String>,
+    /// Declared dependencies (owner/repo) from a manifest sidecar asset
+    /// (e.g. `obtainhub-deps.json` in the release). Auto-installed on install/update.
+    #[serde(default)]
+    pub dependencies: Vec<String>,
 }
 
 fn default_tag_name() -> String {
@@ -259,7 +263,23 @@ impl GitHubRegistry {
         let repo = Self::get_repo_from_package(package_name);
         let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
         let resp = github_get_with_retry(&url, token)?;
-        let release: RegistryRelease = resp.json()?;
+        let mut release: RegistryRelease = resp.json()?;
+
+        // Look for an obtainhub-deps.json manifest asset that lists
+        // dependency repos (owner/repo) to auto-install.
+        if let Some(dep_asset) = release
+            .assets
+            .iter()
+            .find(|a| a.name == "obtainhub-deps.json")
+        {
+            if let Ok(dep_resp) = github_get_with_retry(&dep_asset.browser_download_url, token) {
+                if dep_resp.status_code == 200 {
+                    let deps: Vec<String> = dep_resp.json().unwrap_or_default();
+                    release.dependencies = deps;
+                }
+            }
+        }
+
         Ok(release)
     }
 
@@ -441,6 +461,7 @@ impl CratesIoRegistry {
             zipball_url: String::new(),
             tarball_url: String::new(),
             checksum: latest_version.checksum.clone(),
+            dependencies: Vec::new(),
         })
     }
 
@@ -497,9 +518,10 @@ impl CratesIoRegistry {
             zipball_url: String::new(),
             tarball_url: String::new(),
             checksum: resp.version.checksum.clone(),
+            dependencies: Vec::new(),
         })
     }
-    
+
     pub fn select_asset(&self, release: &RegistryRelease, _arch: &Arch, preferred: Option<&str>) -> Result<RegistryAsset> {
         if let Some(name) = preferred {
             if let Some(asset) = release.assets.iter().find(|a| a.name == name) {

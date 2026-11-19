@@ -179,6 +179,11 @@ pub async fn execute(args: InstallArgs, config: &ConfigManager, state_manager: &
         install_dependencies(&args.dependencies, config, state_manager, retry_config).await?;
     }
 
+    // Manifest-declared dependencies from the release (e.g. obtainhub-deps.json).
+    if !args.skip_deps && !release.dependencies.is_empty() {
+        install_dependencies(&release.dependencies, config, state_manager, retry_config).await?;
+    }
+
     // Find appropriate asset
     let asset = if let Some(name) = &args.asset {
         // User-specified asset name: look it up directly

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ObtainHub Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+  h1 { color: #1a1a2e; margin-bottom: 1rem; font-size: 2rem; }
+  .subtitle { color: #666; margin-bottom: 2rem; }
+  .diagram-wrap { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 2rem; overflow-x: auto; }
+  .diagram { display: flex; flex-direction: column; gap: 2rem; }
+  .layer { display: flex; gap: 1rem; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .layer-label { writing-mode: vertical-rl; text-orientation: mixed; font-weight: bold; color: #1a1a2e; font-size: 0.9rem; padding: 0.5rem; border-right: 2px solid #1a1a2e; margin-right: 1rem; white-space: nowrap; }
+  .box { background: #e8f0fe; border: 2px solid #3b82f6; border-radius: 8px; padding: 1rem 1.5rem; min-width: 200px; text-align: center; }
+  .box h3 { margin-bottom: 0.5rem; color: #1e40af; font-size: 1rem; }
+  .box p { font-size: 0.85rem; color: #4b5563; margin: 0; }
+  .box.cli { background: #f0fdf4; border-color: #10b981; }
+  .box.cli h3 { color: #059669; }
+  .box.webui { background: #fefce8; border-color: #eab308; }
+  .box.webui h3 { color: #a16207; }
+  .box.core { background: #fffbeb; border-color: #d97706; }
+  .box.core h3 { color: #b45309; }
+  .arrow { font-size: 1.5rem; color: #6b7280; }
+  .arrow.down { writing-mode: vertical-rl; text-orientation: mixed; }
+  .legend { margin-top: 1rem; display: flex; gap: 2rem; font-size: 0.85rem; color: #6b7280; }
+  .legend-item { display: flex; align-items: center; gap: 0.5rem; }
+  .legend-color { width: 1rem; height: 1rem; border-radius: 4px; border: 2px solid currentColor; }
+  .note { margin-top: 1.5rem; padding: 1rem; background: #f3f4f6; border-radius: 8px; font-size: 0.85rem; color: #4b5563; }
+  .note b { color: #1f2937; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>ObtainHub Architecture</h1>
+  <p class="subtitle">GitHub-based app installer and manager for Windows x64 &mdash; v3.0.72-rc.67</p>
+
+  <div class="diagram-wrap">
+    <div class="diagram">
+
+      <!-- CLI Layer -->
+      <div class="layer">
+        <div class="layer-label">CLI</div>
+        <div class="box cli">
+          <h3>ohub CLI</h3>
+          <p>clap-based command line<br>install, check, update,<br>uninstall, config, webui, tui</p>
+        </div>
+        <div class="arrow down">&#9660;</div>
+      </div>
+
+      <!-- WebUI Layer -->
+      <div class="layer">
+        <div class="layer-label">WebUI</div>
+        <div class="box webui">
+          <h3>ohub webui</h3>
+          <p>Axum HTTP server<br>embedded static SPA<br>auth middleware, downloads<br>registry, config, cleanup</p>
+        </div>
+        <div class="arrow down">&#9660;</div>
+      </div>
+
+      <!-- Core Layer -->
+      <div class="layer">
+        <div class="layer-label">Core</div>
+        <div class="box core">
+          <h3>core::download</h3>
+          <p>chunked ranged download<br>retry/backoff, 429 handling,<br>resume from .part file,<br>bandwidth throttling</p>
+        </div>
+        <div class="box core">
+          <h3>core::registries</h3>
+          <p>GitHub, Crates.io, Generic<br>release fetching,<br>asset selection,<br>download via to_file()</p>
+        </div>
+        <div class="box core">
+          <h3>core::config</h3>
+          <p>config.toml, credential store,<br>token management,<br>bandwidth limit, schedule</p>
+        </div>
+        <div class="box core">
+          <h3>core::state</h3>
+          <p>state.json, InstalledRepo,<br>version normalization,<br>is_dependency tracking</p>
+        </div>
+      </div>
+
+      <!-- External Layer -->
+      <div class="layer">
+        <div class="layer-label">External</div>
+        <div class="box">
+          <h3>GitHub Releases</h3>
+          <p>releases/latest, releases/tags/{tag},<br>asset downloads, rate limiting</p>
+        </div>
+        <div class="box">
+          <h3>Crates.io</h3>
+          <p>crates.io API,<br>crate downloads</p>
+        </div>
+        <div class="box">
+          <h3>Windows OS</h3>
+          <p>uninstall registry,<br>elevation (RunAs),<br>Explorer integration</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-color" style="border-color:#10b981;"></div>CLI</div>
+    <div class="legend-item"><div class="legend-color" style="border-color:#eab308;"></div>WebUI</div>
+    <div class="legend-item"><div class="legend-color" style="border-color:#d97706;"></div>Core logic</div>
+    <div class="legend-item"><div class="legend-color" style="border-color:#6b7280;"></div>External systems</div>
+  </div>
+
+  <div class="note">
+    <b>Data flow:</b> CLI/WebUI &rarr; Core (download, registries, config, state) &rarr; External (GitHub, Crates.io, Windows OS).
+    All downloads go through <code>core::download::to_file()</code> which writes to a <code>.part</code> file and
+    atomically renames on success. Retries use exponential backoff with 429 rate-limit awareness.
+  </div>
+</div>
+</body>
+</html>
+</file>
