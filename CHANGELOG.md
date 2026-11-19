@@ -2,9 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.0.72-rc.62] - 2026-11-19
+## [v3.0.72-rc.63] - 2026-11-19
 
-RC.62: Fix clippy manual_ok_err/manual_is_multiple_of on CI.
+RC.63: Fix clippy manual_ok_err/manual_is_multiple_of on CI.
 
 - CI clippy 1.100.0 enables manual_ok_err and manual_is_multiple_of lints
   that local clippy 1.85 does not have
