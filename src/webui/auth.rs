@@ -55,8 +55,12 @@ pub async fn auth_middleware(
         config_manager.github_token()
     };
 
-    // Bootstrap: setting the initial token is allowed only while none is set.
-    if path == "/config/github-token" && method == Method::POST && configured_token.is_none() {
+    // Bootstrap: setting the initial token is allowed only while none is set,
+    // and only when auth is not required (no --auth). When --auth is set, the
+    // token must be pre-configured via CLI (`ohub config set github_token`)
+    // before starting the WebUI, so an exposed server cannot be re-keyed by an
+    // unauthenticated POST to /config/github-token.
+    if path == "/config/github-token" && method == Method::POST && configured_token.is_none() && !state.auth_enabled {
         return Ok(next.run(request).await);
     }
 

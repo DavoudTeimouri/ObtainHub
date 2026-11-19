@@ -499,9 +499,17 @@ pub async fn resume_download(
     let mut map = app_state.downloads.lock().unwrap();
     match map.get_mut(&id) {
         Some(job) if matches!(job.status.as_str(), "paused" | "cancelled" | "error") => {
-            // Paused downloads keep their part file — resume from where we left off.
-            // Cancelled/error downloads had their part file deleted — restart from 0.
-            let resume_from = if job.status == "paused" { job.downloaded } else { 0 };
+            // Paused downloads keep their part file — resume from the actual
+            // bytes on disk, not the in-memory counter (which may be ahead of
+            // disk if progress was updated but write didn't complete before a
+            // crash / process kill). Cancelled/error downloads had their part
+            // file deleted — restart from 0.
+            let part_path = PathBuf::from(&job.dest).with_extension("part");
+            let resume_from = if job.status == "paused" {
+                part_path.metadata().map(|m| m.len()).unwrap_or(0)
+            } else {
+                0
+            };
             let total_size = job.total;
             job.cancel.store(false, Ordering::Relaxed);
             job.status = "downloading".to_string();
