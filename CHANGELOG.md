@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.61] - 2026-11-19
+
+RC.61: Fix zip root-dir detection broken on Windows.
+
+- extract_zip_to_folder used file.mangled_name() which converts / to \
+  on Windows, breaking /-based path splitting in single-root-dir
+  detection. Zip entries were never flattened, so files landed in
+  dest/App-1.2.3/ instead of dest/.
+- Use file.name() (always /-separated) in both detection and extraction loops
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
 ## [v3.0.72-rc.60] - 2026-11-19
 
 RC.60: Fix Windows compilation errors.
