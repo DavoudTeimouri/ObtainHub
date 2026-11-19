@@ -142,6 +142,7 @@ pub(crate) struct DownloadRun<'a> {
 }
 
 /// Run a chunked ranged download, updating the registry as it progresses.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_download(
     registry: DownloadRegistry,
     id: String,
@@ -156,6 +157,7 @@ pub(crate) fn run_download(
 }
 
 /// Run a chunked ranged download with known total size.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_download_with_size(
     registry: DownloadRegistry,
     id: String,
@@ -234,7 +236,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
     let window_start = Instant::now();
     let mut window_bytes: u64 = 0;
     let mut consecutive_failures: u32 = 0;
-    let mut consecutive_empty_chunks: u32 = 0;
+    let mut _consecutive_empty_chunks: u32 = 0;
     let mut backoff_ms = INITIAL_BACKOFF_MS;
 
     // Overall download timeout: abort after this many seconds to prevent
@@ -268,7 +270,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
         // backoff instead of failing the whole download — slow connections
         // (e.g. 400 B/s) take minutes per chunk and would otherwise hit the
         // request timeout and die with no retry.
-        let mut chunk_fetch_retries = 0u32;
+        let mut _chunk_fetch_retries = 0u32;
         let resp = loop {
             let mut req = minreq::get(url)
                 .with_header("User-Agent", crate::core::USER_AGENT)
@@ -314,7 +316,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
                     break resp;
                 }
                 Err(e) => {
-                    chunk_fetch_retries += 1;
+                    _chunk_fetch_retries += 1;
                     consecutive_failures += 1;
                     // Always report current progress on retry so the percentage
                     // doesn't disappear from the WebUI.
@@ -349,7 +351,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             // Server returned 206/200 with empty body — transient failure,
             // retry the same range with exponential backoff instead of
             // marking the download complete or hammering in a tight loop.
-            consecutive_empty_chunks += 1;
+            _consecutive_empty_chunks += 1;
             consecutive_failures += 1;
             // Always report current progress on retry so the percentage
             // doesn't disappear from the WebUI.
@@ -380,7 +382,7 @@ fn download_inner(run: &DownloadRun<'_>) -> anyhow::Result<()> {
             backoff_ms = backoff_ms.min(MAX_BACKOFF_MS);
             continue;
         }
-        consecutive_empty_chunks = 0;
+        _consecutive_empty_chunks = 0;
         consecutive_failures = 0;
         backoff_ms = INITIAL_BACKOFF_MS;
         // Reset status from "stalled" back to "downloading" after a successful chunk

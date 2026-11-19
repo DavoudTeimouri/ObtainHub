@@ -5,7 +5,7 @@ use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 use tracing::info;
 use walkdir::WalkDir;
 

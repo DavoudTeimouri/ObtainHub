@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::core::config::ConfigManager;
-use crate::core::rate_limit::{download_rate_limit_wait_seconds, DOWNLOAD_RATE_LIMIT_MAX_RETRIES};
+use crate::core::rate_limit::download_rate_limit_wait_seconds;
 
 /// Whether the progress bar drops its colours.
 static NO_COLOR: AtomicBool = AtomicBool::new(false);

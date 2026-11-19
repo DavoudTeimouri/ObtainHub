@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
-use std::process::Command;
 use std::time::Duration;
 use tracing::info;
 use comfy_table::{Table, Cell};

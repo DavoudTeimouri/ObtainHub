@@ -1,11 +1,9 @@
 use axum::{Json, response::IntoResponse, extract::State, http::StatusCode};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::SystemTime;
-use tokio::sync::Mutex as TokioMutex;
 use walkdir::WalkDir;
 use uuid::Uuid;
 
@@ -364,7 +362,7 @@ pub async fn post_app(
     // Use file time instead of "just now", skip registry detection (no registry entry for portable apps).
     if add_type == "folder" {
         let install_dir = install_path
-            .map(|p| std::path::PathBuf::from(p))
+            .map(std::path::PathBuf::from)
             .unwrap_or_default();
         let installed_at = if install_dir.exists() {
             crate::commands::add::file_time(&install_dir)
@@ -958,7 +956,7 @@ pub async fn link_repo(
     if let Err(e) = state_manager.save() {
         // Rollback: remove the new key from memory, restore old entry.
         state_manager.remove_installed(&body.github_repo);
-        let _ = state_manager.add_installed(existing_entry.clone());
+        state_manager.add_installed(existing_entry.clone());
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": format!("Failed to save state: {e}")})),
@@ -1023,7 +1021,7 @@ pub async fn update_app(
 
     // Fetch release info to determine the asset and download URL
     let cm_guard = app_state.config_manager.lock().await;
-    let _rc = crate::utils::retry::RetryConfig::from_config(&*cm_guard);
+    let _rc = crate::utils::retry::RetryConfig::from_config(&cm_guard);
     let token_clone = cm_guard.github_token();
     drop(cm_guard);
 
@@ -1184,7 +1182,7 @@ pub async fn update_app(
             }
         }
 
-        let mut sm = state_manager.lock().await;
+        let sm = state_manager.lock().await;
         let is_folder_app = sm.get_installed(&repo_clone)
             .map(|e| PathBuf::from(&e.install_path).is_file())
             .unwrap_or(false);
@@ -1218,7 +1216,7 @@ pub async fn update_app(
         } else {
             let mut sm = state_manager.lock().await;
             let cm_guard = config_manager.lock().await;
-            let _rc = crate::utils::retry::RetryConfig::from_config(&*cm_guard);
+            let _rc = crate::utils::retry::RetryConfig::from_config(&cm_guard);
             drop(cm_guard);
             crate::commands::update::install_release(
                 &repo_clone,
@@ -1443,7 +1441,7 @@ pub async fn login(
         let script = "$u = $env:OHUB_LOGIN_USER; $p = $env:OHUB_LOGIN_PASS; $ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Machine); if ($ctx.ValidateCredentials($u, $p)) { $env:USERNAME; exit 0 } else { exit 1 }";
         std::env::set_var("OHUB_LOGIN_USER", &username);
         std::env::set_var("OHUB_LOGIN_PASS", &password);
-        match run_ps(&script) {
+        match run_ps(script) {
             PsResult::Ok(_) => Some(username),
             PsResult::Rejected => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Invalid Windows username or password"}))).into_response(),
             PsResult::NotFound => return (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "PowerShell is not available on this machine. Use a GitHub token instead (Sign in → Use GitHub token)."}))).into_response(),
@@ -1639,7 +1637,7 @@ pub async fn cleanup(
             }
         }
         // Remove deepest first
-        empty_dirs.sort_by(|a, b| b.components().count().cmp(&a.components().count()));
+        empty_dirs.sort_by_key(|b| std::cmp::Reverse(b.components().count()));
         for dir in empty_dirs {
             if force {
                 match std::fs::remove_dir(&dir) {

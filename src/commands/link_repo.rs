@@ -44,7 +44,7 @@ pub async fn execute(args: LinkRepoArgs, _config: &ConfigManager, state: &mut St
     if let Err(e) = state.save() {
         // Rollback: remove the new key from memory, restore old entry.
         state.remove_installed(&args.github_repo);
-        let _ = state.add_installed(existing_entry.clone());
+        state.add_installed(existing_entry.clone());
         anyhow::bail!("Failed to save state: {}", e);
     }
 

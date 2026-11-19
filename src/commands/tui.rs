@@ -1,5 +1,5 @@
 use crate::core::{ConfigManager, StateManager};
-use crate::cli::{AddArgs, AddType, Arch, InstallArgs, RemoveArgs, TuiArgs, UpdateArgs};
+use crate::cli::{AddArgs, AddType, InstallArgs, RemoveArgs, TuiArgs, UpdateArgs};
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
 use ratatui;

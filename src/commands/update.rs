@@ -2,9 +2,8 @@ use crate::core::{ConfigManager, StateManager, run_installer};
 use crate::cli::{Arch, UpdateArgs};
 use crate::utils::retry::{execute_with_retry, RetryConfig};
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
@@ -255,7 +254,7 @@ pub async fn execute(args: UpdateArgs, config: &ConfigManager, state: &mut State
                 // Folder-added apps (install_path is an exe) update in place and
                 // may distribute as zip/portable archives, not just .exe/.msi installers.
                 let is_folder_app = state
-                    .get_installed(&repo_name)
+                    .get_installed(repo_name)
                     .map(|e| PathBuf::from(&e.install_path).is_file())
                     .unwrap_or(false);
                 let installer_only = !is_folder_app;
@@ -442,7 +441,6 @@ pub(crate) async fn install_release(
 
     // Get expected size from GitHub API for skip-check AND final verification
     let expected_size = asset.size;
-    let mut total_size: u64 = 0;
     let expected_hash = {
         fetch_published_checksum(release, &asset.name, token).await?
     };
@@ -452,7 +450,6 @@ pub(crate) async fn install_release(
     if download_path.exists() {
         let existing_size = std::fs::metadata(&download_path)?.len();
         if existing_size > 0 {
-            total_size = existing_size;
             let existing_bytes = std::fs::read(&download_path)?;
             let existing_hash = crate::core::assets::calculate_sha256_bytes(&existing_bytes);
             if let Some(expected) = &expected_hash {
@@ -485,8 +482,6 @@ pub(crate) async fn install_release(
             config,
         )
         .await?;
-
-        total_size = std::fs::metadata(&download_path)?.len();
 
         if let Some(expected) = expected_hash {
             let bytes = std::fs::read(&download_path)?;
@@ -576,12 +571,10 @@ pub(crate) async fn install_release(
     // or silent installer exited 0 without changes), warn but continue —
     // registry detection is best-effort and some installers update in place
     // without creating a new uninstall entry.
-    if is_installer && detected_install_dir.is_none() {
-        if !quiet {
-            eprintln!(
-                "  Warning: installer did not register a new installation — update may have been cancelled or applied in place"
-            );
-        }
+    if is_installer && detected_install_dir.is_none() && !quiet {
+        eprintln!(
+            "  Warning: installer did not register a new installation — update may have been cancelled or applied in place"
+        );
     }
 
     // Update state
@@ -706,7 +699,7 @@ fn install_folder_app_inner(download_path: &Path, install_dir: &Path) -> Result<
 /// Verify the folder app is still installed correctly after update.
 /// Folder apps may be zip/portable distributions without a top-level .exe,
 /// so we only require the directory to exist and contain at least one file.
-fn verify_folder_app(install_dir: &Path, repo: &str) -> Result<()> {
+fn verify_folder_app(install_dir: &Path, _repo: &str) -> Result<()> {
     if !install_dir.exists() {
         return Err(anyhow::anyhow!(
             "Install directory missing: {}",
@@ -770,10 +763,10 @@ fn backup_folder_as_zip(source_dir: &Path, zip_path: &Path) -> Result<()> {
                         .unwrap_or(&entry_path)
                         .to_path_buf();
                     if let Some(parent) = relative.parent() {
-                        let _ = zip.add_directory(parent.to_string_lossy(), options.clone());
+                        let _ = zip.add_directory(parent.to_string_lossy(), options);
                     }
                     let mut f = fs::File::open(&entry_path)?;
-                    zip.start_file(relative.to_string_lossy(), options.clone())?;
+                    zip.start_file(relative.to_string_lossy(), options)?;
                     io::copy(&mut f, &mut zip)?;
                 }
             }
