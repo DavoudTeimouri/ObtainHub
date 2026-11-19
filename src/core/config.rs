@@ -169,15 +169,6 @@ pub struct ConfigManager {
     config_path: PathBuf,
 }
 
-impl Clone for ConfigManager {
-    fn clone(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            config_path: self.config_path.clone(),
-        }
-    }
-}
-
 impl ConfigManager {
     pub fn new() -> Result<Self> {
         let config_dir = dirs::config_dir()
