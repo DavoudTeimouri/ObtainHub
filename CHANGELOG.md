@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.53] - 2026-11-18
+
+RC.53: Fix pause/resume critical bug + resume-from-cancelled semantics.
+
+- Pause no longer deletes the .part file: cleanup preserves part file when status is "paused" (was deleted via cancel flag, breaking resume)
+- Resume from cancelled/error restarts from 0 (part file was deleted); resume from paused continues from job.downloaded
+- Fixed stale app.js script version reference (3.0.68 → 3.0.72-rc.53)
+- cargo check --release clean, cargo test --release: 63/63 pass
+
+## [v3.0.72-rc.52] - 2026-11-18
+
+RC.52: Download page action buttons — Pause, Stop, Remove, Resume.
+
+- POST /downloads/:id/pause — pause downloading/stalled (preserves part file)
+- POST /downloads/:id/resume — resume paused/cancelled/error from job.downloaded
+- POST /downloads/:id/remove — remove finished download + delete part file
+- Existing /downloads/:id/cancel preserved
+- DownloadRun gains resume_from u64; part file opened in append mode on resume
+
+Frontend:
+- Downloads table gains Actions column with status-appropriate buttons
+- pause_download / resume_download / stop_download / remove_download JS handlers
+- Button states: downloading/stalled → Pause+Stop+Remove(disabled); paused → Resume+Stop+Remove; completed/error → Remove/Resume
+
+cargo check --release clean, cargo test --release: 63/63 pass.
+
 ## [v3.0.72-rc.51] - 2026-11-18
 
 RC.51: WebUI — no page refresh during download/update, simple status text.

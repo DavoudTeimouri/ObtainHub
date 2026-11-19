@@ -187,8 +187,13 @@ pub(crate) fn run_download_with_size(
     let mut map = registry.lock().unwrap();
     if let Some(job) = map.get_mut(&id) {
         if cancel.load(Ordering::Relaxed) {
-            job.status = "cancelled".to_string();
-            let _ = std::fs::remove_file(&part_path);
+            if job.status == "paused" {
+                // Pause was requested: part file was preserved intentionally.
+                // Keep status as "paused", do not delete part file.
+            } else {
+                job.status = "cancelled".to_string();
+                let _ = std::fs::remove_file(&part_path);
+            }
         } else {
             match result {
                 Ok(()) => {
@@ -494,11 +499,14 @@ pub async fn resume_download(
     let mut map = app_state.downloads.lock().unwrap();
     match map.get_mut(&id) {
         Some(job) if matches!(job.status.as_str(), "paused" | "cancelled" | "error") => {
-            let resume_from = job.downloaded;
+            // Paused downloads keep their part file — resume from where we left off.
+            // Cancelled/error downloads had their part file deleted — restart from 0.
+            let resume_from = if job.status == "paused" { job.downloaded } else { 0 };
             let total_size = job.total;
             job.cancel.store(false, Ordering::Relaxed);
             job.status = "downloading".to_string();
             job.error = None;
+            job.downloaded = resume_from;
             let url = job.url.clone();
             let dest = PathBuf::from(&job.dest);
             let cancel = job.cancel.clone();
