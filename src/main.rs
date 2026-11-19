@@ -1,3 +1,5 @@
+#![allow(unknown_lints, clippy::manual_ok_err, clippy::manual_is_multiple_of)]
+
 use clap::Parser;
 use crate::cli::{Cli, Commands};
 use crate::core::{config, state, logger};
