@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.59] - 2026-11-19
+
+RC.59: Clippy -D warnings clean.
+
+- Remove unused imports across 7 files (PathBuf, Command, Deserialize, Serialize, Read, Write, Arch, UNIX_EPOCH, Path, SystemTime, TokioMutex, DOWNLOAD_RATE_LIMIT_MAX_RETRIES)
+- Remove dead variables/assignments (total_size, consecutive_empty_chunks, chunk_fetch_retries, repo)
+- Use clamp() instead of .max(1).min(3600) in rate_limit/registries
+- Fix needless borrows, clone-on-copy (FileOptions), collapsible if, redundant closures
+- Remove dangerous Clone impls on ConfigManager/StateManager
+- Add #[allow(clippy::too_many_arguments)] to run_download/run_download_with_size
+- Rename unused field install_date → _install_date in winreg
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
 ## [v3.0.72-rc.55] - 2026-11-18
 
 RC.55: ObtainHub CLI version string + multi-asset selection for install.
