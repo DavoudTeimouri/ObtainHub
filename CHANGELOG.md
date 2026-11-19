@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.55] - 2026-11-18
+
+RC.55: ObtainHub CLI version string + multi-asset selection for install.
+
+- `ohub --version` now prints `ObtainHub CLI {version}` (was bare version)
+- `ohub install`: when multiple compatible `.exe`/`.msi` assets exist, shows
+  an interactive selection list instead of silently auto-picking the first
+- `--yes` skips the asset prompt and picks the best-match asset
+- cargo check --release clean, cargo test --release: 63/63 pass
+
+## [v3.0.72-rc.54] - 2026-11-18
+
+RC.54: Fix stale .part file corruption + cancel stalled + remove dead retry constants.
+
+- `start_download` (WebUI downloads page): delete existing `.part` file before
+  starting a new download, preventing append-to-stale-part data corruption
+- `update_app` (WebUI update flow): same `.part` cleanup before download starts
+- `cancel_download`: now allows cancelling from `stalled` status (was only
+  `starting`/`downloading`)
+- Removed unused `MAX_CHUNK_FETCH_RETRIES` and `MAX_EMPTY_CHUNK_RETRIES`
+  constants (dead code; downloads already retry indefinitely by design)
+- cargo check --release clean, cargo test --release: 63/63 pass
+
 ## [v3.0.72-rc.53] - 2026-11-18
 
 RC.53: Fix pause/resume critical bug + resume-from-cancelled semantics.
