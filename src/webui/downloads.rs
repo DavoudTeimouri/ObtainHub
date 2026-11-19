@@ -553,6 +553,30 @@ pub async fn remove_download(
     }
 }
 
+/// Open the folder containing a download in Windows Explorer.
+pub async fn open_download_folder(
+    State(app_state): State<Arc<super::AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let map = app_state.downloads.lock().unwrap();
+    match map.get(&id) {
+        Some(job) => {
+            let dest = PathBuf::from(&job.dest);
+            let folder = dest.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
+            drop(map);
+            if cfg!(windows) {
+                match std::process::Command::new("explorer.exe").arg(&folder).spawn() {
+                    Ok(_) => (StatusCode::OK, Json(serde_json::json!({"status": "opened", "path": folder.display().to_string()}))).into_response(),
+                    Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to open folder: {e}")}))).into_response(),
+                }
+            } else {
+                (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "open folder available on Windows only"}))).into_response()
+            }
+        }
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "unknown download id"}))).into_response(),
+    }
+}
+
 /// Probe the server for file size.
 fn probe_size(url: &str, token: Option<&str>) -> anyhow::Result<u64> {
     let mut rate_limit_retries = 0u32;

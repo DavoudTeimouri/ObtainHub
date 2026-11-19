@@ -1843,12 +1843,15 @@ class ObtainHubUI {
         } else if (status === 'paused') {
           actionsHtml += '<button class="btn btn-primary btn-sm" onclick="app.resume_download(\'' + this.escapeHtml(dl.id) + '\')" title="Resume">Resume</button> ';
           actionsHtml += '<button class="btn btn-danger btn-sm" onclick="app.stop_download(\'' + this.escapeHtml(dl.id) + '\')" title="Stop">Stop</button> ';
-          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button>';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button> ';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.open_download_folder(\'' + this.escapeHtml(dl.id) + '\')" title="Open folder">Open folder</button>';
         } else if (status === 'completed') {
-          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button>';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button> ';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.open_download_folder(\'' + this.escapeHtml(dl.id) + '\')" title="Open folder">Open folder</button>';
         } else if (status === 'error' || status === 'cancelled') {
           actionsHtml += '<button class="btn btn-primary btn-sm" onclick="app.resume_download(\'' + this.escapeHtml(dl.id) + '\')" title="Resume">Resume</button> ';
-          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button>';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.remove_download(\'' + this.escapeHtml(dl.id) + '\')" title="Remove">Remove</button> ';
+          actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="app.open_download_folder(\'' + this.escapeHtml(dl.id) + '\')" title="Open folder">Open folder</button>';
         } else if (status === 'cancelling') {
           actionsHtml += '<span class="text-muted">Cancelling...</span>';
         } else {
@@ -1975,6 +1978,15 @@ class ObtainHubUI {
       this.loadDownloads();
     } catch (err) {
       this.showToast('Failed to remove download: ' + err.message, 'error');
+    }
+  }
+
+  async open_download_folder(id) {
+    try {
+      await this.api('/downloads/' + id + '/open-folder', { method: 'POST' });
+      this.showToast('Folder opened', 'success');
+    } catch (err) {
+      this.showToast('Failed to open folder: ' + err.message, 'error');
     }
   }
 }

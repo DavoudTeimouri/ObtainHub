@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.72-rc.64] - 2026-11-19
+
+RC.64: WebUI fixes — version display + Open Folder button for downloads.
+
+- Fix stale version references in index.html (CSS/JS cache-bust, versionBadge) —
+  was showing rc.53, now rc.64
+- Add "Open folder" button on downloads page for paused/completed/error downloads
+  (opens the containing folder in Windows Explorer)
+- Backend: POST /downloads/:id/open-folder endpoint
+- Frontend: open_download_folder() handler + Actions column button
+- cargo check --all-targets clean, cargo clippy --all-targets -- -D warnings clean
+- cargo test --release: 63/63 pass
+
 ## [v3.0.72-rc.63] - 2026-11-19
 
 RC.63: Fix clippy manual_ok_err/manual_is_multiple_of on CI.

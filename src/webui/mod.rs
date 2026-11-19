@@ -169,6 +169,7 @@ pub async fn run_webui(
         .route("/downloads/:id/pause", axum::routing::post(downloads::pause_download))
         .route("/downloads/:id/resume", axum::routing::post(downloads::resume_download))
         .route("/downloads/:id/remove", axum::routing::post(downloads::remove_download))
+        .route("/downloads/:id/open-folder", axum::routing::post(downloads::open_download_folder))
         // Protected update check
         .route("/update-check", axum::routing::post(downloads::update_check))
         // Protected diagnostics: full state export and schedule log tail
